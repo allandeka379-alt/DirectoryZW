@@ -390,15 +390,63 @@ export function regCancelled(): OutboundMessage {
   return { kind: "text", text: "Registration cancelled. Type *register* when you're ready." };
 }
 
-export function bizMenu(b: { name: string; status: string; verification: string }): OutboundMessage {
+export function bizMenu(b: { name: string; status: string; verification: string }, ownsSeveral: boolean): OutboundMessage {
+  const rows: { id: string; title: string; description?: string }[] = [
+    { id: Ids.summary, title: "My summary", description: "Searches and customers this week" },
+    { id: Ids.editWhat, title: "Update what I sell", description: "Description and categories" },
+    { id: Ids.editArea, title: "Update location", description: "Where customers find you" },
+    b.status === "paused"
+      ? { id: Ids.resume, title: "Resume listing", description: "Show me to customers again" }
+      : { id: Ids.pause, title: "Pause listing", description: "Hide me from customers for now" },
+    { id: Ids.remove, title: "Remove listing" },
+    { id: Ids.register, title: "Add another business" },
+  ];
+  if (ownsSeveral) rows.push({ id: Ids.switchBusiness, title: "Switch business", description: "Manage one of your other listings" });
+  return {
+    kind: "list",
+    body: `*${b.name}*\n${b.verification === "verified" ? "✅ Verified" : "Not yet verified"} · ${b.status === "paused" ? "Paused" : "Live"}\n\nWhat would you like to do?`,
+    button: "Options",
+    sections: [{ title: "Your listing", rows }],
+  };
+}
+
+export function chooseBusiness(businesses: { id: string; name: string; status: string }[]): OutboundMessage {
+  return {
+    kind: "list",
+    body: "Which business would you like to manage?",
+    button: "Choose",
+    sections: [
+      {
+        title: "Your businesses",
+        rows: businesses.map((b) => ({ id: Ids.selectBusiness(b.id), title: b.name, description: b.status === "paused" ? "Paused" : "Live" })),
+      },
+    ],
+  };
+}
+
+export function editConfirmCategories(names: string[]): OutboundMessage {
   return {
     kind: "buttons",
-    body: `*${b.name}*\n${b.verification === "verified" ? "✅ Verified" : "Not yet verified"} · ${b.status === "paused" ? "Paused" : "Live"}\n\nWhat would you like to do?`,
+    body: `I'll list you under:\n• ${names.join("\n• ")}\n\nSave this?`,
     buttons: [
-      { id: Ids.summary, title: "My summary" },
-      b.status === "paused" ? { id: Ids.resume, title: "Resume listing" } : { id: Ids.pause, title: "Pause listing" },
-      { id: Ids.remove, title: "Remove listing" },
+      { id: Ids.editSave, title: "Save" },
+      { id: Ids.editWhat, title: "Change it" },
     ],
+  };
+}
+
+export function listingUpdated(name: string): OutboundMessage {
+  return { kind: "text", text: `Done, *${name}* is updated. Type *menu* for your options.` };
+}
+
+export function weeklySummary(brand: string, name: string, shown: number, intros: number): OutboundMessage {
+  return {
+    kind: "text",
+    text:
+      `📊 *Your week on ${brand}*\n*${name}*\n` +
+      `• Shown in ${shown} search${shown === 1 ? "" : "es"}\n` +
+      `• ${intros} customer${intros === 1 ? "" : "s"} connected with you\n\n` +
+      "Reply quickly to customers to show higher in results. Type *menu* to update your listing.",
   };
 }
 

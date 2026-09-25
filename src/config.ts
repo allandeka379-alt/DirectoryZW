@@ -20,6 +20,8 @@ const EnvSchema = z.object({
   BUSINESS_TERMS_URL: optionalString,
   DATABASE_URL: optionalString,
   PGLITE_DIR: z.string().default("./.data/pglite"),
+  UPLOADS_DIR: z.string().default("./.data/uploads"),
+  PUBLIC_BASE_URL: optionalString,
   SEED_SAMPLE_DATA: flag(false),
   ANTHROPIC_API_KEY: optionalString,
   CLAUDE_MODEL: z.string().default("claude-opus-5"),
@@ -37,6 +39,7 @@ const EnvSchema = z.object({
   TEMPLATE_FOLLOW_UP: z.string().default("follow_up"),
   TEMPLATE_ASK_AROUND: z.string().default("ask_around"),
   TEMPLATE_ASK_AROUND_REPLY: z.string().default("ask_around_reply"),
+  TEMPLATE_WEEKLY_SUMMARY: z.string().default("weekly_summary"),
   OPS_TOKEN: optionalString,
   FOLLOW_UP_DELAY_HOURS: z.coerce.number().positive().default(72),
   MIN_VERIFIED_RESULTS: z.coerce.number().int().min(0).default(3),
@@ -53,6 +56,10 @@ export interface Config {
   businessTermsUrl?: string;
   databaseUrl?: string;
   pgliteDir: string;
+  /** Where field photos are stored (local disk for now). */
+  uploadsDir: string;
+  /** Public address of this server, used in field-agent setup links. */
+  publicBaseUrl: string;
   seedSampleData: boolean;
   anthropicApiKey?: string;
   claudeModel: string;
@@ -70,6 +77,7 @@ export interface Config {
       followUp: string;
       askAround: string;
       askAroundReply: string;
+      weeklySummary: string;
     };
   };
   opsToken?: string;
@@ -90,6 +98,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     businessTermsUrl: e.BUSINESS_TERMS_URL,
     databaseUrl: e.DATABASE_URL,
     pgliteDir: e.PGLITE_DIR,
+    uploadsDir: e.UPLOADS_DIR,
+    publicBaseUrl: (e.PUBLIC_BASE_URL ?? `http://localhost:${e.PORT}`).replace(/\/+$/, ""),
     seedSampleData: e.SEED_SAMPLE_DATA,
     anthropicApiKey: e.ANTHROPIC_API_KEY,
     claudeModel: e.CLAUDE_MODEL,
@@ -110,6 +120,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         followUp: e.TEMPLATE_FOLLOW_UP,
         askAround: e.TEMPLATE_ASK_AROUND,
         askAroundReply: e.TEMPLATE_ASK_AROUND_REPLY,
+        weeklySummary: e.TEMPLATE_WEEKLY_SUMMARY,
       },
     },
     opsToken: e.OPS_TOKEN,

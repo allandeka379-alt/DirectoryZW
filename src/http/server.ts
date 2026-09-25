@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import type { App } from "../app.js";
 import { updateMessageStatus } from "../conversation/store.js";
 import { parseWebhook, verifySignature } from "../whatsapp/webhook.js";
+import { registerField } from "./field.js";
 import { registerOps } from "./ops.js";
 import { registerSimulator } from "./simulator.js";
 
@@ -64,4 +65,5 @@ export function registerRoutes(server: FastifyInstance, app: App): void {
 
   if (app.simulator) registerSimulator(server, app, app.simulator);
   registerOps(server, app);
+  registerField(server, app);
 }

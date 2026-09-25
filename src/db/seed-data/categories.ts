@@ -21,7 +21,7 @@ export const categories: CategorySeed[] = [
   { slug: "phones", name: "Phones and tablets", group: "Electronics and appliances", synonyms: ["phone", "smartphone", "cellphone", "mobile phone", "iphone", "galaxy", "tablet", "ipad", "itel", "tecno", "infinix"] },
   { slug: "computers", name: "Laptops and computers", group: "Electronics and appliances", synonyms: ["laptop", "computer", "desktop", "pc", "printer", "monitor", "macbook"] },
   { slug: "appliances", name: "Home appliances", group: "Electronics and appliances", synonyms: ["fridge", "refrigerator", "freezer", "stove", "cooker", "microwave", "washing machine", "kettle", "blender", "air conditioner", "aircon"] },
-  { slug: "electronics_repair", name: "Phone and electronics repairs", group: "Electronics and appliances", synonyms: ["phone repair", "cracked screen", "screen replacement", "laptop repair", "tv repair", "fix my phone"] },
+  { slug: "electronics_repair", name: "Phone and electronics repairs", group: "Electronics and appliances", synonyms: ["phone repair", "repair phones", "cracked screen", "screen replacement", "laptop repair", "repair laptops", "tv repair", "fix my phone", "fix phones"] },
   { slug: "appliance_repair", name: "Appliance repairs", group: "Electronics and appliances", synonyms: ["fridge repair", "washing machine repair", "stove repair", "regas", "appliance repair"] },
   // Energy
   { slug: "solar", name: "Solar systems and installers", group: "Energy", synonyms: ["solar", "solar panel", "inverter", "lithium battery", "solar installation", "solar geyser", "solar pump", "solar system"] },

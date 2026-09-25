@@ -34,6 +34,11 @@ export interface NewBusiness {
   verifiedBy?: string;
   ownerContactId?: string | null;
   optedIn?: boolean;
+  /** Field registrations: the agent, the app's idempotency key, GPS accuracy and the checklist. */
+  registeredBy?: string | null;
+  clientRef?: string | null;
+  gpsAccuracyM?: number | null;
+  checks?: Record<string, boolean>;
 }
 
 export async function createBusiness(db: Db, b: NewBusiness): Promise<string> {
@@ -41,8 +46,8 @@ export async function createBusiness(db: Db, b: NewBusiness): Promise<string> {
     const row = await one<{ id: string }>(
       tx,
       `INSERT INTO businesses (name, description, keywords, phone, area_id, lat, lng, verification, verified_at,
-         verified_by, source, owner_contact_id, opted_in_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+         verified_by, source, owner_contact_id, opted_in_at, registered_by, client_ref, gps_accuracy_m, checks)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
       [
         b.name.trim(),
         (b.description ?? "").trim(),
@@ -57,6 +62,10 @@ export async function createBusiness(db: Db, b: NewBusiness): Promise<string> {
         b.source,
         b.ownerContactId ?? null,
         b.optedIn ? new Date() : null,
+        b.registeredBy ?? null,
+        b.clientRef ?? null,
+        b.gpsAccuracyM ?? null,
+        JSON.stringify(b.checks ?? {}),
       ],
     );
     for (const slug of new Set(b.categories)) {
@@ -110,6 +119,34 @@ export async function adjustResponseScore(db: Db, id: string, delta: number): Pr
     "UPDATE businesses SET response_score = LEAST(1, GREATEST(0, response_score + $2)), updated_at = now() WHERE id = $1",
     [id, delta],
   );
+}
+
+/** Replace what a business says it sells and the categories it is listed under. */
+export async function updateBusinessOffer(
+  db: Db,
+  id: string,
+  offer: { description: string; keywords: string; categories: string[] },
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.query("UPDATE businesses SET description = $2, keywords = $3, updated_at = now() WHERE id = $1", [
+      id,
+      offer.description,
+      offer.keywords,
+    ]);
+    await tx.query("DELETE FROM business_categories WHERE business_id = $1", [id]);
+    for (const slug of new Set(offer.categories)) {
+      await tx.query("INSERT INTO business_categories (business_id, category_slug) VALUES ($1, $2)", [id, slug]);
+    }
+  });
+}
+
+export async function updateBusinessLocation(db: Db, id: string, loc: { areaId: number | null; lat: number; lng: number }): Promise<void> {
+  await db.query("UPDATE businesses SET area_id = $2, lat = $3, lng = $4, updated_at = now() WHERE id = $1", [
+    id,
+    loc.areaId,
+    loc.lat,
+    loc.lng,
+  ]);
 }
 
 export async function categoriesOf(db: Db, businessId: string): Promise<string[]> {

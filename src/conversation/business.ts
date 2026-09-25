@@ -6,6 +6,9 @@ import {
   createBusiness,
   getBusiness,
   setBusinessStatus,
+  updateBusinessLocation,
+  updateBusinessOffer,
+  type Business,
 } from "../directory/businesses.js";
 import type { Area } from "../directory/gazetteer.js";
 import { normalizeText, normalizeZimPhone } from "../text.js";
@@ -14,7 +17,17 @@ import * as copy from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
 import { getContactById, getRequest, setConsent } from "./store.js";
 
-type Stage = "reg_name" | "reg_what" | "reg_confirm" | "reg_area" | "reg_phone" | "reg_phone_other" | "reg_consent";
+type Stage =
+  | "reg_name"
+  | "reg_what"
+  | "reg_confirm"
+  | "reg_area"
+  | "reg_phone"
+  | "reg_phone_other"
+  | "reg_consent"
+  | "edit_what"
+  | "edit_confirm"
+  | "edit_area";
 
 export interface BusinessState {
   stage?: Stage;
@@ -28,12 +41,14 @@ export interface BusinessState {
     lng?: number;
     phone?: string;
   };
+  /** Which listing the owner is managing, when they have more than one. */
+  selectedBusinessId?: string;
 }
 
 type T = Turn<BusinessState>;
 
 const REGISTER_WORDS = ["register", "list my business", "join", "sign up", "signup", "list", "add my business"];
-const YES = ["yes", "y", "yebo", "ehe", "hongu", "correct", "i agree", "agree", "ok", "okay"];
+const YES = ["yes", "y", "yebo", "ehe", "hongu", "correct", "i agree", "agree", "ok", "okay", "save"];
 
 export async function handleBusinessTurn(t: T): Promise<void> {
   const { svc, contact, inbound, state } = t;
@@ -43,22 +58,23 @@ export async function handleBusinessTurn(t: T): Promise<void> {
 
   const c = inbound.content;
   if (c.type === "button_reply" || c.type === "list_reply") return onAction(t, c.id);
-  if (c.type === "location" && state.stage === "reg_area") {
+  if (c.type === "location" && (state.stage === "reg_area" || state.stage === "edit_area")) {
     return setArea(t, svc.gazetteer.nearest(c.lat, c.lng), c.lat, c.lng);
   }
   if (c.type === "text") {
     const cmd = normalizeText(c.text);
     if (state.stage && ["cancel", "stop"].includes(cmd)) {
+      const wasEditing = state.stage.startsWith("edit_");
       state.stage = undefined;
       state.draft = undefined;
-      return t.reply(copy.regCancelled());
+      return wasEditing ? showMenu(t) : t.reply(copy.regCancelled());
     }
-    if (state.stage) return continueRegistration(t, c.text);
+    if (state.stage) return continueStage(t, c.text);
     if (REGISTER_WORDS.includes(cmd)) return startRegistration(t);
-    if (["summary", "stats"].includes(cmd)) return sendSummary(t);
-    if (cmd === "pause") return setPaused(t, true);
-    if (cmd === "resume") return setPaused(t, false);
-    if (cmd === "remove") return t.reply(copy.bizConfirmRemove());
+    if (["summary", "stats"].includes(cmd)) return withBusiness(t, (b) => sendSummary(t, b));
+    if (cmd === "pause") return withBusiness(t, (b) => setPaused(t, b, true));
+    if (cmd === "resume") return withBusiness(t, (b) => setPaused(t, b, false));
+    if (cmd === "remove") return withBusiness(t, () => t.reply(copy.bizConfirmRemove()));
   }
   if (state.stage) return askCurrent(t);
   return showMenu(t);
@@ -93,16 +109,30 @@ async function onAction(t: T, id: string): Promise<void> {
         default:
           return showMenu(t);
       }
+    case "bedit":
+      if (args[0] === "save") return saveOffer(t);
+      return withBusiness(t, async () => {
+        state.stage = args[0] === "area" ? "edit_area" : "edit_what";
+        state.draft = {};
+        return t.reply(state.stage === "edit_area" ? copy.regAskArea() : copy.regAskWhat());
+      });
+    case "bsel": {
+      const owned = await businessesOwnedBy(t.svc.db, contact.id);
+      if (owned.some((b) => b.id === args[0])) state.selectedBusinessId = args[0];
+      return showMenu(t);
+    }
+    case "bswitch":
+      return t.reply(copy.chooseBusiness(await businessesOwnedBy(t.svc.db, contact.id)));
     case "bhow":
       return t.reply(copy.bizHowItWorks(t.svc.config.brandName));
     case "bsum":
-      return sendSummary(t);
+      return withBusiness(t, (b) => sendSummary(t, b));
     case "bpause":
-      return setPaused(t, true);
+      return withBusiness(t, (b) => setPaused(t, b, true));
     case "bresume":
-      return setPaused(t, false);
+      return withBusiness(t, (b) => setPaused(t, b, false));
     case "bremove":
-      return args[0] === "yes" ? removeListing(t) : t.reply(copy.bizConfirmRemove());
+      return withBusiness(t, (b) => (args[0] === "yes" ? removeListing(t, b) : t.reply(copy.bizConfirmRemove())));
     case "aa":
       return askAroundResponse(t, args[0] ?? "", args[1] === "yes");
     default:
@@ -110,14 +140,23 @@ async function onAction(t: T, id: string): Promise<void> {
   }
 }
 
-async function showMenu(t: T): Promise<void> {
+/** The listing this owner is managing. Asks which one when they have several and haven't picked. */
+async function withBusiness(t: T, fn: (b: Business) => Promise<void>): Promise<void> {
   const owned = await businessesOwnedBy(t.svc.db, t.contact.id);
-  const first = owned[0];
-  if (!first) return t.reply(copy.bizWelcome(t.svc.config.brandName));
-  return t.reply(copy.bizMenu(first));
+  if (!owned.length) return t.reply(copy.bizNoListing());
+  const business = owned.find((b) => b.id === t.state.selectedBusinessId) ?? (owned.length === 1 ? owned[0] : undefined);
+  if (!business) return t.reply(copy.chooseBusiness(owned));
+  t.state.selectedBusinessId = business.id;
+  return fn(business);
 }
 
-// ---------- Self-registration ----------
+async function showMenu(t: T): Promise<void> {
+  const owned = await businessesOwnedBy(t.svc.db, t.contact.id);
+  if (!owned.length) return t.reply(copy.bizWelcome(t.svc.config.brandName));
+  return withBusiness(t, (b) => t.reply(copy.bizMenu(b, owned.length > 1)));
+}
+
+// ---------- Registration and edits ----------
 
 async function startRegistration(t: T): Promise<void> {
   t.state.stage = "reg_name";
@@ -125,7 +164,7 @@ async function startRegistration(t: T): Promise<void> {
   return t.reply(copy.regAskName());
 }
 
-async function continueRegistration(t: T, text: string): Promise<void> {
+async function continueStage(t: T, text: string): Promise<void> {
   const { svc, state } = t;
   const draft = (state.draft ??= {});
   const value = text.trim();
@@ -135,14 +174,19 @@ async function continueRegistration(t: T, text: string): Promise<void> {
       draft.name = value.slice(0, 80);
       state.stage = "reg_what";
       return t.reply(copy.regAskWhat());
-    case "reg_what": {
+    case "reg_what":
+    case "edit_what": {
       const result = await svc.interpreter.classifyBusiness(value, { taxonomy: svc.taxonomy });
       if (!result.category_slugs.length) return t.reply(copy.regNoCategory());
       draft.description = value.slice(0, 300);
       draft.categories = result.category_slugs;
       draft.keywords = result.keywords;
-      state.stage = "reg_confirm";
       const names = result.category_slugs.map((s) => svc.taxonomy.get(s)?.name ?? s);
+      if (state.stage === "edit_what") {
+        state.stage = "edit_confirm";
+        return t.reply(copy.editConfirmCategories(names));
+      }
+      state.stage = "reg_confirm";
       return t.reply(copy.regConfirmCategories(names));
     }
     case "reg_confirm":
@@ -152,7 +196,12 @@ async function continueRegistration(t: T, text: string): Promise<void> {
       }
       state.stage = "reg_what";
       return t.reply(copy.regAskWhat());
-    case "reg_area": {
+    case "edit_confirm":
+      if (YES.includes(normalizeText(value))) return saveOffer(t);
+      state.stage = "edit_what";
+      return t.reply(copy.regAskWhat());
+    case "reg_area":
+    case "edit_area": {
       const area = svc.gazetteer.match(value);
       if (!area) return t.reply(copy.regUnknownArea());
       return setArea(t, area, area.lat, area.lng);
@@ -172,12 +221,35 @@ async function continueRegistration(t: T, text: string): Promise<void> {
 }
 
 async function setArea(t: T, area: Area | undefined, lat: number, lng: number): Promise<void> {
+  if (t.state.stage === "edit_area") {
+    return withBusiness(t, async (b) => {
+      await updateBusinessLocation(t.svc.db, b.id, { areaId: area?.id ?? null, lat, lng });
+      t.state.stage = undefined;
+      t.state.draft = undefined;
+      return t.reply(copy.listingUpdated(b.name));
+    });
+  }
   const draft = (t.state.draft ??= {});
   draft.areaId = area?.id;
   draft.lat = lat;
   draft.lng = lng;
   t.state.stage = "reg_phone";
   return t.reply(copy.regAskPhone());
+}
+
+async function saveOffer(t: T): Promise<void> {
+  const d = t.state.draft;
+  if (t.state.stage !== "edit_confirm" || !d?.categories?.length) return showMenu(t);
+  return withBusiness(t, async (b) => {
+    await updateBusinessOffer(t.svc.db, b.id, {
+      description: d.description ?? b.description,
+      keywords: d.keywords ?? b.keywords,
+      categories: d.categories!,
+    });
+    t.state.stage = undefined;
+    t.state.draft = undefined;
+    return t.reply(copy.listingUpdated(b.name));
+  });
 }
 
 async function setPhone(t: T, phone: string): Promise<void> {
@@ -190,7 +262,7 @@ async function finishRegistration(t: T): Promise<void> {
   const { svc, state, contact } = t;
   const d = state.draft;
   if (!d?.name || !d.categories?.length || d.lat == null || d.lng == null || !d.phone) return askCurrent(t);
-  await createBusiness(svc.db, {
+  const id = await createBusiness(svc.db, {
     name: d.name,
     description: d.description,
     keywords: d.keywords,
@@ -206,6 +278,7 @@ async function finishRegistration(t: T): Promise<void> {
   await setConsent(svc.db, contact.id);
   state.stage = undefined;
   state.draft = undefined;
+  state.selectedBusinessId = id;
   svc.log.info({ contactId: contact.id, name: d.name }, "Business self-registered");
   return t.reply(copy.regDone(d.name));
 }
@@ -216,10 +289,14 @@ async function askCurrent(t: T): Promise<void> {
     case "reg_name":
       return t.reply(copy.regAskName());
     case "reg_what":
+    case "edit_what":
       return t.reply(copy.regAskWhat());
     case "reg_confirm":
       return t.reply(copy.regConfirmCategories(names));
+    case "edit_confirm":
+      return t.reply(copy.editConfirmCategories(names));
     case "reg_area":
+    case "edit_area":
       return t.reply(copy.regAskArea());
     case "reg_phone":
       return t.reply(copy.regAskPhone());
@@ -234,11 +311,8 @@ async function askCurrent(t: T): Promise<void> {
 
 // ---------- Listing management ----------
 
-async function sendSummary(t: T): Promise<void> {
-  const { svc, contact } = t;
-  const owned = await businessesOwnedBy(svc.db, contact.id);
-  const b = owned[0];
-  if (!b) return t.reply(copy.bizNoListing());
+async function sendSummary(t: T, b: Business): Promise<void> {
+  const { svc } = t;
   const since = new Date(svc.now().getTime() - 7 * 24 * 3600_000);
   const stats = await one<{ shown: number; intros: number }>(
     svc.db,
@@ -252,17 +326,14 @@ async function sendSummary(t: T): Promise<void> {
   return t.reply(copy.bizSummary(b.name, stats?.shown ?? 0, stats?.intros ?? 0, avg, b.rating_count));
 }
 
-async function setPaused(t: T, paused: boolean): Promise<void> {
-  const owned = await businessesOwnedBy(t.svc.db, t.contact.id);
-  if (!owned.length) return t.reply(copy.bizNoListing());
-  for (const b of owned) await setBusinessStatus(t.svc.db, b.id, paused ? "paused" : "active");
+async function setPaused(t: T, b: Business, paused: boolean): Promise<void> {
+  await setBusinessStatus(t.svc.db, b.id, paused ? "paused" : "active");
   return t.reply(paused ? copy.bizPaused() : copy.bizResumed());
 }
 
-async function removeListing(t: T): Promise<void> {
-  const owned = await businessesOwnedBy(t.svc.db, t.contact.id);
-  if (!owned.length) return t.reply(copy.bizNoListing());
-  for (const b of owned) await setBusinessStatus(t.svc.db, b.id, "removed");
+async function removeListing(t: T, b: Business): Promise<void> {
+  await setBusinessStatus(t.svc.db, b.id, "removed");
+  t.state.selectedBusinessId = undefined;
   return t.reply(copy.bizRemoved());
 }
 

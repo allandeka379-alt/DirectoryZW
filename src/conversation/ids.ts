@@ -27,6 +27,11 @@ export const Ids = {
   removeConfirm: "bremove:yes",
   askAroundYes: (askId: string) => `aa:${askId}:yes`,
   askAroundNo: (askId: string) => `aa:${askId}:no`,
+  switchBusiness: "bswitch",
+  selectBusiness: (businessId: string) => `bsel:${businessId}`,
+  editWhat: "bedit:what",
+  editArea: "bedit:area",
+  editSave: "bedit:save",
 } as const;
 
 export function parseAction(id: string): { action: string; args: string[] } {

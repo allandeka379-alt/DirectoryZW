@@ -3,6 +3,7 @@ import { createApp, type App } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { openDb } from "../src/db/client.js";
 import { silentLogger } from "../src/logger.js";
+import { MemoryStore } from "../src/storage.js";
 import type { OutboundMessage } from "../src/whatsapp/outbound.js";
 import { SimulatorTransport, type SimulatedMessage } from "../src/whatsapp/transport.js";
 import type { Channel, InboundContent } from "../src/whatsapp/types.js";
@@ -11,6 +12,7 @@ export const CUSTOMER = "263771111111";
 
 export interface TestApp extends App {
   sim: SimulatorTransport;
+  files: MemoryStore;
   clock: { now: Date };
   send(channel: Channel, from: string, content: InboundContent, name?: string): Promise<void>;
   /** Customer types text. */
@@ -23,15 +25,21 @@ export interface TestApp extends App {
   phoneOf(businessName: string): Promise<string>;
 }
 
-/** A full app on an in-memory database, the simulator transport, the keyword interpreter and a fixed clock. */
+/**
+ * A full app on an in-memory database, the simulator transport, the keyword interpreter,
+ * in-memory file storage and a controllable clock. The clock starts at the real time because
+ * the database stamps rows with its own now().
+ */
 export async function testApp(env: Record<string, string> = {}): Promise<TestApp> {
   const config = loadConfig({ NODE_ENV: "test", SEED_SAMPLE_DATA: "true", BRAND_NAME: "TestDir", ...env });
   const db = await openDb({});
   const sim = new SimulatorTransport();
-  const clock = { now: new Date("2027-03-01T08:00:00Z") };
+  const files = new MemoryStore();
+  const clock = { now: new Date() };
   const app = await createApp(config, {
     db,
     transport: sim,
+    store: files,
     interpreter: new KeywordInterpreter(),
     log: silentLogger,
     now: () => clock.now,
@@ -78,6 +86,7 @@ export async function testApp(env: Record<string, string> = {}): Promise<TestApp
 
   return Object.assign(app, {
     sim,
+    files,
     clock,
     send,
     say: (text: string, from = CUSTOMER) => send("customer", from, { type: "text", text }, "Tendai Moyo"),

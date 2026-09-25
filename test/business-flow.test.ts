@@ -72,6 +72,56 @@ describe("business number", () => {
     expect(b.last()).toContain("Registration cancelled");
   });
 
+  it("manages several listings, and edits what a business sells and where it is", async () => {
+    const owner = "263779999993";
+    const b = as(owner);
+    const register = async (name: string, what: string, where: string) => {
+      await b.say(name);
+      await b.say(what);
+      await b.tap("Yes, that's right");
+      await b.say(where);
+      await b.tap("This number");
+      await b.tap("I agree");
+    };
+    await b.say("register");
+    await register("Chipo Cakes", "We bake birthday and wedding cakes", "Avondale");
+    await b.say("menu");
+    await b.tap("Add another business");
+    await register("Chipo Catering", "Catering for weddings and parties", "Belvedere");
+    expect(b.last()).toContain("You're listed");
+
+    await b.say("menu");
+    expect(b.last()).toContain("Chipo Catering");
+    await b.tap("Switch business");
+    await b.tap("Chipo Cakes");
+    expect(b.last()).toContain("Chipo Cakes");
+
+    await b.tap("Update what I sell");
+    await b.say("We repair phones and laptops");
+    await b.tap("Save");
+    expect(b.last()).toContain("Chipo Cakes* is updated");
+    const [cakes] = await app.db.query<{ id: string; area_id: number }>("SELECT id, area_id FROM businesses WHERE name = 'Chipo Cakes'");
+    const cats = await app.db.query<{ category_slug: string }>(
+      "SELECT category_slug FROM business_categories WHERE business_id = $1",
+      [cakes!.id],
+    );
+    expect(cats.map((c) => c.category_slug)).toContain("electronics_repair");
+    expect(cats.map((c) => c.category_slug)).not.toContain("cakes");
+
+    await b.say("menu");
+    await b.tap("Update location");
+    await b.say("Eastlea");
+    const [moved] = await app.db.query<{ area_id: number }>("SELECT area_id FROM businesses WHERE id = $1", [cakes!.id]);
+    expect(moved!.area_id).toBe(app.services.gazetteer.match("Eastlea")!.id);
+
+    await b.say("pause");
+    const statuses = await app.db.query("SELECT name, status FROM businesses WHERE name LIKE 'Chipo%' ORDER BY name");
+    expect(statuses).toEqual([
+      { name: "Chipo Cakes", status: "paused" },
+      { name: "Chipo Catering", status: "active" },
+    ]);
+  });
+
   it("recognises a business a field agent registered when its number writes in", async () => {
     const phone = await app.phoneOf("PowerLine Electricians (sample)");
     const b = as(phone);

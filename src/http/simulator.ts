@@ -52,7 +52,8 @@ export function registerSimulator(server: FastifyInstance, app: App, sim: Simula
     return { ok: true };
   });
 
-  server.get("/simulator/api/messages", async (req, reply) => {
+  // Polled every 1.5 seconds by each chat pane, so keep it out of the request log.
+  server.get("/simulator/api/messages", { logLevel: "warn" }, async (req, reply) => {
     const q = req.query as { channel?: string; to?: string; after?: string };
     if (q.channel !== "customer" && q.channel !== "business") return reply.code(400).send({ error: "channel" });
     return sim.since(q.channel, String(q.to ?? ""), Number(q.after) || 0);

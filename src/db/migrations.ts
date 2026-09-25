@@ -164,4 +164,55 @@ CREATE TABLE jobs (
 CREATE INDEX jobs_due_idx ON jobs (status, run_at);
 `,
   },
+  {
+    id: "002_field_teams",
+    sql: /* sql */ `
+CREATE TABLE agents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  phone text,
+  city text,
+  -- sha256 of the agent's access token; the token itself is only ever shown once, in the setup link
+  token_hash text NOT NULL UNIQUE,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_seen_at timestamptz
+);
+
+ALTER TABLE businesses
+  ADD COLUMN registered_by uuid REFERENCES agents(id) ON DELETE SET NULL,
+  ADD COLUMN client_ref text,
+  ADD COLUMN gps_accuracy_m double precision,
+  -- field checklist, e.g. {"premisesSeen": true, "idChecked": true}; ID copies are never stored
+  ADD COLUMN checks jsonb NOT NULL DEFAULT '{}',
+  ADD COLUMN audit_status text CHECK (audit_status IN ('passed', 'failed'));
+CREATE UNIQUE INDEX businesses_client_ref_idx ON businesses (client_ref) WHERE client_ref IS NOT NULL;
+CREATE INDEX businesses_registered_by_idx ON businesses (registered_by, created_at);
+
+CREATE TABLE business_photos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  kind text NOT NULL CHECK (kind IN ('shopfront', 'inside', 'price_list')),
+  storage_key text NOT NULL,
+  content_type text NOT NULL,
+  bytes integer NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX business_photos_business_idx ON business_photos (business_id);
+
+-- Call-back checks on field registrations.
+CREATE TABLE audits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  agent_id uuid REFERENCES agents(id) ON DELETE SET NULL,
+  outcome text NOT NULL
+    CHECK (outcome IN ('confirmed', 'details_wrong', 'wrong_number', 'not_a_business', 'refused')),
+  note text,
+  audited_by text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX audits_agent_idx ON audits (agent_id, created_at);
+CREATE INDEX audits_business_idx ON audits (business_id);
+`,
+  },
 ];

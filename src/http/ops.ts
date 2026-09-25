@@ -3,8 +3,19 @@ import { z } from "zod";
 import type { App } from "../app.js";
 import * as copy from "../conversation/copy.js";
 import { getContactById, loadState, saveState } from "../conversation/store.js";
-import { createBusiness, getBusiness, isUuid, setBusinessStatus, verifyBusiness } from "../directory/businesses.js";
+import { one } from "../db/client.js";
+import {
+  categoriesOf,
+  createBusiness,
+  getBusiness,
+  isUuid,
+  setBusinessStatus,
+  verifyBusiness,
+} from "../directory/businesses.js";
+import { agentStats, createAgent, resetAgentToken, setAgentActive, setupUrl } from "../field/agents.js";
+import { AUDIT_OUTCOMES, auditQueue, recordAudit } from "../field/audits.js";
 import { normalizeZimPhone } from "../text.js";
+import { serveFile } from "./static.js";
 
 const FieldRegistration = z.object({
   name: z.string().min(2).max(80),
@@ -22,11 +33,17 @@ const FieldRegistration = z.object({
   agent: z.string().min(1).max(60),
 });
 
+const Id = z.object({ id: z.string().refine(isUuid, "Not a valid ID") });
+
 /**
- * JSON API for the ops team and, later, the field app. Protected by OPS_TOKEN
- * (open in development when no token is set).
+ * JSON API for the ops console, protected by OPS_TOKEN (open in development when no
+ * token is set). The console page itself is public; it asks for the token.
  */
 export function registerOps(server: FastifyInstance, app: App): void {
+  serveFile(server, "/ops", "ops/index.html");
+  serveFile(server, "/ops/app.js", "ops/app.js");
+  serveFile(server, "/ops/app.css", "ops/app.css");
+
   server.register(
     async (ops) => {
       ops.addHook("onRequest", async (req, reply) => {
@@ -38,19 +55,22 @@ export function registerOps(server: FastifyInstance, app: App): void {
         if (req.headers.authorization !== `Bearer ${token}`) return reply.code(401).send({ error: "Unauthorized" });
       });
 
-      ops.get("/summary", async () => {
-        const [row] = await app.db.query(
+      // ----- Overview -----
+
+      ops.get("/summary", async () =>
+        one(
+          app.db,
           `SELECT
              (SELECT count(*)::int FROM businesses WHERE status = 'active' AND verification = 'verified') AS verified_businesses,
              (SELECT count(*)::int FROM businesses WHERE status = 'active' AND verification = 'registered') AS registered_businesses,
              (SELECT count(*)::int FROM requests WHERE created_at > now() - interval '7 days') AS requests_7d,
              (SELECT count(*)::int FROM requests WHERE created_at > now() - interval '7 days' AND status = 'no_results') AS no_results_7d,
              (SELECT count(*)::int FROM introductions WHERE created_at > now() - interval '7 days') AS introductions_7d,
-             (SELECT count(*)::int FROM requests WHERE status = 'handoff') AS open_handoffs,
-             (SELECT count(*)::int FROM reports WHERE status = 'open') AS open_reports`,
-        );
-        return row;
-      });
+             (SELECT count(*)::int FROM sessions WHERE state->>'stage' = 'handoff') AS open_handoffs,
+             (SELECT count(*)::int FROM reports WHERE status = 'open') AS open_reports,
+             (SELECT count(*)::int FROM agents WHERE active) AS active_agents`,
+        ),
+      );
 
       ops.get("/requests", async (req) => {
         const q = req.query as { status?: string; limit?: string };
@@ -78,6 +98,8 @@ export function registerOps(server: FastifyInstance, app: App): void {
         );
       });
 
+      // ----- Handoffs -----
+
       ops.get("/handoffs", async () =>
         app.db.query(
           `SELECT c.id AS contact_id, c.wa_id, c.profile_name, s.updated_at,
@@ -90,18 +112,19 @@ export function registerOps(server: FastifyInstance, app: App): void {
       );
 
       ops.post("/contacts/:id/reply", async (req, reply) => {
-        const { id } = req.params as { id: string };
+        const params = Id.safeParse(req.params);
         const body = z.object({ text: z.string().min(1).max(4096) }).safeParse(req.body);
-        if (!body.success) return reply.code(400).send({ error: body.error.issues });
-        const contact = await getContactById(app.db, id);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a contact ID and some text" });
+        const contact = await getContactById(app.db, params.data.id);
         if (!contact) return reply.code(404).send({ error: "Contact not found" });
         await app.services.messenger.reply(contact, { kind: "text", text: body.data.text });
         return { ok: true };
       });
 
       ops.post("/contacts/:id/release", async (req, reply) => {
-        const { id } = req.params as { id: string };
-        const contact = await getContactById(app.db, id);
+        const params = Id.safeParse(req.params);
+        if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
+        const contact = await getContactById(app.db, params.data.id);
         if (!contact) return reply.code(404).send({ error: "Contact not found" });
         const state = await loadState<Record<string, unknown>>(app.db, contact.id);
         delete state.stage;
@@ -111,6 +134,8 @@ export function registerOps(server: FastifyInstance, app: App): void {
         return { ok: true };
       });
 
+      // ----- Reports -----
+
       ops.get("/reports", async () =>
         app.db.query(
           `SELECT rp.id, rp.created_at, rp.reason, rp.status, b.id AS business_id, b.name AS business, b.verification
@@ -119,7 +144,58 @@ export function registerOps(server: FastifyInstance, app: App): void {
         ),
       );
 
-      // Field-agent registration (the field app will call this).
+      ops.post("/reports/:id/status", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        const body = z.object({ status: z.enum(["open", "reviewed", "actioned"]) }).safeParse(req.body);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a report ID and a status" });
+        const rows = await app.db.query("UPDATE reports SET status = $2 WHERE id = $1 RETURNING id", [params.data.id, body.data.status]);
+        return rows.length ? { ok: true } : reply.code(404).send({ error: "Report not found" });
+      });
+
+      // ----- Businesses -----
+
+      ops.get("/businesses", async (req) => {
+        const q = req.query as { q?: string; verification?: string; status?: string; limit?: string };
+        const limit = Math.min(Number(q.limit) || 50, 200);
+        return app.db.query(
+          `SELECT b.id, b.name, b.phone, b.verification, b.status, b.source, b.audit_status, b.created_at,
+                  a.name AS area, ag.name AS agent
+             FROM businesses b LEFT JOIN areas a ON a.id = b.area_id LEFT JOIN agents ag ON ag.id = b.registered_by
+            WHERE ($1::text IS NULL OR b.name ILIKE '%' || $1 || '%' OR b.phone LIKE '%' || $1 || '%')
+              AND ($2::text IS NULL OR b.verification = $2)
+              AND ($3::text IS NULL OR b.status = $3)
+            ORDER BY b.created_at DESC LIMIT $4`,
+          [q.q?.trim() || null, q.verification || null, q.status || null, limit],
+        );
+      });
+
+      ops.get("/businesses/:id", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
+        const b = await getBusiness(app.db, params.data.id);
+        if (!b) return reply.code(404).send({ error: "Business not found" });
+        const [photos, audits, categories] = await Promise.all([
+          app.db.query("SELECT id, kind, content_type, bytes, created_at FROM business_photos WHERE business_id = $1 ORDER BY created_at", [b.id]),
+          app.db.query("SELECT outcome, note, audited_by, created_at FROM audits WHERE business_id = $1 ORDER BY created_at DESC", [b.id]),
+          categoriesOf(app.db, b.id),
+        ]);
+        return { ...b, area: app.services.gazetteer.get(b.area_id)?.name ?? null, categories, photos, audits };
+      });
+
+      ops.get("/photos/:id", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
+        const photo = await one<{ storage_key: string; content_type: string }>(
+          app.db,
+          "SELECT storage_key, content_type FROM business_photos WHERE id = $1",
+          [params.data.id],
+        );
+        const data = photo ? await app.store.get(photo.storage_key) : undefined;
+        if (!photo || !data) return reply.code(404).send({ error: "Photo not found" });
+        return reply.type(photo.content_type).header("Cache-Control", "private, max-age=3600").send(data);
+      });
+
+      // Manual registration (imports, data fixes). Agents use the field app instead.
       ops.post("/businesses", async (req, reply) => {
         const parsed = FieldRegistration.safeParse(req.body);
         if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
@@ -152,21 +228,80 @@ export function registerOps(server: FastifyInstance, app: App): void {
       });
 
       ops.post("/businesses/:id/verify", async (req, reply) => {
-        const { id } = req.params as { id: string };
+        const params = Id.safeParse(req.params);
         const body = z.object({ agent: z.string().min(1).max(60) }).safeParse(req.body);
-        if (!body.success) return reply.code(400).send({ error: body.error.issues });
-        if (!isUuid(id) || !(await getBusiness(app.db, id))) return reply.code(404).send({ error: "Business not found" });
-        await verifyBusiness(app.db, id, body.data.agent);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a business ID and who verified it" });
+        if (!(await getBusiness(app.db, params.data.id))) return reply.code(404).send({ error: "Business not found" });
+        await verifyBusiness(app.db, params.data.id, body.data.agent);
         return { ok: true };
       });
 
       ops.post("/businesses/:id/status", async (req, reply) => {
-        const { id } = req.params as { id: string };
+        const params = Id.safeParse(req.params);
         const body = z.object({ status: z.enum(["active", "paused", "removed"]) }).safeParse(req.body);
-        if (!body.success) return reply.code(400).send({ error: body.error.issues });
-        if (!isUuid(id) || !(await getBusiness(app.db, id))) return reply.code(404).send({ error: "Business not found" });
-        await setBusinessStatus(app.db, id, body.data.status);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a business ID and a status" });
+        if (!(await getBusiness(app.db, params.data.id))) return reply.code(404).send({ error: "Business not found" });
+        await setBusinessStatus(app.db, params.data.id, body.data.status);
         return { ok: true };
+      });
+
+      // Self-registered businesses waiting for a field visit, oldest first.
+      ops.get("/verification-queue", async () =>
+        app.db.query(
+          `SELECT b.id, b.name, b.phone, b.description, b.created_at, a.name AS area, a.city
+             FROM businesses b LEFT JOIN areas a ON a.id = b.area_id
+            WHERE b.verification = 'registered' AND b.status = 'active' AND b.source = 'self'
+            ORDER BY a.city NULLS LAST, a.name NULLS LAST, b.created_at LIMIT 300`,
+        ),
+      );
+
+      // ----- Field agents -----
+
+      ops.get("/agents", async () => agentStats(app.db));
+
+      ops.post("/agents", async (req, reply) => {
+        const body = z
+          .object({ name: z.string().trim().min(2).max(60), phone: z.string().max(20).optional(), city: z.string().max(40).optional() })
+          .safeParse(req.body);
+        if (!body.success) return reply.code(400).send({ error: body.error.issues });
+        const phone = body.data.phone ? normalizeZimPhone(body.data.phone) : null;
+        const { agent, token } = await createAgent(app.db, { name: body.data.name, phone, city: body.data.city ?? null });
+        return reply.code(201).send({ agent, setupUrl: setupUrl(app.config.publicBaseUrl, token) });
+      });
+
+      ops.post("/agents/:id/token", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
+        const token = await resetAgentToken(app.db, params.data.id);
+        if (!token) return reply.code(404).send({ error: "Agent not found" });
+        return { setupUrl: setupUrl(app.config.publicBaseUrl, token) };
+      });
+
+      ops.post("/agents/:id/active", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        const body = z.object({ active: z.boolean() }).safeParse(req.body);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give an agent ID and active true/false" });
+        return (await setAgentActive(app.db, params.data.id, body.data.active)) ? { ok: true } : reply.code(404).send({ error: "Agent not found" });
+      });
+
+      // ----- Call-back audits -----
+
+      ops.get("/audits/queue", async (req) => {
+        const q = req.query as { days?: string; percent?: string; limit?: string };
+        return auditQueue(app.db, {
+          days: Math.min(Number(q.days) || 14, 90),
+          percent: Math.min(Math.max(Number(q.percent) || 10, 1), 100),
+          limit: Math.min(Number(q.limit) || 100, 500),
+        });
+      });
+
+      ops.post("/businesses/:id/audit", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        const body = z
+          .object({ outcome: z.enum(AUDIT_OUTCOMES), note: z.string().max(500).optional(), by: z.string().min(1).max(60) })
+          .safeParse(req.body);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a business ID, an outcome and who called" });
+        return (await recordAudit(app.db, params.data.id, body.data)) ? { ok: true } : reply.code(404).send({ error: "Business not found" });
       });
     },
     { prefix: "/ops/api" },

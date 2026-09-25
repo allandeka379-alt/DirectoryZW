@@ -5,7 +5,7 @@ import type { Interpreter } from "./ai/types.js";
 import type { Config } from "./config.js";
 import type { Services } from "./conversation/context.js";
 import { ConversationEngine } from "./conversation/engine.js";
-import { jobHandlers } from "./conversation/followups.js";
+import { jobHandlers, scheduleRecurringJobs } from "./conversation/followups.js";
 import { Messenger } from "./conversation/messenger.js";
 import { openDb, type Db } from "./db/client.js";
 import { migrate } from "./db/migrate.js";
@@ -14,6 +14,7 @@ import { Gazetteer } from "./directory/gazetteer.js";
 import { Taxonomy } from "./directory/taxonomy.js";
 import { JobQueue } from "./jobs/queue.js";
 import { consoleLogger, type Logger } from "./logger.js";
+import { DiskStore, type FileStore } from "./storage.js";
 import { CloudApiTransport, SimulatorTransport, type Transport } from "./whatsapp/transport.js";
 
 export interface App {
@@ -24,6 +25,8 @@ export interface App {
   transport: Transport;
   /** Present when messages stay local instead of going to Meta. */
   simulator?: SimulatorTransport;
+  /** Field photos and other uploads. */
+  store: FileStore;
   runJobs(): Promise<number>;
   close(): Promise<void>;
 }
@@ -31,6 +34,7 @@ export interface App {
 export interface AppOptions {
   db?: Db;
   transport?: Transport;
+  store?: FileStore;
   interpreter?: Interpreter;
   log?: Logger;
   now?: () => Date;
@@ -75,6 +79,7 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
   const services: Services = { db, config, taxonomy, gazetteer, interpreter, messenger, jobs, log, now };
   const engine = new ConversationEngine(services);
   const handlers = jobHandlers(services);
+  await scheduleRecurringJobs(services);
 
   return {
     config,
@@ -83,6 +88,7 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     engine,
     transport,
     simulator: transport instanceof SimulatorTransport ? transport : undefined,
+    store: opts.store ?? new DiskStore(config.uploadsDir),
     runJobs: () => jobs.runDue(handlers),
     close: async () => {
       await engine.idle();

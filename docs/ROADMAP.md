@@ -15,30 +15,35 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
 - [x] Ops API: summary, supply gaps, handoffs, replies, reports, field registration, verification
 - [x] Tests (40) and a production build
 
-## Milestone 2: field and ops tools
+## Milestone 2: field and ops tools (done, except reading price lists from photos)
 
-- [ ] Field app: offline mobile web app with GPS pin, shop photos, ID/registration check, recorded consent, duplicate check (uses `POST /ops/api/businesses`)
-- [ ] Field quality control: random call-back list, GPS and photo checks, per-agent dashboard
-- [ ] Ops console UI on top of the ops API: handoff inbox, supply-gaps board, reports queue, verification queue
-- [ ] Weekly business summaries ("shown in N searches, M customers connected")
-- [ ] Business editing on WhatsApp: update description, categories, area; price list from a photo (Claude vision)
-- [ ] Several businesses per owner number
+- [x] Field app: works offline and installs to the home screen. It captures a GPS pin with accuracy, up to 3 business photos, the premises and ID checklist (no ID copies stored) and the owner's consent. It checks for duplicates, queues registrations and uploads them when there's signal.
+- [x] Agent accounts with one-time setup links; new link or deactivate from the ops console
+- [x] Field quality control:
+  - call-back sample per agent, with outcomes; a failed call-back hides the listing
+  - per-agent stats: registrations, verified share, call-back pass rate, businesses that later got customers
+- [x] Ops console: overview, handoff inbox (reply, hand back), supply gaps, reports, verification queue, call-backs, agents, business browser with photos
+- [x] Weekly business summaries every Monday 08:00, only to businesses with activity
+- [x] Business number: several listings per owner, update what you sell (re-categorised) and your location
+- [x] Tests (53)
+- [ ] Price list from a photo (Claude vision). Needs WhatsApp media download, so it moves to Milestone 3.
 
 ## Milestone 3: answer more requests
 
 - [ ] "Found online" results from web search when nothing is listed, labelled unverified, stored only long enough for the field team to invite the business
 - [ ] Voice notes: speech-to-text for Shona (Google Chirp 2 or Meta Omnilingual ASR), with a fallback for Ndebele
-- [ ] Photo search ("find me this")
+- [ ] Photos: "find me this" search and price lists read into listings (WhatsApp media download + Claude vision)
 - [ ] Shona and Ndebele replies
 - [ ] Semantic search (pgvector) alongside keywords; taxonomy grows from unanswered requests
 - [ ] Customer recommendations ("know someone good?") feeding the field team's list
 
 ## Milestone 4: launch readiness
 
-- [ ] Meta business verification, two numbers, approved templates
-- [ ] Hosting, managed Postgres, backups, monitoring and alerts
+- [ ] Meta business verification, two numbers, approved templates (five, listed in the README)
+- [ ] Hosting over HTTPS, managed Postgres, backups, monitoring and alerts
+- [ ] Photo storage on S3 or Cloudflare R2 instead of local disk
 - [ ] Reprocess inbound messages left unhandled after a crash (messages are logged before processing, replies are not yet retried)
-- [ ] Rate limits and abuse controls (request floods, fake reports)
+- [ ] Rate limits and abuse controls (request floods, fake reports); per-person accounts for the ops console instead of one shared token
 - [ ] POTRAZ compliance: data-controller licence, retention periods, export and delete on request, cross-border transfer records
 - [ ] Test set of ~300 real requests (English, Shona, mixed) to measure Claude's understanding and try cheaper models
 - [ ] Soft launch in Harare with 2,000+ verified businesses
@@ -55,3 +60,4 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
 - Replies are in English only.
 - The field name for WhatsApp's business-scoped user IDs is unconfirmed; the parser accepts `from` and `from_user_id`.
 - Simulator messages live in memory and reset when the server restarts; the database persists.
+- GPS and offline mode need HTTPS (or localhost), so test the field app on a phone through an HTTPS tunnel or a deployed server.
