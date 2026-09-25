@@ -19,7 +19,8 @@
     "ops:user": "tsx src/ops/user-cli.ts",
     "templates": "tsx src/whatsapp/templates-cli.ts",
     "eval": "tsx src/eval/run.ts",
-    "eval:export": "tsx src/eval/export.ts"
+    "eval:export": "tsx src/eval/export.ts",
+    "explain": "tsx src/eval/explain.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

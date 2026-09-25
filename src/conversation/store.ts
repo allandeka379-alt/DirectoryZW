@@ -2,6 +2,7 @@ import type { Db } from "../db/client.js";
 import { one } from "../db/client.js";
 import { isUuid } from "../directory/businesses.js";
 import type { RequestInterpretation } from "../ai/types.js";
+import type { ReadingSummary } from "../ai/understanding.js";
 import { describe, type OutboundMessage } from "../whatsapp/outbound.js";
 import type { Channel, InboundMessage } from "../whatsapp/types.js";
 
@@ -129,6 +130,8 @@ export interface RequestRow {
   understood_by: string | null;
   /** exact, related or none */
   match: "exact" | "related" | "none" | null;
+  /** What the local engine made of it. */
+  reading: ReadingSummary | null;
   created_at: Date;
 }
 
@@ -145,12 +148,13 @@ export async function createRequest(
     lng?: number | null;
     status?: RequestStatus;
     understoodBy?: string | null;
+    reading?: ReadingSummary | null;
   },
 ): Promise<RequestRow> {
   const row = await one<RequestRow>(
     db,
-    `INSERT INTO requests (contact_id, raw_text, interpretation, category_slug, query, area_id, lat, lng, status, understood_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    `INSERT INTO requests (contact_id, raw_text, interpretation, category_slug, query, area_id, lat, lng, status, understood_by, reading)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
     [
       r.contactId,
       r.rawText.slice(0, 1000),
@@ -162,9 +166,26 @@ export async function createRequest(
       r.lng ?? null,
       r.status ?? "open",
       r.understoodBy ?? null,
+      r.reading ? JSON.stringify(r.reading) : null,
     ],
   );
   return row!;
+}
+
+/** We asked "Did you mean…?" with these categories. Returns the question's ID. */
+export async function recordQuestion(db: Db, q: { contactId: string; signature: string | null; options: string[] }): Promise<string> {
+  const row = await one<{ id: string }>(
+    db,
+    "INSERT INTO clarifications (contact_id, signature, options) VALUES ($1, $2, $3) RETURNING id",
+    [q.contactId, q.signature, q.options],
+  );
+  return row!.id;
+}
+
+/** What the customer picked: a category slug, or "other" for "Something else". */
+export async function recordAnswer(db: Db, questionId: string, chosen: string): Promise<void> {
+  if (!isUuid(questionId)) return;
+  await db.query("UPDATE clarifications SET chosen = $2, answered_at = now() WHERE id = $1 AND chosen IS NULL", [questionId, chosen]);
 }
 
 export async function getRequest(db: Db, id: string): Promise<RequestRow | undefined> {

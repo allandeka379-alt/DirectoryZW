@@ -249,6 +249,46 @@ export function clarify(question: string | null): OutboundMessage {
   return { kind: "text", text: question ?? "What are you looking for? Tell me the product or service, and your area." };
 }
 
+/** We're not sure which category they mean (or it rests on words nobody has checked yet), so they pick. */
+export function didYouMean(options: { slug: string; name: string; short: string }[]): OutboundMessage {
+  const [only] = options;
+  if (options.length === 1 && only) {
+    return {
+      kind: "buttons",
+      body: `Just to check, do you mean *${only.name}*?`,
+      buttons: [
+        { id: Ids.mean(only.slug), title: "Yes" },
+        { id: Ids.meanOther, title: "No, something else" },
+      ],
+    };
+  }
+  if (options.length === 2) {
+    return {
+      kind: "buttons",
+      body: `Which of these do you need?\n• ${options.map((o) => o.name).join("\n• ")}`,
+      buttons: [...options.map((o) => ({ id: Ids.mean(o.slug), title: o.short })), { id: Ids.meanOther, title: "Something else" }],
+    };
+  }
+  return {
+    kind: "list",
+    body: "Which of these do you need? Tap *Choose*.",
+    button: "Choose",
+    sections: [
+      {
+        title: "Did you mean",
+        rows: [
+          ...options.map((o) => ({ id: Ids.mean(o.slug), title: o.short, description: o.name })),
+          { id: Ids.meanOther, title: "Something else", description: "Tell me in other words" },
+        ],
+      },
+    ],
+  };
+}
+
+export function sayItDifferently(): string {
+  return 'OK. Please tell me in other words what you need, for example "fridge repair in Glen View" or "tents to hire".';
+}
+
 export function photosNotYet(): OutboundMessage {
   return { kind: "text", text: "I can't read photos yet. Please describe what you're looking for in words." };
 }

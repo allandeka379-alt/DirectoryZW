@@ -210,7 +210,7 @@ async function continueStage(t: T, text: string): Promise<void> {
     case "reg_what":
     case "edit_what": {
       // Local keywords only; when they don't fit, the owner picks from a list. No Claude call.
-      const result = await svc.keywords.classifyBusiness(value, { taxonomy: svc.taxonomy });
+      const result = await svc.keywords.classifyBusiness(value, { taxonomy: svc.taxonomy, lexicon: svc.lexicon });
       draft.description = value.slice(0, 300);
       draft.keywords = result.keywords;
       if (!result.category_slugs.length) {
@@ -238,7 +238,7 @@ async function continueStage(t: T, text: string): Promise<void> {
       return t.reply(copy.regAskWhat());
     case "reg_area":
     case "edit_area": {
-      const area = svc.gazetteer.match(value);
+      const area = svc.gazetteer.match(value, { fuzzy: true });
       if (!area) return t.reply(copy.regUnknownArea());
       return setArea(t, area, area.lat, area.lng);
     }

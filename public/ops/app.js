@@ -48,7 +48,48 @@ async function download(path, filename) {
   URL.revokeObjectURL(url);
 }
 
+/** Save a file the API sends (a spreadsheet export). */
+async function downloadFile(path, filename) {
+  const blob = await api(path);
+  const url = URL.createObjectURL(blob);
+  const a = h("a", { href: url, download: filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 const isAdmin = () => me?.role === "admin";
+
+/** A category picker, grouped like the categories list. */
+function categorySelect(categories, placeholder = "Choose a category…") {
+  return h("select", {},
+    h("option", { value: "" }, placeholder),
+    ...categories
+      .filter((c) => c.risk !== "blocked")
+      .map((c) => h("option", { value: c.slug }, `${c.group_name} › ${c.name}${c.risk === "normal" ? "" : ` (${c.risk})`}`)));
+}
+
+/** What the assistant made of a request, in a line: "read as Plumbers or Builders; didn't know: xyz". */
+function readingLine(reading, nameOf) {
+  if (!reading) return "";
+  const parts = [];
+  if (reading.candidates?.length) parts.push(`could be ${reading.candidates.map(nameOf).join(" or ")}`);
+  else parts.push("no category recognised");
+  if (reading.unknown?.length) parts.push(`words it didn't know: ${reading.unknown.join(", ")}`);
+  return `The assistant's reading: ${parts.join("; ")}.`;
+}
+
+const ROLE_LABELS = {
+  service: "service",
+  product: "product",
+  object: "general word (weak)",
+  brand: "brand (weak)",
+  occasion: "occasion (weak)",
+  action: "action",
+  spec: "detail (ignored)",
+  filler: "filler (ignored)",
+};
 
 const date = (v) => (v ? new Date(v).toLocaleString() : "");
 const day = (v) => (v ? new Date(v).toLocaleDateString() : "");
@@ -91,10 +132,10 @@ const screens = {
   },
 
   async handoffs() {
-    const chats = await api("/handoffs");
+    const [chats, categories] = await Promise.all([api("/handoffs"), api("/categories")]);
     return [
-      ...header("Handoffs", "Customers waiting for a person: they asked for one, we had no supplier for them, or we couldn't understand them. Replies go out on the customer number."),
-      ...(chats.length ? chats.map(handoffCard) : [h("p", { class: "muted" }, "No one is waiting.")]),
+      ...header("Handoffs", "Customers waiting for a person: they asked for one, we had no supplier for them, or we couldn't understand them. Replies go out on the customer number. Tell the assistant what they wanted, and it answers the same wording itself next time."),
+      ...(chats.length ? chats.map((chat) => handoffCard(chat, categories)) : [h("p", { class: "muted" }, "No one is waiting.")]),
     ];
   },
 
@@ -243,7 +284,7 @@ const screens = {
   },
 
   async vocabulary() {
-    const [rows, categories] = await Promise.all([api("/unmatched?days=30"), api("/categories")]);
+    const [rows, categories, suggestions] = await Promise.all([api("/unmatched?days=30"), api("/categories"), api("/vocabulary/suggestions")]);
     const options = categories.map((c) => h("option", { value: c.slug }, `${c.group_name} › ${c.name}${c.risk === "normal" ? "" : ` (${c.risk})`}`));
     const status = h("p", { class: "muted" });
     const addWord = async (slug, word) => {
@@ -259,8 +300,22 @@ const screens = {
       word.value = "";
     } }, word, pick, h("button", { class: "primary" }, "Add word"));
     return [
-      ...header("Vocabulary", "Searches from the last 30 days that didn't match any category. Add the words people use to the right category so their next search finds businesses."),
+      ...header("Vocabulary", "Words customers use that the assistant didn't know, and searches that matched no category. Add the words to the right category so the next customer is understood straight away. Shona and English word meanings are in the Word list."),
       h("div", { class: "card" }, form, status),
+      h("h2", {}, "Suggested words"),
+      h("p", { class: "muted" }, "Words the assistant didn't know, with what they turned out to mean: a person's answer, the customer's own pick, or Claude's. Add the ones that nearly always mean one category."),
+      table([
+        { label: "Word", render: (r) => h("strong", {}, r.word) },
+        { label: "Seen", key: "uses", num: true },
+        { label: "Mostly meant", key: "category_name" },
+        { label: "Agreement", num: true, render: (r) => h("span", { class: r.agreement >= 90 ? "tag ok" : r.agreement < 60 ? "tag warn" : "tag" }, `${r.agreement}%`) },
+        { label: "Wording it came in", render: (r) => r.examples.join(" · ") },
+        { label: "", render: (r) => h("button", { onclick: async () => {
+          await addWord(r.category, r.word);
+          render();
+        } }, `Add to ${r.category_name}`) },
+      ], suggestions),
+      h("h2", {}, "Searches that matched no category"),
       table([
         { label: "Customers typed", key: "query" },
         { label: "Requests", key: "requests", num: true },
@@ -273,6 +328,98 @@ const screens = {
             await addWord(select.value, r.query);
             render();
           } }, "Add"));
+        } },
+      ], rows),
+    ];
+  },
+
+  async words() {
+    const q = new URLSearchParams(location.hash.split("?")[1]);
+    const language = q.get("language") || "sn";
+    const status = q.has("status") ? q.get("status") : "draft";
+    const search = q.get("q") || "";
+    const [rows, categories] = await Promise.all([api(`/lexicon?${new URLSearchParams({ language, status, q: search })}`), api("/categories")]);
+    const go = (changes) => { location.hash = `words?${new URLSearchParams({ language, status, q: search, ...changes })}`; };
+    const review = async (ids, next) => { if (ids.length) { await post("/lexicon/review", { ids, status: next }); render(); } };
+    const picked = new Set();
+    const searchBox = h("input", { type: "search", placeholder: "Find a word or meaning", value: search });
+
+    const term = h("input", { placeholder: "Word, phrase or verb root", required: true });
+    const lang = h("select", {}, h("option", { value: "sn" }, "Shona"), h("option", { value: "en" }, "English"), h("option", { value: "nd" }, "Ndebele"));
+    lang.value = language;
+    const role = h("select", {}, ...Object.entries(ROLE_LABELS).map(([v, l]) => h("option", { value: v }, l)));
+    const category = categorySelect(categories, "Category it points to");
+    const action = h("select", {}, h("option", { value: "" }, "Action (for action words)"),
+      ...["repair", "make", "buy", "hire", "move", "dig", "build", "paint", "sew", "clean", "wash", "cook", "teach", "learn", "drive", "hair", "send", "install", "print"].map((a) => h("option", { value: a }, a)));
+    const root = h("input", { type: "checkbox" });
+    const gloss = h("input", { placeholder: "Meaning in English" });
+    const addStatus = h("p", { class: "muted" });
+    const addForm = h("form", { class: "inline", onsubmit: async (e) => {
+      e.preventDefault();
+      try {
+        await post("/lexicon", {
+          term: term.value, language: lang.value, role: role.value, categories: category.value ? [category.value] : [],
+          action: action.value || null, root: root.checked, gloss: gloss.value,
+        });
+        addStatus.textContent = `Saved "${term.value}". It works straight away.`;
+        term.value = gloss.value = "";
+      } catch (err) {
+        addStatus.replaceChildren(h("span", { class: "error" }, err.message));
+      }
+    } }, term, lang, role, category, action, h("label", { class: "row" }, root, "verb root"), gloss, h("button", { class: "primary" }, "Save word"));
+
+    return [
+      ...header("Word list", "What words mean to the assistant. The Shona list is a first draft by the developers: a native speaker should check each word. Until a word is approved, requests that depend on it get a \"Did you mean…?\" question instead of a straight answer."),
+      h("div", { class: "row" },
+        h("select", { onchange: (e) => go({ language: e.target.value }) },
+          ...[["sn", "Shona"], ["en", "English"], ["nd", "Ndebele"]].map(([v, l]) => h("option", { value: v, selected: v === language || null }, l))),
+        h("select", { onchange: (e) => go({ status: e.target.value }) },
+          ...[["draft", "To review"], ["approved", "Approved"], ["rejected", "Rejected"], ["", "All"]].map(([v, l]) => h("option", { value: v, selected: v === status || null }, l))),
+        h("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); go({ q: searchBox.value }); } }, searchBox, h("button", {}, "Find")),
+        h("button", { onclick: () => downloadFile(`/lexicon/export.csv?${new URLSearchParams({ language, status })}`, `word-list-${language}.csv`) }, "Download as a spreadsheet")),
+      h("p", { class: "row" },
+        h("button", { class: "primary", onclick: () => review([...picked], "approved") }, "Approve ticked"),
+        h("button", { class: "danger", onclick: () => review([...picked], "rejected") }, "Reject ticked"),
+        h("span", { class: "muted" }, `${rows.length} words. "Customers agreed" counts people who picked the word's category when asked.`)),
+      table([
+        { label: "", render: (r) => h("input", { type: "checkbox", onchange: (e) => (e.target.checked ? picked.add(r.id) : picked.delete(r.id)) }) },
+        { label: "Word", render: (r) => h("span", {}, h("strong", {}, r.term), r.forms.length ? h("div", { class: "muted" }, `verb root: ${r.forms.join(", ")}`) : null) },
+        { label: "Meaning", key: "gloss" },
+        { label: "What it does", render: (r) => [ROLE_LABELS[r.role] || r.role, r.category_names.length ? `→ ${r.category_names.join(" or ")}` : null, r.action ? `(${r.action})` : null].filter(Boolean).join(" ") },
+        { label: "Customers agreed", key: "confirmed", num: true },
+        { label: "Status", render: (r) => h("span", {}, h("span", { class: `tag ${r.status === "approved" ? "ok" : r.status === "rejected" ? "bad" : "warn"}` }, r.status === "draft" ? "to review" : r.status),
+          r.reviewed_by ? h("div", { class: "muted" }, `${r.reviewed_by}, ${day(r.reviewed_at)}`) : null) },
+        { label: "", render: (r) => h("div", { class: "row" },
+          r.status !== "approved" ? h("button", { onclick: () => review([r.id], "approved") }, "Right") : null,
+          r.status !== "rejected" ? h("button", { class: "danger", onclick: () => review([r.id], "rejected") }, "Wrong") : null) },
+      ], rows),
+      h("details", { class: "card" },
+        h("summary", {}, "Add a word, or correct what one means"),
+        h("p", { class: "muted" }, "Services and products point to a category. Actions change the category of what they apply to (\"gadzira\" + fridge = appliance repairs); tick \"verb root\" for a Shona root like \"gadzir\" so its forms (anogadzira, kugadzirisa) are recognised. Brands, occasions and general words only decide when nothing stronger is said."),
+        addForm, addStatus),
+    ];
+  },
+
+  async check() {
+    const [rows, categories] = await Promise.all([api("/review/sample?limit=50"), api("/categories")]);
+    const verdict = (r, v, category) => async () => { await post(`/requests/${r.id}/review`, { verdict: v, category }); render(); };
+    return [
+      ...header("Check answers", "Once a week, check a random sample of answers the assistant gave without asking anyone. Aim for 98% right. A wrong answer is fixed for that wording straight away; also tell the developers, so they can fix the word list or the rules."),
+      table([
+        { label: "When", render: (r) => day(r.created_at) },
+        { label: "Customer wrote", key: "raw_text" },
+        { label: "Assistant understood", render: (r) => h("span", {}, h("strong", {}, r.category_name), r.area ? ` · ${r.area}` : "") },
+        { label: "Why", render: (r) => h("span", { class: "muted" }, (r.reading?.reasons || []).join("; ")) },
+        { label: "", render: (r) => {
+          const right = categorySelect(categories, "The right category…");
+          return h("div", { class: "row" },
+            h("button", { class: "primary", onclick: verdict(r, "right") }, "Right"),
+            h("button", { onclick: verdict(r, "should_ask") }, "Should have asked"),
+            right,
+            h("button", { class: "danger", onclick: async () => {
+              if (!right.value) return alert("Pick the right category first.");
+              await verdict(r, "wrong", right.value)();
+            } }, "Wrong"));
         } },
       ], rows),
     ];
@@ -353,7 +500,10 @@ const screens = {
     const usd = (n) => `$${Number(n || 0).toFixed(2)}`;
     const spentToday = s.claude.today.reduce((sum, r) => sum + r.usd, 0);
     const callsToday = s.claude.today.reduce((sum, r) => sum + r.calls, 0);
-    const byLabel = { local: "Understood locally", phrasebook: "From the phrasebook", claude: "By Claude", photo: "From a photo", fallback: "Not understood" };
+    const byLabel = { local: "Understood locally", phrasebook: "From the phrasebook", customer: "The customer picked (Did you mean…?)", claude: "By Claude", photo: "From a photo", fallback: "Not understood" };
+    const questions = s.questions7d || { asked: 0, picked: 0, something_else: 0 };
+    const check = s.precision28d || { reviewed: 0, right: 0 };
+    const wordCount = (lang, st) => s.lexicon?.words.find((w) => w.language === lang && w.status === st)?.words ?? 0;
     const matchLabel = { exact: "Suppliers in their category", related: "Related suppliers only", none: "Handed to a person" };
     const shares = (rows, labels, key) => {
       const total = rows.reduce((sum, r) => sum + r.requests, 0);
@@ -375,6 +525,13 @@ const screens = {
       h("div", { class: "card" },
         h("p", {}, h("strong", {}, "Requests, last 7 days: "), shares(s.understood7d, byLabel, "by")),
         h("p", {}, h("strong", {}, "Results, last 7 days: "), shares(s.matched7d, matchLabel, "match")),
+        h("p", {}, h("strong", {}, "\"Did you mean…?\", last 7 days: "),
+          questions.asked ? `asked ${questions.asked}, a category picked ${questions.picked}, "something else" ${questions.something_else}, no answer ${questions.asked - questions.picked - questions.something_else}` : "none asked"),
+        h("p", {}, h("strong", {}, "Answers checked, last 4 weeks: "),
+          check.reviewed ? `${check.reviewed} checked, ${Math.round((100 * check.right) / check.reviewed)}% right (aim: 98%)` : "none yet (see Check answers)"),
+        h("p", {}, h("strong", {}, "Shona word list: "),
+          `${wordCount("sn", "approved")} approved, ${wordCount("sn", "draft")} waiting for a native speaker, ${wordCount("sn", "rejected")} rejected` +
+          (s.lexicon?.trustDrafts ? ". Draft words are trusted (LEXICON_TRUST_DRAFTS)." : ". Draft words lead to a question until approved.")),
         h("p", { class: "muted" },
           `Claude, last 7 days: ${s.claude.last7Days?.calls ?? 0} calls, ${usd(s.claude.last7Days?.usd)}. ` +
           `Today by use: ${s.claude.today.map((r) => `${r.feature} ${r.calls} (${usd(r.usd)})`).join(", ") || "none"}. ` +
@@ -445,8 +602,23 @@ const screens = {
   },
 };
 
-function handoffCard(chat) {
+function handoffCard(chat, categories = []) {
   const text = h("textarea", { placeholder: "Reply as the team…" });
+  const request = chat.request;
+  const nameOf = (slug) => categories.find((c) => c.slug === slug)?.name || slug;
+  const teachStatus = h("span", { class: "muted" });
+  const wanted = categorySelect(categories, "What were they looking for?");
+  if (request?.category_slug) wanted.value = request.category_slug;
+  const teach = request?.raw_text
+    ? h("div", { class: "notice" },
+        h("p", {}, h("strong", {}, "Their request: "), request.raw_text),
+        h("p", { class: "muted" }, readingLine(request.reading, nameOf)),
+        h("div", { class: "row" }, wanted, h("button", { onclick: async () => {
+          if (!wanted.value) return;
+          await post(`/requests/${request.id}/teach`, { category: wanted.value });
+          teachStatus.textContent = `Saved. The assistant will read this wording as ${nameOf(wanted.value)} from now on.`;
+        } }, "Teach the assistant"), teachStatus))
+    : null;
   const messages = (chat.recent_messages || []).map((m) => {
     const body = m.body || {};
     const notes = m.notes || {};
@@ -459,6 +631,7 @@ function handoffCard(chat) {
   return h("div", { class: "card" },
     h("strong", {}, chat.profile_name || "Customer"), " ", h("span", { class: "muted" }, `+${chat.wa_id} · waiting since ${date(chat.updated_at)}`),
     h("div", { class: "msgs" }, ...messages),
+    teach,
     text,
     h("div", { class: "row" },
       h("button", { class: "primary", onclick: async () => {

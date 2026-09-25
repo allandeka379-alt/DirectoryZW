@@ -105,6 +105,19 @@ describe("data requests through the ops console", () => {
     const activity = (await ops("GET", "/activity")).json() as { action: string }[];
     expect(activity.map((a) => a.action)).toEqual(expect.arrayContaining(["contact.export", "contact.erase"]));
   });
+
+  it("exports and deletes the \"Did you mean…?\" questions we asked them", async () => {
+    const customer = newCustomer();
+    await app.say("hi", customer);
+    await app.tap("I agree", "customer", customer);
+    await app.say("ndoda keke remuchato ku Avondale", customer);
+    await app.tap("Yes", "customer", customer);
+    const [contact] = await app.db.query<{ id: string }>("SELECT id FROM contacts WHERE wa_id = $1", [customer]);
+    const data = (await ops("GET", `/contacts/${contact!.id}/export`)).json();
+    expect(data.questions).toEqual([expect.objectContaining({ options: ["cakes"], chosen: "cakes" })]);
+    await ops("POST", `/contacts/${contact!.id}/erase`);
+    expect(await count("SELECT count(*)::int AS n FROM clarifications WHERE contact_id = $1", [contact!.id])).toBe(0);
+  });
 });
 
 describe("retention", () => {
@@ -113,11 +126,13 @@ describe("retention", () => {
     await app.say("hi", customer);
     await app.tap("I agree", "customer", customer);
     await app.say("I need a plumber in Mabelreign", customer);
+    await app.say("ndoda matende ku Avondale", customer); // a "Did you mean…?" question
     await app.say("agent", customer); // waiting for a person
     const later = new Date(Date.now() + 400 * 24 * 3600_000);
     const result = await applyRetention(app.db, later, { messageDays: 180, requestDays: 365 });
     expect(result.messages).toBeGreaterThan(0);
     expect(result.requests).toBeGreaterThan(0);
+    expect(result.questions).toBeGreaterThan(0);
     const [request] = await app.db.query<{ raw_text: string; category_slug: string | null; status: string }>(
       "SELECT r.raw_text, r.category_slug, r.status FROM requests r JOIN contacts c ON c.id = r.contact_id WHERE c.wa_id = $1 ORDER BY r.created_at LIMIT 1",
       [customer],

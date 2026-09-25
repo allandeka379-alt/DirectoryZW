@@ -1,6 +1,7 @@
 import type { Alerts } from "../alerts.js";
 import type { ClaudeBudget } from "../ai/budget.js";
 import type { KeywordInterpreter } from "../ai/keyword-interpreter.js";
+import type { Lexicon } from "../ai/lexicon.js";
 import type { SpeechToText } from "../ai/speech.js";
 import type { Understander } from "../ai/understanding.js";
 import type { Vision } from "../ai/vision.js";
@@ -22,6 +23,8 @@ export interface Services {
   config: Config;
   taxonomy: Taxonomy;
   gazetteer: Gazetteer;
+  /** What words mean to the local engine; rebuilt when words or categories change. */
+  lexicon: Lexicon;
   /** Reads requests: locally first, then the phrasebook, then Claude within budget. */
   understanding: Understander;
   /** The local keyword engine, for classifying business descriptions and tips (never Claude). */

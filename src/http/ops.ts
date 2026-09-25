@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { signatureOf } from "../ai/phrasebook.js";
 import type { App } from "../app.js";
 import * as copy from "../conversation/copy.js";
 import { getContactById, loadState, saveState } from "../conversation/store.js";
@@ -19,6 +20,7 @@ import { logAction } from "../ops/accounts.js";
 import { normalizeText, normalizeZimPhone } from "../text.js";
 import { registerAdminRoutes } from "./ops-admin.js";
 import { actorOf, opsAuthHook, refuseUnlessAdmin, registerAccountRoutes } from "./ops-auth.js";
+import { registerWordRoutes } from "./ops-words.js";
 import { serveFile } from "./static.js";
 
 const FieldRegistration = z.object({
@@ -54,6 +56,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
       ops.addHook("onRequest", opsAuthHook(app));
       registerAccountRoutes(ops, app);
       registerAdminRoutes(ops, app);
+      registerWordRoutes(ops, app);
 
       // ----- Overview -----
 
@@ -107,7 +110,11 @@ export function registerOps(server: FastifyInstance, app: App): void {
           `SELECT c.id AS contact_id, c.wa_id, c.profile_name, s.updated_at,
                   (SELECT json_agg(m ORDER BY m.created_at) FROM (
                      SELECT direction, body, notes, created_at FROM messages WHERE contact_id = c.id
-                      ORDER BY created_at DESC LIMIT 20) m) AS recent_messages
+                      ORDER BY created_at DESC LIMIT 20) m) AS recent_messages,
+                  -- their latest request and what the assistant made of it, so the team can teach it
+                  (SELECT row_to_json(r) FROM (
+                     SELECT id, raw_text, category_slug, understood_by, reading FROM requests WHERE contact_id = c.id
+                      ORDER BY created_at DESC LIMIT 1) r) AS request
              FROM sessions s JOIN contacts c ON c.id = s.contact_id
             WHERE s.state->>'stage' = 'handoff' ORDER BY s.updated_at DESC`,
         ),
@@ -346,8 +353,17 @@ export function registerOps(server: FastifyInstance, app: App): void {
             GROUP BY lower(r.query) ORDER BY requests DESC, last_seen DESC LIMIT 200`,
           [days],
         );
-        // Words the categories now understand drop off the list.
-        return rows.filter((r) => !app.services.taxonomy.match(r.query).length);
+        // Wording the engine now understands, or that the phrasebook answers (a person taught it, say), drops off the list.
+        const { keywords, taxonomy, lexicon } = app.services;
+        const readings = rows.map((r) => keywords.read(r.query, { taxonomy, lexicon }));
+        const signatures = readings.map((r) => signatureOf(r)).filter((s) => s !== null);
+        const answered = new Set(
+          (await app.db.query<{ signature: string }>(
+            "SELECT signature FROM phrasebook WHERE signature = ANY($1::text[]) AND category_slug IS NOT NULL",
+            [signatures],
+          )).map((r) => r.signature),
+        );
+        return rows.filter((_, i) => !readings[i]!.candidates.length && !answered.has(signatureOf(readings[i]!) ?? ""));
       });
 
       ops.get("/categories", async () =>

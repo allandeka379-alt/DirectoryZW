@@ -115,8 +115,49 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
   - Related-only and handed-over requests count as supply gaps.
 - [x] Removed "found online" web search, and ask-around (related suppliers do its job), with their tables and two message templates
 - [x] Tests (114)
-- [ ] Phase 2: local engine v2 (normalising, word roles, word forms, fuzzy spelling, Shona and Ndebele vocabulary reviewed by native speakers, action rules), "Did you mean…?" questions, vocabulary suggestions, weekly precision review
+- [x] Phase 2: done for English and Shona in Milestone 6
 - [ ] Phase 3: thresholds and escalation model tuned on about 300 labelled real requests; optional small local classifier; caption-first photos; field price lists through the Batch API
+
+## Milestone 6: the local engine reads Shona (Phase 2, Shona first)
+
+- [x] **A lexicon.** Every word has a role: service, product, general word, brand, occasion, action, detail or filler.
+  - It's stored in the database and editable in the ops console; each category's own words work as before.
+  - Brands, occasions and general words only narrow: "tyres for a Toyota Corolla" is car parts, not a car for sale.
+- [x] **Shona word shapes:**
+  - joining prefixes: "keke remuchato" (wedding cake), "matende nemacheya" (tents and chairs). A word joined by "of" only describes the main word: "nyama yemombe" is meat, not cattle.
+  - the plural "ma-" on borrowed words ("matyres", "maplumber")
+  - verb roots with their prefixes and endings: "anogadzira", "yekuroja", "kutengeswa", "mupendi"
+  - place prefixes: "kuMabelreign", "eNkulumane"
+  - common spelling variations: bh/b, zv/z, l/r
+- [x] **A first Shona word list** of about 460 words and verb roots, written by the developers as drafts.
+  - A draft word only leads to a "Did you mean…?" question until a native speaker approves it (Word list screen, or the spreadsheet).
+  - `LEXICON_TRUST_DRAFTS=true` uses the drafts as if approved.
+- [x] **Action rules** (`src/ai/rules.ts`): repair or make, hire, buy, move, dig, build, paint, sew, clean, wash, cook, send, applied to the kind of thing named. "Anogadzira fridge" is appliance repairs; "chairs for hire" is event hire.
+- [x] **Everyday spellings and typos:**
+  - English word forms ("installer", "drilling")
+  - texting spellings ("pls", "2moro", "55inch")
+  - misspellings ("plumbar", "Mabelrein")
+  - several places in one message ("Hillside, Bulawayo")
+- [x] **"Did you mean…?"** when one to three categories fit, or the words aren't approved yet: the customer taps instead of a Claude call.
+  - Typed answers count ("to hire", "yes").
+  - The answer is remembered for that wording, so the next customer isn't asked.
+  - "Something else" goes to Claude, told what's ruled out; then "say it differently", then a person.
+- [x] **The team teaches the engine:**
+  - "Teach the assistant" on a handoff
+  - the weekly **Check answers** screen: a random sample of its own answers, and a wrong one is fixed for that wording at once
+  - adding and correcting words in the **Word list**
+  - A person's answer beats even a confident local reading.
+- [x] **Suggested words:** words customers used, with what they turned out to mean.
+- [x] **System screen:** questions asked and answered, answers checked, and the word list's review status.
+- [x] **Business sign-up and tips** read Shona descriptions too ("Tinogadzira mafiriji", we repair fridges).
+- [x] **Eval:** 117 requests (56 Shona).
+  - With the drafts unreviewed: 57% answered locally, 39% get a question with the right option, 3% passed on, none confidently wrong.
+  - With the Shona words approved: 93% answered locally, all right.
+- [x] `npm run explain` shows how a message is read, word by word.
+- [x] Tests (139)
+- [ ] A native speaker reviews the Shona word list ([WORD_LIST.md](WORD_LIST.md))
+- [ ] Ndebele word list and word shapes
+- [ ] From [UNDERSTANDING.md](UNDERSTANDING.md): out-of-hours handoff messages, spotting frustration, a "not what I asked" button on results
 
 ## Later: monetization (only after traction)
 
@@ -127,12 +168,12 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
 ## Known limitations
 
 - Area coordinates are approximate centroids; refine them from field GPS pins.
-- Replies are in English only.
+- Replies are in English only. The assistant reads Shona, but replying in it needs translations checked by native speakers.
 - Customers' photos aren't stored, so a person taking over a chat sees Claude's description of the photo, not the photo itself.
 - The related-categories list is a first draft: review it with the field team, especially across groups (solar to electricians, catering to restaurants).
 - The field name for WhatsApp's business-scoped user IDs is unconfirmed; the parser accepts `from` and `from_user_id`.
 - Simulator messages live in memory and reset when the server restarts; the database persists.
 - Run a single instance: messages from each person are kept in order in memory, and the login lockout and alert throttling are in memory too.
 - Voice notes longer than a minute fail with Google's synchronous recognition (the person is asked to type instead).
-- The keyword fallback confuses brands with categories ("honda fit gearbox" looks like buying a car); the eval shows these misses.
+- The Shona word list and the eval examples were both written by the developers, so the eval shows what's possible, not real-world accuracy. Labelled real requests (Phase 3) will show the real numbers.
 - GPS and offline mode need HTTPS (or localhost), so test the field app on a phone through an HTTPS tunnel or a deployed server.

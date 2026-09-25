@@ -1,5 +1,6 @@
+import { remember } from "../ai/phrasebook.js";
 import type { RequestInterpretation } from "../ai/types.js";
-import type { UnderstoodBy } from "../ai/understanding.js";
+import type { ReaderContext, ReadingSummary, Understanding, UnderstoodBy } from "../ai/understanding.js";
 import { one } from "../db/client.js";
 import { adjustResponseScore, getBusiness, recordRating, type Business } from "../directory/businesses.js";
 import { haversineKm } from "../directory/gazetteer.js";
@@ -20,20 +21,44 @@ import {
   annotateInbound,
   createRequest,
   getRequest,
+  recordAnswer,
+  recordQuestion,
   saveResults,
   setConsent,
   setRequestStatus,
   type RequestRow,
 } from "./store.js";
 
+/** A "Did you mean…?" question waiting for the customer's answer. */
+interface Choice {
+  /** The clarifications row, to record what they picked. */
+  id: string;
+  raw: string;
+  interpretation: RequestInterpretation;
+  options: string[];
+  signature: string | null;
+  reading: ReadingSummary;
+}
+
 export interface CustomerState {
-  stage?: "awaiting_consent" | "awaiting_area" | "awaiting_report" | "handoff" | "rec_name" | "rec_what" | "rec_area" | "rec_phone";
+  stage?:
+    | "awaiting_consent"
+    | "awaiting_area"
+    | "awaiting_choice"
+    | "awaiting_report"
+    | "handoff"
+    | "rec_name"
+    | "rec_what"
+    | "rec_area"
+    | "rec_phone";
   /** First message, kept while we ask for consent. */
   pendingText?: string;
   /** A photo or voice note sent before consent; handled once they agree. */
   pendingMedia?: { type: "image" | "audio"; mediaId: string; caption?: string; waMessageId: string };
   /** A request waiting for the customer's location. */
-  pending?: { raw: string; interpretation: RequestInterpretation; by: UnderstoodBy | "photo" };
+  pending?: { raw: string; interpretation: RequestInterpretation; by: UnderstoodBy | "photo"; reading?: ReadingSummary };
+  /** A request waiting for the customer to say which category they mean. */
+  choice?: Choice;
   lastRequestId?: string;
   lastQuery?: string;
   location?: { lat: number; lng: number; areaId: number | null; label: string };
@@ -169,26 +194,109 @@ async function onText(t: T, text: string): Promise<void> {
   if (state.stage?.startsWith("rec_")) return continueRecommendation(t, raw);
 
   if (state.stage === "awaiting_area" && state.pending) {
-    const area = svc.gazetteer.match(raw);
+    const area = svc.gazetteer.match(raw, { fuzzy: true });
     const pending = state.pending;
     state.stage = undefined;
     state.pending = undefined;
     if (area) {
       const place = { areaId: area.id, lat: area.lat, lng: area.lng, label: area.name };
       state.location = place;
-      return runSearch(t, pending.raw, pending.interpretation, pending.by, place);
+      return runSearch(t, pending.raw, pending.interpretation, pending.by, place, pending.reading);
     }
     // Not a place we know: treat it as a new request.
   }
 
-  // Local engine first; the phrasebook and Claude only for what it can't read.
-  const understood = await svc.understanding.understand(raw, {
+  if (state.stage === "awaiting_choice" && state.choice) {
+    const choice = state.choice;
+    state.stage = undefined;
+    state.choice = undefined;
+    // They may answer in words ("hire", "yes"). If that settles it, it's their pick; otherwise it's a new request.
+    const picked = pickInWords(t, raw, choice);
+    if (picked !== undefined) return answerChoice(t, choice, picked);
+  }
+
+  // Local engine first; then the phrasebook, a question for the customer, and Claude only for what's left.
+  const understood = await svc.understanding.understand(raw, readerContext(t));
+  if (understood.options?.length) return askWhichOne(t, raw, understood);
+  return handleInterpretation(t, raw, understood.interpretation, understood.by, understood.reading);
+}
+
+function readerContext(t: T): ReaderContext {
+  const { svc, state, contact } = t;
+  return {
     taxonomy: svc.taxonomy,
     gazetteer: svc.gazetteer,
+    lexicon: svc.lexicon,
     previousRequest: state.lastQuery,
     contactId: contact.id,
-  });
-  return handleInterpretation(t, raw, understood.interpretation, understood.by);
+  };
+}
+
+/**
+ * Several categories fit, or the words that decided it haven't been checked by a native speaker
+ * yet: ask which one they mean. Their answer is remembered for this wording, so the next
+ * customer who writes the same thing isn't asked.
+ */
+async function askWhichOne(t: T, raw: string, understood: Understanding): Promise<void> {
+  const { svc, state, contact } = t;
+  const options = (understood.options ?? []).map((slug) => svc.taxonomy.get(slug)).filter((c) => c !== undefined);
+  if (!options.length) return handleInterpretation(t, raw, understood.interpretation, understood.by, understood.reading);
+  const slugs = options.map((c) => c.slug);
+  const id = await recordQuestion(svc.db, { contactId: contact.id, signature: understood.signature, options: slugs });
+  if (understood.interpretation.language !== "other") state.lang = understood.interpretation.language;
+  state.stage = "awaiting_choice";
+  state.choice = { id, raw, interpretation: understood.interpretation, options: slugs, signature: understood.signature, reading: understood.reading };
+  return t.reply(copy.didYouMean(options.map((c) => ({ slug: c.slug, name: c.name, short: c.short }))));
+}
+
+const YES = ["yes", "yeah", "yep", "yes please", "correct", "hongu", "ehe", "ehoyi", "yebo"];
+const NO = ["no", "nope", "neither", "none", "aiwa", "kwete", "hatshi", "something else"];
+
+/** A typed answer to "Did you mean…?": a category slug, "" for none of them, or undefined for a new request. */
+function pickInWords(t: T, raw: string, choice: Choice): string | undefined {
+  const [only] = choice.options;
+  if (isCommand(raw, YES) && choice.options.length === 1 && only) return only;
+  if (isCommand(raw, NO)) return "";
+  const said = t.svc.keywords.read(raw, readerContext(t)).candidates.filter((c) => choice.options.includes(c));
+  return said.length === 1 ? said[0] : undefined;
+}
+
+/** The customer picked a category (or "" for none of them). */
+async function answerChoice(t: T, choice: Choice, slug: string): Promise<void> {
+  const { svc } = t;
+  const category = slug && choice.options.includes(slug) ? svc.taxonomy.get(slug) : undefined;
+  await recordAnswer(svc.db, choice.id, category?.slug ?? "other");
+  if (!category) return somethingElse(t, choice);
+  const interpretation: RequestInterpretation = {
+    ...choice.interpretation,
+    intent: "search",
+    category_slug: category.slug,
+    clarifying_question: null,
+  };
+  if (choice.signature) await remember(svc.db, choice.signature, interpretation, "customer");
+  return handleInterpretation(t, choice.raw, interpretation, "customer", choice.reading);
+}
+
+async function chooseMeaning(t: T, slug: string): Promise<void> {
+  const { state, contact } = t;
+  const choice = state.choice;
+  if (state.stage !== "awaiting_choice" || !choice) return t.reply(copy.askWhatYouNeed(contact.profile_name));
+  state.stage = undefined;
+  state.choice = undefined;
+  return answerChoice(t, choice, slug);
+}
+
+/**
+ * None of the options fit. Claude reads the request if it can, told what's ruled out; if it
+ * can't, we ask the customer to say it differently, and a person takes over after that.
+ */
+async function somethingElse(t: T, choice: Choice): Promise<void> {
+  const understood = await t.svc.understanding.understand(choice.raw, { ...readerContext(t), noAsk: true, exclude: choice.options });
+  if (understood.by !== "fallback" && understood.interpretation.category_slug) {
+    return handleInterpretation(t, choice.raw, understood.interpretation, understood.by, understood.reading);
+  }
+  const interpretation = { ...understood.interpretation, clarifying_question: copy.sayItDifferently() };
+  return notUnderstood(t, choice.raw, interpretation, "fallback", understood.reading);
 }
 
 /** What to do with a request once we know what it means, whether it came as text, a voice note or a photo. */
@@ -197,6 +305,7 @@ async function handleInterpretation(
   raw: string,
   interpretation: RequestInterpretation,
   by: UnderstoodBy | "photo",
+  reading?: ReadingSummary,
 ): Promise<void> {
   const { svc, state, contact } = t;
   if (interpretation.language !== "other") state.lang = interpretation.language;
@@ -215,12 +324,14 @@ async function handleInterpretation(
         categorySlug: interpretation.category_slug,
         query: interpretation.query,
         status: "closed",
+        understoodBy: by,
+        reading,
       });
       return t.reply(copy.blocked());
     case "out_of_scope":
       return t.reply(copy.outOfScope());
     case "unclear":
-      return notUnderstood(t, raw, interpretation, by);
+      return notUnderstood(t, raw, interpretation, by, reading);
     case "search":
       break;
   }
@@ -230,7 +341,7 @@ async function handleInterpretation(
   if (category?.risk === "restricted") return t.reply(copy.restricted(category.name));
   // No category from anyone (local engine, phrasebook or Claude): we don't know what they want.
   if (!category && (by === "fallback" || !interpretation.query || interpretation.clarifying_question)) {
-    return notUnderstood(t, raw, interpretation, by);
+    return notUnderstood(t, raw, interpretation, by, reading);
   }
   state.unclear = undefined;
 
@@ -238,15 +349,21 @@ async function handleInterpretation(
   const place: Place | undefined = area ? { areaId: area.id, lat: area.lat, lng: area.lng, label: area.name } : state.location;
   if (!place && category?.needsLocation !== false) {
     state.stage = "awaiting_area";
-    state.pending = { raw, interpretation, by };
+    state.pending = { raw, interpretation, by, reading };
     return t.reply(copy.askLocation(need(interpretation, category)));
   }
   if (area) state.location = place;
-  return runSearch(t, raw, interpretation, by, category?.needsLocation === false && !area ? undefined : place);
+  return runSearch(t, raw, interpretation, by, category?.needsLocation === false && !area ? undefined : place, reading);
 }
 
 /** Ask them to put it differently once; if we still can't tell, a person takes over. */
-async function notUnderstood(t: T, raw: string, interpretation: RequestInterpretation, by: UnderstoodBy | "photo"): Promise<void> {
+async function notUnderstood(
+  t: T,
+  raw: string,
+  interpretation: RequestInterpretation,
+  by: UnderstoodBy | "photo",
+  reading?: ReadingSummary,
+): Promise<void> {
   const { svc, state, contact } = t;
   const second = !!state.unclear;
   // Recorded either way, so the wording shows up in the Vocabulary screen for the team to teach.
@@ -258,6 +375,7 @@ async function notUnderstood(t: T, raw: string, interpretation: RequestInterpret
     query: interpretation.query,
     status: second ? "handoff" : "no_results",
     understoodBy: by,
+    reading,
   });
   if (!second) {
     state.unclear = true;
@@ -304,7 +422,7 @@ async function onLocation(t: T, lat: number, lng: number): Promise<void> {
     const pending = state.pending;
     state.stage = undefined;
     state.pending = undefined;
-    return runSearch(t, pending.raw, pending.interpretation, pending.by, place);
+    return runSearch(t, pending.raw, pending.interpretation, pending.by, place, pending.reading);
   }
   return t.reply(copy.locationSaved(place.label));
 }
@@ -321,6 +439,7 @@ async function runSearch(
   interpretation: RequestInterpretation,
   by: UnderstoodBy | "photo",
   place?: Place,
+  reading?: ReadingSummary,
 ): Promise<void> {
   const { svc, state, contact } = t;
   const category = svc.taxonomy.get(interpretation.category_slug);
@@ -334,6 +453,7 @@ async function runSearch(
     lat: place?.lat ?? null,
     lng: place?.lng ?? null,
     understoodBy: by,
+    reading,
   });
   state.lastRequestId = request.id;
   state.lastQuery = raw;
@@ -383,6 +503,8 @@ async function onAction(t: T, id: string): Promise<void> {
       return reshowResults(t, args[0] ?? "");
     case "human":
       return startHandoff(t, args[0] || null, null);
+    case "mean":
+      return chooseMeaning(t, args[0] ?? "");
     case "new":
       resetSearch(state);
       return t.reply(copy.askWhatYouNeed(contact.profile_name));
@@ -527,7 +649,7 @@ async function continueRecommendation(t: T, text: string): Promise<void> {
       state.stage = "rec_area";
       return t.reply(copy.recAskArea(rec.name ?? "them"));
     case "rec_area": {
-      const area = svc.gazetteer.match(text);
+      const area = svc.gazetteer.match(text, { fuzzy: true });
       return setRecommendationArea(t, area?.name ?? text.slice(0, 80), area?.id ?? null);
     }
     case "rec_phone": {
@@ -561,7 +683,7 @@ async function saveRecommendation(t: T, phone: string | null): Promise<void> {
     if (listed) return t.reply(copy.recAlreadyListed(listed.name));
   }
   // Local only: a tip the engine can't place waits for the team to categorise.
-  const classified = await svc.keywords.classifyBusiness(rec.what, { taxonomy: svc.taxonomy });
+  const classified = await svc.keywords.classifyBusiness(rec.what, { taxonomy: svc.taxonomy, lexicon: svc.lexicon });
   await createRecommendation(svc.db, {
     contactId: contact.id,
     name: rec.name,
@@ -651,6 +773,7 @@ function need(i: RequestInterpretation | undefined, category: Category | undefin
 function resetSearch(state: CustomerState): void {
   state.stage = undefined;
   state.pending = undefined;
+  state.choice = undefined;
   state.pendingText = undefined;
   state.pendingMedia = undefined;
   state.reportBusinessId = undefined;

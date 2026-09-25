@@ -412,4 +412,55 @@ CREATE INDEX ai_usage_created_idx ON ai_usage (created_at);
 CREATE INDEX ai_usage_contact_idx ON ai_usage (contact_id, created_at);
 `,
   },
+  {
+    id: "006_lexicon_and_questions",
+    sql: /* sql */ `
+-- What words mean to the local engine, beyond each category's own words: roles (product, action,
+-- brand…), Shona words and verb roots. Draft words only lead to questions until a person approves them.
+CREATE TABLE lexicon (
+  id bigserial PRIMARY KEY,
+  term text NOT NULL,
+  language text NOT NULL CHECK (language IN ('en', 'sn', 'nd')),
+  role text NOT NULL CHECK (role IN ('service', 'product', 'object', 'brand', 'occasion', 'action', 'spec', 'filler')),
+  categories text[] NOT NULL DEFAULT '{}',
+  family text,
+  action text,
+  is_root boolean NOT NULL DEFAULT false,
+  gloss text NOT NULL DEFAULT '',
+  -- seed: shipped with the code; team: added in the ops console
+  source text NOT NULL DEFAULT 'seed' CHECK (source IN ('seed', 'team')),
+  status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'rejected')),
+  reviewed_by text,
+  reviewed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (term, language, role)
+);
+
+-- "Did you mean…?" questions and what the customer picked ('other' for "Something else").
+CREATE TABLE clarifications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  contact_id uuid REFERENCES contacts(id) ON DELETE CASCADE,
+  signature text,
+  options text[] NOT NULL,
+  chosen text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  answered_at timestamptz
+);
+CREATE INDEX clarifications_created_idx ON clarifications (created_at);
+
+-- The team's weekly check of answers the local engine gave on its own.
+CREATE TABLE understanding_reviews (
+  request_id uuid PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE,
+  verdict text NOT NULL CHECK (verdict IN ('right', 'wrong', 'should_ask')),
+  category_slug text REFERENCES categories(slug),
+  reviewed_by text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- What the local engine made of a request (band, candidate categories, unknown words), for the team.
+ALTER TABLE requests ADD COLUMN reading jsonb;
+-- A label short enough for a WhatsApp button (20 characters).
+ALTER TABLE categories ADD COLUMN short_name text;
+`,
+  },
 ];

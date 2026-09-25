@@ -65,22 +65,23 @@ describe("understanding: local first, Claude when stuck", () => {
 
   it("asks Claude only about wording it can't read, with its notes, and remembers the answer", async () => {
     claude.answer = (text) =>
-      text.includes("keke") ? interpretation({ category_slug: "cakes", query: "wedding cake", area: "Avondale", language: "sn" }) : null;
+      text.includes("zvinotapira") ? interpretation({ category_slug: "cakes", query: "wedding sweets", area: "Avondale", language: "sn" }) : null;
     const c = as(newCustomer());
     await c.consented();
-    await c.say("ndoda keke remuchato ku Avondale");
+    // "Sweet things for a wedding": the engine knows "muchato" (a wedding), which says nothing about what's wanted.
+    await c.say("ndoda zvinotapira zvemuchato ku Avondale");
     expect(claude.calls).toHaveLength(1);
-    expect(claude.calls[0]!.notes).toEqual(["Possible categories: none", "Words not recognised: keke, remuchato", "Place mentioned: Avondale"]);
+    expect(claude.calls[0]!.notes).toEqual(["Possible categories: none", "Words not recognised: zvinotapira", "Place mentioned: Avondale"]);
     expect(rows(c.last())[0]).toMatch(/^Sweet Layers/);
-    expect(await requestFor("ndoda keke remuchato ku Avondale")).toMatchObject({ understood_by: "claude" });
+    expect(await requestFor("ndoda zvinotapira zvemuchato ku Avondale")).toMatchObject({ understood_by: "claude" });
 
     // Someone else, same words, different place: no second Claude call.
     const d = as(newCustomer());
     await d.consented();
-    await d.say("Ndoda keke remuchato ku Mount Pleasant");
+    await d.say("Ndoda zvinotapira zvemuchato ku Mount Pleasant");
     expect(claude.calls).toHaveLength(1);
     expect(rows(d.last())[0]).toMatch(/^Sweet Layers/);
-    expect(await requestFor("Ndoda keke remuchato ku Mount Pleasant")).toMatchObject({ understood_by: "phrasebook" });
+    expect(await requestFor("Ndoda zvinotapira zvemuchato ku Mount Pleasant")).toMatchObject({ understood_by: "phrasebook" });
   });
 
   it("asks twice at most, then hands to a person, when nobody understands", async () => {
@@ -246,7 +247,7 @@ describe("Claude calls", () => {
     const before = claude.calls.length;
     const c = as(newCustomer());
     await c.consented();
-    await c.say("ndoda keke yebirthday");
+    await c.say("ndoda zvinotapira zvebirthday");
     expect(claude.calls.length).toBe(before);
     expect(alerts.recent.filter((a) => a.key === "claude-budget-100")).toHaveLength(1);
     expect(alerts.recent.some((a) => a.key === "claude-budget-80")).toBe(true);

@@ -54,3 +54,64 @@
 {"id":"nd-04","text":"Salibonani","language":"nd","expect":{"intent":"greeting","category":null},"source":"synthetic"}
 {"id":"nd-05","text":"Ngifuna ikhekhe lomtshado","language":"nd","expect":{"intent":"search","category":"cakes"},"source":"synthetic"}
 {"id":"nd-06","text":"Ngicela umakhenikha e Mpopoma","language":"nd","expect":{"intent":"search","category":"car_repairs","area":"Mpopoma"},"source":"synthetic"}
+{"id":"en-41","text":"fix my fridge in Avondale","language":"en","expect":{"intent":"search","category":"appliance_repair","area":"Avondale"},"source":"synthetic"}
+{"id":"en-42","text":"chairs for hire in Hatfield","language":"en","expect":{"intent":"search","category":"event_hire","area":"Hatfield"},"source":"synthetic"}
+{"id":"en-43","text":"I want to rent a car in Bulawayo","language":"en","expect":{"intent":"search","category":"car_hire","area":"Bulawayo"},"source":"synthetic"}
+{"id":"en-44","text":"honda fit for sale","language":"en","expect":{"intent":"search","category":"car_sales"},"source":"synthetic"}
+{"id":"en-45","text":"someone to fix my car in Mbare","language":"en","expect":{"intent":"search","category":"car_repairs","area":"Mbare"},"source":"synthetic"}
+{"id":"en-46","text":"broken phone screen","language":"en","expect":{"intent":"search","category":"electronics_repair"},"source":"synthetic"}
+{"id":"en-47","text":"plumbar in Mabelrein","language":"en","expect":{"intent":"search","category":"plumbing","area":"Mabelreign"},"source":"synthetic"}
+{"id":"en-48","text":"I need a truck to move house","language":"en","expect":{"intent":"search","category":"transport_moving"},"source":"synthetic"}
+{"id":"en-49","text":"sofa cleaning in Greendale","language":"en","expect":{"intent":"search","category":"cleaning","area":"Greendale"},"source":"synthetic"}
+{"id":"en-50","text":"cake for a birthday party","language":"en","expect":{"intent":"search","category":"cakes"},"source":"synthetic"}
+{"id":"en-51","text":"pls i need a 55inch tv 2moro in Avondale","language":"en","expect":{"intent":"search","category":"tv_audio","area":"Avondale"},"source":"synthetic"}
+{"id":"en-52","text":"car battery in Kuwadzana","language":"en","expect":{"intent":"search","category":"car_parts","area":"Kuwadzana"},"source":"synthetic"}
+{"id":"en-53","text":"Samsung fridge repair","language":"en","expect":{"intent":"search","category":"appliance_repair"},"source":"synthetic"}
+{"id":"en-54","text":"tent hire for a wedding in Borrowdale","language":"en","expect":{"intent":"search","category":"event_hire","area":"Borrowdale"},"source":"synthetic"}
+{"id":"en-55","text":"Hi, can someone clean my carpets in Avondale","language":"en","expect":{"intent":"search","category":"cleaning","area":"Avondale"},"source":"synthetic"}
+{"id":"sn-11","text":"ndiri kutsvaga imba yekuroja ku Mabvuku","language":"sn","expect":{"intent":"search","category":"rentals","area":"Mabvuku"},"source":"synthetic"}
+{"id":"sn-12","text":"Ndoda kutenga mota Honda Fit","language":"sn","expect":{"intent":"search","category":"car_sales"},"source":"synthetic"}
+{"id":"sn-13","text":"pane anogadzira mafoni ku town here","language":"sn","expect":{"intent":"search","category":"electronics_repair","area":"Harare CBD"},"source":"synthetic"}
+{"id":"sn-14","text":"ndoda rori yekutakura zvinhu","language":"sn","expect":{"intent":"search","category":"transport_moving"},"source":"synthetic"}
+{"id":"sn-15","text":"Ndinoda munhu anosona mbatya ku Highfield","language":"sn","expect":{"intent":"search","category":"tailoring","area":"Highfield"},"source":"synthetic"}
+{"id":"sn-16","text":"ndoda simende nezvidhinha ku Norton","language":"sn","expect":{"intent":"search","category":"building_materials","area":"Norton"},"source":"synthetic"}
+{"id":"sn-17","text":"ndiri kutsvaga mupendi wedzimba ku Kuwadzana","language":"sn","expect":{"intent":"search","category":"painting","area":"Kuwadzana"},"source":"synthetic"}
+{"id":"sn-18","text":"Ndoda munhu anovaka imba ku Ruwa","language":"sn","expect":{"intent":"search","category":"building","area":"Ruwa"},"source":"synthetic"}
+{"id":"sn-19","text":"ndoda makanika ku Chitungwiza","language":"sn","expect":{"intent":"search","category":"car_repairs","area":"Chitungwiza"},"source":"synthetic"}
+{"id":"sn-20","text":"ndiri kutsvaga chikoro chekutyaira ku Avondale","language":"sn","expect":{"intent":"search","category":"driving_school","area":"Avondale"},"source":"synthetic"}
+{"id":"sn-21","text":"Ndoda musoni anosona marokwe emuchato","language":"sn","expect":{"intent":"search","category":"tailoring"},"source":"synthetic"}
+{"id":"sn-22","text":"Tinoda matende nemacheya emariro ku Glen Norah","language":"sn","expect":{"intent":"search","category":"event_hire","area":"Glen Norah"},"source":"synthetic"}
+{"id":"sn-23","text":"ndoda nyama yemombe ku Mbare","language":"sn","expect":{"intent":"search","category":"butchery","area":"Mbare"},"source":"synthetic"}
+{"id":"sn-24","text":"ndiri kutsvaga mbeu nefetiraiza ku Marondera","language":"sn","expect":{"intent":"search","category":"agri_inputs","area":"Marondera"},"source":"synthetic"}
+{"id":"sn-25","text":"ndoda munhu anobika chikafu chemuchato","language":"sn","expect":{"intent":"search","category":"catering"},"source":"synthetic"}
+{"id":"sn-26","text":"Ndoda anogadzira firiji ku Budiriro","language":"sn","expect":{"intent":"search","category":"appliance_repair","area":"Budiriro"},"source":"synthetic"}
+{"id":"sn-27","text":"ndinoda kutenga foni Samsung ku Harare","language":"sn","expect":{"intent":"search","category":"phones","area":"Harare"},"source":"synthetic"}
+{"id":"sn-28","text":"ndoda munhu anochenesa imba ku Borrowdale","language":"sn","expect":{"intent":"search","category":"cleaning","area":"Borrowdale"},"source":"synthetic"}
+{"id":"sn-29","text":"ndoda kuwachisa mbatya ku Avondale","language":"sn","expect":{"intent":"search","category":"laundry","area":"Avondale"},"source":"synthetic"}
+{"id":"sn-30","text":"Ndiri kutsvaga mudzidzisi wemasvomhu","language":"sn","expect":{"intent":"search","category":"tutoring"},"source":"synthetic"}
+{"id":"sn-31","text":"ndoda mushonga wechikosoro","language":"sn","expect":{"intent":"search","category":"pharmacy"},"source":"synthetic"}
+{"id":"sn-32","text":"ndoda doro","language":"sn","expect":{"intent":"blocked","category":"blocked_alcohol"},"source":"synthetic"}
+{"id":"sn-33","text":"ndoda chikwereti","language":"sn","expect":{"intent":"blocked","category":"blocked_lending"},"source":"synthetic"}
+{"id":"sn-34","text":"Ndoda gasi ku Kambuzuma","language":"sn","expect":{"intent":"search","category":"gas_lpg","area":"Kambuzuma"},"source":"synthetic"}
+{"id":"sn-35","text":"Ndiri kutsvaga nzvimbo yekuitira muchato ku Mount Pleasant","language":"sn","expect":{"intent":"search","category":"venues","area":"Mount Pleasant"},"source":"synthetic"}
+{"id":"sn-36","text":"ndoda ma solar panel ku Kwekwe","language":"sn","expect":{"intent":"search","category":"solar","area":"Kwekwe"},"source":"synthetic"}
+{"id":"sn-37","text":"ndiri kuda munhu anogadzira mota yangu yafa ku Warren Park","language":"sn","expect":{"intent":"search","category":"car_repairs","area":"Warren Park"},"source":"synthetic"}
+{"id":"sn-38","text":"Ndoda anoruka bvudzi ku Mufakose","language":"sn","expect":{"intent":"search","category":"salons","area":"Mufakose"},"source":"synthetic"}
+{"id":"sn-39","text":"ndoda munhu anouraya mapete ku Hatfield","language":"sn","expect":{"intent":"search","category":"pest_control","area":"Hatfield"},"source":"synthetic"}
+{"id":"sn-40","text":"ndiri kutsvaga chibhorani","language":"sn","expect":{"intent":"search","category":"borehole"},"source":"synthetic"}
+{"id":"sn-41","text":"ndoda kuchera chibhorani ku Epworth","language":"sn","expect":{"intent":"search","category":"borehole","area":"Epworth"},"source":"synthetic"}
+{"id":"sn-42","text":"ndoda tangi remvura ku Waterfalls","language":"sn","expect":{"intent":"search","category":"water_delivery","area":"Waterfalls"},"source":"synthetic"}
+{"id":"sn-43","text":"ndoda munhu anotora mifananidzo pamuchato","language":"sn","expect":{"intent":"search","category":"photography"},"source":"synthetic"}
+{"id":"sn-44","text":"ndiri kutsvaga DJ wemabiko ku Tafara","language":"sn","expect":{"intent":"search","category":"entertainment","area":"Tafara"},"source":"synthetic"}
+{"id":"sn-45","text":"ndoda makeke emabiko","language":"sn","expect":{"intent":"search","category":"cakes"},"source":"synthetic"}
+{"id":"sn-46","text":"Pane ane furiji riri kutengeswa here","language":"sn","expect":{"intent":"search","category":"appliances"},"source":"synthetic"}
+{"id":"sn-47","text":"ndoda kutenga mombe ku Chinhoyi","language":"sn","expect":{"intent":"search","category":"livestock","area":"Chinhoyi"},"source":"synthetic"}
+{"id":"sn-48","text":"ndoda munhu wemagetsi ku Belvedere","language":"sn","expect":{"intent":"search","category":"electrical","area":"Belvedere"},"source":"synthetic"}
+{"id":"sn-49","text":"ndoda munhu anogadzira pombi ku Greendale","language":"sn","expect":{"intent":"search","category":"plumbing","area":"Greendale"},"source":"synthetic"}
+{"id":"sn-50","text":"Ndoda munhu anogona kugadzira laptop","language":"sn","expect":{"intent":"search","category":"electronics_repair"},"source":"synthetic"}
+{"id":"sn-51","text":"ndoda kombi yekuroja kuenda ku Kariba","language":"sn","expect":{"intent":"search","category":"car_hire"},"source":"synthetic"}
+{"id":"sn-52","text":"ndoda bhatiri remota ku Kuwadzana","language":"sn","expect":{"intent":"search","category":"car_parts","area":"Kuwadzana"},"source":"synthetic"}
+{"id":"sn-53","text":"tinoda munhu anotakura fenicha kuenda ku Gweru","language":"sn","expect":{"intent":"search","category":"transport_moving"},"source":"synthetic"}
+{"id":"sn-54","text":"ndiri kutsvaga gweta","language":"sn","expect":{"intent":"search","category":"legal"},"source":"synthetic"}
+{"id":"sn-55","text":"ndoda mbatya dzevana ku Mbare","language":"sn","expect":{"intent":"search","category":"clothing","area":"Mbare"},"source":"synthetic"}
+{"id":"sn-56","text":"ndinoda basa","language":"sn","expect":{"intent":"search","category":null},"source":"synthetic"}

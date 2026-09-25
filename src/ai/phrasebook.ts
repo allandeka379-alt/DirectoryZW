@@ -1,8 +1,8 @@
 import type { Db } from "../db/client.js";
 import { one } from "../db/client.js";
-import type { Gazetteer } from "../directory/gazetteer.js";
-import { normalizeText, searchTokens } from "../text.js";
 import type { RequestInterpretation } from "./types.js";
+
+export { signatureOf } from "./reading.js";
 
 export type PhraseSource = "claude" | "customer" | "team";
 
@@ -16,24 +16,14 @@ export interface PhraseEntry {
   hits: number;
 }
 
-/**
- * The request's content words, normalised and sorted, without places or numbers:
- * "ndoda keke remuchato ku Budiriro" -> "keke remuchato". Null when nothing is left.
- */
-export function signatureOf(text: string, gazetteer?: Gazetteer): string | null {
-  const area = gazetteer?.match(text);
-  const areaWords = new Set(area ? normalizeText([area.name, area.city, ...area.aliases].join(" ")).split(" ") : []);
-  const words = [...new Set(searchTokens(text).filter((w) => !areaWords.has(w) && !/^\d+$/.test(w)))];
-  return words.length ? words.sort().join(" ") : null;
+/** A previous answer for this wording, if any. */
+export async function lookup(db: Db, signature: string): Promise<PhraseEntry | undefined> {
+  return one<PhraseEntry>(db, "SELECT * FROM phrasebook WHERE signature = $1", [signature]);
 }
 
-/** A previous answer for this wording, if any. Counts the reuse. */
-export async function recall(db: Db, signature: string): Promise<PhraseEntry | undefined> {
-  return one<PhraseEntry>(
-    db,
-    "UPDATE phrasebook SET hits = hits + 1, last_used_at = now() WHERE signature = $1 RETURNING *",
-    [signature],
-  );
+/** Count a reuse of a remembered answer. */
+export async function markUsed(db: Db, signature: string): Promise<void> {
+  await db.query("UPDATE phrasebook SET hits = hits + 1, last_used_at = now() WHERE signature = $1", [signature]);
 }
 
 /**

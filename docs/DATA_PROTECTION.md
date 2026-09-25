@@ -14,7 +14,8 @@ A working record of what personal data the service holds, where it goes, and how
 
 | Whose | What | Why | Kept |
 | --- | --- | --- | --- |
-| Customers | WhatsApp number, profile name, messages, requests, shared locations | Find businesses for them, follow up, improve the service | Messages 180 days (`MESSAGE_RETENTION_DAYS`). A request's wording 365 days (`REQUEST_RETENTION_DAYS`); after that only its category, area and outcome remain, for statistics. |
+| Customers | WhatsApp number, profile name, messages, requests, shared locations | Find businesses for them, follow up, improve the service | Messages 180 days (`MESSAGE_RETENTION_DAYS`). A request's wording, and the local engine's notes on it, 365 days (`REQUEST_RETENTION_DAYS`); after that only its category, area and outcome remain, for statistics. |
+| Customers | "Did you mean…?" questions we asked them and what they picked | Understand them, and answer the same wording directly next time | 365 days (`REQUEST_RETENTION_DAYS`). The wording's key words and category are kept, unlinked from the person, in the phrasebook. |
 | Customers | Voice notes and photos | Understand the request | Not stored. Only the transcript or a short description is saved with the message. |
 | Customers | Ratings and reports about businesses | Rank businesses, stop scams | Until the customer deletes their data. Reports stay after that, with the link to the customer removed. |
 | Businesses | Name, WhatsApp number, location, description, photos, price list, ratings | The listing | While listed. Deleting their data removes the listing and photos. |

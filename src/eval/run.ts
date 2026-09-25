@@ -4,7 +4,8 @@ import { parseArgs } from "node:util";
 import Anthropic from "@anthropic-ai/sdk";
 import { ClaudeInterpreter } from "../ai/claude-interpreter.js";
 import { KeywordInterpreter } from "../ai/keyword-interpreter.js";
-import { analyzeLocally } from "../ai/local.js";
+import { Lexicon } from "../ai/lexicon.js";
+import { analyzeLocally, type LocalAnalysis } from "../ai/local.js";
 import type { RequestInterpretation } from "../ai/types.js";
 import { loadConfig } from "../config.js";
 import { openDb } from "../db/client.js";
@@ -21,6 +22,7 @@ const USAGE = `Measure how well requests are understood, against labelled exampl
   npm run eval -- --claude                       also Claude (CLAUDE_MODEL); costs a little per example
   npm run eval -- --claude --model claude-haiku-4-5    try a cheaper model
   npm run eval -- --file evals/real.jsonl        your labelled real requests (see npm run eval:export)
+  npm run eval -- --trust-drafts                 as if a native speaker had approved the draft Shona words
   npm run eval -- --verbose                      list every miss, not just the first 25`;
 
 const { values } = parseArgs({
@@ -30,6 +32,7 @@ const { values } = parseArgs({
     claude: { type: "boolean", default: false },
     model: { type: "string" },
     "include-unreviewed": { type: "boolean", default: false },
+    "trust-drafts": { type: "boolean", default: false },
     verbose: { type: "boolean", default: false },
     help: { type: "boolean", default: false },
   },
@@ -46,15 +49,17 @@ if (examples.length < all.length) {
   console.log(`Skipping ${all.length - examples.length} real requests whose labels haven't been reviewed (see --include-unreviewed).`);
 }
 
-// Reference data only: categories and places, in a throwaway database.
+// Reference data only: categories, places and the seed lexicon, in a throwaway database.
 const db = await openDb({});
 await migrate(db);
 await seedReferenceData(db);
 const [taxonomy, gazetteer] = await Promise.all([Taxonomy.load(db), Gazetteer.load(db)]);
+const lexicon = await Lexicon.load(db, taxonomy, { trustDrafts: values["trust-drafts"] });
+const local = { taxonomy, gazetteer, lexicon };
 
 type Reader = { name: string; read(text: string): Promise<RequestInterpretation | null> };
 const keywords = new KeywordInterpreter();
-const readers: Reader[] = [{ name: "keyword (local)", read: (text) => keywords.interpretRequest(text, { taxonomy, gazetteer }) }];
+const readers: Reader[] = [{ name: "keyword (local)", read: (text) => keywords.interpretRequest(text, local) }];
 if (values.claude) {
   if (!config.anthropicApiKey) throw new Error("Set ANTHROPIC_API_KEY to evaluate Claude");
   const model = values.model ?? config.claudeModel;
@@ -103,18 +108,36 @@ for (const reader of readers) {
   }
   if (!values.verbose && misses.length > 25) console.log(`  …and ${misses.length - 25} more (--verbose)`);
 
-  // The local engine's confidence: what it would answer on its own, and how often that answer is right.
+  // What the ladder would do with each request before any phrasebook entries exist: answer it
+  // locally, ask "Did you mean…?", or pass it to Claude or a person.
   if (reader.name.startsWith("keyword")) {
     const byId = new Map(outcomes.map((o) => [o.example.id, o]));
-    const bands = { high: [] as Outcome[], medium: [] as Outcome[], low: [] as Outcome[] };
-    for (const e of examples) bands[(await analyzeLocally(e.text, { taxonomy, gazetteer }, keywords)).band].push(byId.get(e.id)!);
-    const share = (n: number) => `${Math.round((100 * n) / examples.length)}%`;
-    console.log(
-      `\n  Answered locally (high confidence): ${bands.high.length} (${share(bands.high.length)}), right ${bands.high.filter(right).length}` +
-        `\n  Sent on to the phrasebook or Claude: ${bands.medium.length + bands.low.length} (${share(bands.medium.length + bands.low.length)}),` +
-        ` of which the local answer would have been wrong: ${[...bands.medium, ...bands.low].filter((o) => !right(o)).length}`,
-    );
-    for (const o of bands.high.filter((x) => !right(x))) console.log(`  ! confident but wrong: ${o.example.id} "${o.example.text}"`);
+    const analyses = new Map<string, LocalAnalysis>();
+    for (const e of examples) analyses.set(e.id, await analyzeLocally(e.text, local, keywords));
+    const offered = (o: Outcome) => {
+      const want = o.example.expect.category;
+      return want === undefined || want === null || analyses.get(o.example.id)!.options.includes(want);
+    };
+    const summary = (list: Outcome[]) => {
+      const band = (b: string) => list.filter((o) => analyses.get(o.example.id)!.band === b);
+      const [high, medium, low] = [band("high"), band("medium"), band("low")];
+      const pct = (n: number) => `${Math.round((100 * n) / (list.length || 1))}%`;
+      return (
+        `answered ${high.length} (${pct(high.length)}, right ${high.filter(right).length}) · ` +
+        `asked ${medium.length} (${pct(medium.length)}, right option offered ${medium.filter(offered).length}) · ` +
+        `to Claude or a person ${low.length} (${pct(low.length)})`
+      );
+    };
+    console.log(`\n  How the ladder handles them${values["trust-drafts"] ? " (draft Shona words treated as approved)" : " (draft Shona words not yet approved)"}:`);
+    console.log(`  ${"all".padEnd(4)} ${summary(outcomes)}`);
+    for (const lang of [...new Set(outcomes.map((o) => o.example.language))].sort()) {
+      console.log(`  ${lang.padEnd(4)} ${summary(outcomes.filter((o) => o.example.language === lang))}`);
+    }
+    for (const o of outcomes) {
+      const a = analyses.get(o.example.id)!;
+      if (a.band === "high" && !right(o)) console.log(`  ! confident but wrong: ${o.example.id} "${o.example.text}"`);
+      if (a.band === "medium" && !offered(o)) console.log(`  ? asked without the right option: ${o.example.id} "${o.example.text}" (offered ${a.options.join(", ")})`);
+    }
   }
 }
 await db.close();

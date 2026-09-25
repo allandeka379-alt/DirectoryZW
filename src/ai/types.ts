@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Gazetteer } from "../directory/gazetteer.js";
 import type { Taxonomy } from "../directory/taxonomy.js";
+import type { Lexicon } from "./lexicon.js";
 
 export const RequestInterpretationSchema = z.object({
   intent: z.enum(["search", "greeting", "help", "human", "out_of_scope", "blocked", "unclear"]),
@@ -27,6 +28,8 @@ export type BusinessClassification = z.infer<typeof BusinessClassificationSchema
 export interface InterpretContext {
   taxonomy: Taxonomy;
   gazetteer?: Gazetteer;
+  /** What words mean to the local engine; the seed lexicon when left out. */
+  lexicon?: Lexicon;
   /** The customer's previous request, for follow-ups like "cheaper ones?". */
   previousRequest?: string;
 }

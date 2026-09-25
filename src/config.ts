@@ -27,6 +27,7 @@ const EnvSchema = z.object({
   CLAUDE_MODEL: z.string().default("claude-sonnet-5"),
   CLAUDE_DAILY_BUDGET_USD: z.coerce.number().min(0).default(5),
   CLAUDE_CALLS_PER_NUMBER_PER_DAY: z.coerce.number().int().min(0).default(5),
+  LEXICON_TRUST_DRAFTS: flag(false),
   SPEECH_TO_TEXT_URL: optionalString,
   SPEECH_TO_TEXT_TOKEN: optionalString,
   SPEECH_LANGUAGES: z.string().default("sn,nd,en"),
@@ -93,6 +94,8 @@ export interface Config {
   claudeModel: string;
   /** Claude spending stops for the day at `dailyUsd`; one number can cause `perNumberPerDay` calls. */
   claudeBudget: { dailyUsd: number; perNumberPerDay: number };
+  /** Use draft lexicon words (the unreviewed Shona list) as if a native speaker had approved them. */
+  lexiconTrustDrafts: boolean;
   /** Speech-to-text for voice notes: Google Chirp 2, or any service behind the HTTP contract in src/ai/speech.ts. */
   speech: {
     url?: string;
@@ -163,6 +166,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     anthropicApiKey: e.ANTHROPIC_API_KEY,
     claudeModel: e.CLAUDE_MODEL,
     claudeBudget: { dailyUsd: e.CLAUDE_DAILY_BUDGET_USD, perNumberPerDay: e.CLAUDE_CALLS_PER_NUMBER_PER_DAY },
+    lexiconTrustDrafts: e.LEXICON_TRUST_DRAFTS,
     speech: {
       url: e.SPEECH_TO_TEXT_URL,
       token: e.SPEECH_TO_TEXT_TOKEN,

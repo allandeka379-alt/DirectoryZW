@@ -4,6 +4,7 @@ import { ClaudeBudget } from "./ai/budget.js";
 import { ClaudeInterpreter } from "./ai/claude-interpreter.js";
 import { GoogleSpeechToText, loadServiceAccount } from "./ai/google-speech.js";
 import { KeywordInterpreter } from "./ai/keyword-interpreter.js";
+import { Lexicon } from "./ai/lexicon.js";
 import { HttpSpeechToText, SimulatorSpeechToText, type SpeechToText } from "./ai/speech.js";
 import { Understander, type RequestReader } from "./ai/understanding.js";
 import { ClaudeVision, type Vision } from "./ai/vision.js";
@@ -38,6 +39,8 @@ export interface App {
   runJobs(): Promise<number>;
   /** Re-read categories after synonyms change. */
   reloadTaxonomy(): Promise<void>;
+  /** Re-read the lexicon after words are added, approved or rejected. */
+  reloadLexicon(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -64,6 +67,8 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
   await seedReferenceData(db);
   if (config.seedSampleData) await seedSampleBusinesses(db);
   const [taxonomy, gazetteer] = await Promise.all([Taxonomy.load(db), Gazetteer.load(db)]);
+  const lexiconOptions = { trustDrafts: config.lexiconTrustDrafts };
+  const lexicon = await Lexicon.load(db, taxonomy, lexiconOptions);
 
   const cloud = config.whatsapp.transport === "cloud";
   const transport =
@@ -123,6 +128,7 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     config,
     taxonomy,
     gazetteer,
+    lexicon,
     understanding,
     keywords,
     budget,
@@ -152,6 +158,10 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     runJobs: () => jobs.runDue(handlers),
     reloadTaxonomy: async () => {
       services.taxonomy = await Taxonomy.load(db);
+      services.lexicon = services.lexicon.withTaxonomy(services.taxonomy);
+    },
+    reloadLexicon: async () => {
+      services.lexicon = await Lexicon.load(db, services.taxonomy, lexiconOptions);
     },
     close: async () => {
       await engine.idle();

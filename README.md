@@ -44,7 +44,7 @@ The ops console is at http://localhost:3000/ops. Locally it's open until the fir
 | --- | --- |
 | `src/whatsapp` | Webhook signature checks and parsing, message builders that enforce WhatsApp's limits, two transports (Meta's Cloud API and the local simulator), and downloads of the photos and voice notes people send |
 | `src/conversation` | The engine (messages from one person handled in order, duplicates ignored), the customer and business flows, and the messenger, which switches to approved templates once the 24-hour window has closed |
-| `src/ai` | Understanding requests: the local engine with its confidence bands, the phrasebook, Claude for wording the engine can't read (within a daily budget), photo reading, speech-to-text |
+| `src/ai` | Understanding requests: the local engine (the lexicon with word roles, Shona prefixes and verb roots, action rules, spelling guesses) and its confidence bands, the phrasebook, Claude for wording the engine can't read (within a daily budget), photo reading, speech-to-text |
 | `src/directory` | Category taxonomy (with related categories), place names, search and ranking, businesses, price-list items, customer recommendations, introductions with reference codes |
 | `src/field` | Field agents (setup links), in-person registration with duplicate checks, call-back audits |
 | `src/jobs` | A job queue stored in Postgres: follow-ups, weekly summaries, resending failed replies, the daily clean-ups, reading field price-list photos |
@@ -52,7 +52,7 @@ The ops console is at http://localhost:3000/ops. Locally it's open until the fir
 | `src/ops` | Ops console accounts, sessions and the activity log |
 | `src/privacy.ts` | Export and deletion on request, and the retention clean-up |
 | `src/eval` | Measuring how well requests are understood, against labelled examples in `evals/` |
-| `src/db` | Embedded PGlite or Postgres, SQL migrations, seed data (categories, areas, sample businesses) |
+| `src/db` | Embedded PGlite or Postgres, SQL migrations, seed data (categories, areas, the starting lexicon, sample businesses) |
 | `public/field` | The field app: works offline, captures GPS and photos, and queues registrations until there's signal |
 | `public/ops` | The ops console |
 
@@ -64,7 +64,7 @@ Rules the code enforces:
 - **Opt-in first.** Customers agree to the privacy notice before their first search; businesses agree to the listing terms when they register.
 - **No ID copies.** Field agents tick that they checked the owner's ID or registration; the app never accepts a photo of one. Verified means an agent saw the premises and checked ID.
 - **Our suppliers, then people.** A request is answered from suppliers in its category. When none are nearby, the customer gets suppliers in related categories: a gadget nobody lists goes to the electronics shops. Related categories are a deliberate list in `src/db/seed-data/categories.ts`, and trades and professional services aren't cross-referred. When nothing fits, a person takes over straight away. Both kinds show up in supply gaps for the field team.
-- **Local first.** Greetings, help, "agent", blocked items and clear requests are understood without Claude. Claude is asked only about wording the local engine can't read, and only within the daily budget. Its answers are remembered, so the same wording never costs twice. What nobody understands after one "please say it differently" goes to a person.
+- **Local first.** Greetings, help, "agent", blocked items and clear requests, in English or Shona, are understood without Claude. When one to three categories fit, or the request rests on Shona words nobody has checked yet, the customer taps "Did you mean…?" instead. Claude is asked only about wording the engine can't read at all, and only within the daily budget. Taps, Claude's answers and the team's corrections are remembered, so the same wording is never asked about twice. What nobody understands after one "please say it differently" goes to a person.
 - **Photos and voice notes only after consent.** A customer's photo or voice note is processed only once they've agreed to the privacy notice, and isn't stored. Only the transcript or a short description is saved with the message. Price-list photos that owners send are kept with their listing.
 - **Nothing is lost.** Every incoming message is saved before WhatsApp is told it arrived. Anything a crash leaves unhandled is picked up again. Replies that fail for a temporary reason are resent.
 - **Limits per number.** Floods of messages, photos, voice notes or reports from one number are cut off politely. A listing is paused automatically only after several customers who contacted it report it.
@@ -93,6 +93,28 @@ Claude is the backup, not the first reader. The design and its reasoning are in 
 - **Photos:** a customer's "find me this" photo becomes a request. An owner's price-list photo becomes items and prices, and the owner confirms before anything is saved. Price-list photos field agents take are read in the background, and wait for the next day when the budget is spent.
 
 Measure before changing models: `npm run eval -- --claude --model …` compares models on labelled requests. Plain `npm run eval` shows how many requests the local engine answers on its own, and whether any of those confident answers were wrong.
+
+## The local engine and the word list
+
+The local engine reads a request word by word ([docs/UNDERSTANDING.md](docs/UNDERSTANDING.md) has the design):
+
+- **Places**, including Shona and Ndebele prefixes ("kuMabelreign", "eNkulumane") and misspellings ("Mabelrein").
+- **Each category's own words**, plus the **lexicon**: every word has a role (service, product, general word, brand, occasion, action, detail or filler). The lexicon is in the database, seeded from `src/db/seed-data/lexicon.ts`, and editable in the ops console.
+- **Shona word shapes:**
+  - joining prefixes ("keke remuchato", a wedding cake; "matende nemacheya", tents and chairs)
+  - the plural "ma-" on borrowed words ("matyres")
+  - verb roots with their prefixes and endings ("anogadzira", who repairs; "yekuroja", for hire)
+- **English word forms** ("installer", "drilling"), texting spellings ("pls", "2moro", "55inch") and one-letter misspellings of longer words ("plumbar").
+- **Action rules** in `src/ai/rules.ts` (repair + fridge = appliance repairs, hire + chairs = event hire). Brands and occasions only narrow ("tyres for my Toyota" is car parts).
+
+**The Shona word list is a first draft by the developers.** Until a native speaker approves a word (ops console → **Word list**, or the spreadsheet download), requests that depend on it get a "Did you mean…?" question rather than a straight answer. `LEXICON_TRUST_DRAFTS=true` uses the drafts as if approved. The reviewer's guide is [docs/WORD_LIST.md](docs/WORD_LIST.md).
+
+The team keeps teaching it:
+- **Handoffs → Teach the assistant**: what the customer actually wanted
+- **Check answers**: the weekly check of a random sample of answers it gave on its own; a wrong one is fixed for that wording at once
+- **Vocabulary → Suggested words**: words customers used, with what they turned out to mean
+
+`npm run explain -- "ndoda keke remuchato ku Budiriro"` shows how a message is read, word by word.
 
 ## Voice notes
 
@@ -177,7 +199,13 @@ The ops console at `/ops` is built on these JSON endpoints. They live under `/op
 | `POST /agents/:id/token`, `POST /agents/:id/active` (admin) | New setup link (the old one stops working); deactivate or reactivate |
 | `GET /audits/queue?percent=10`, `POST /businesses/:id/audit` | Call-back sample per agent; record `confirmed`, `details_wrong`, `wrong_number`, `not_a_business` or `refused` (the last three count as failures; a wrong number or "not a business" also hides the listing) |
 | `GET /recommendations?status=new`, `POST /recommendations/:id/status` | Customers' tips about businesses to list; mark `contacted`, `listed` or `rejected` |
-| `GET /unmatched?days=30` | Searches that matched no category, grouped by what people typed |
+| `GET /unmatched?days=30` | Searches that matched no category, grouped by what people typed (wording the engine or phrasebook now answers drops off) |
+| `GET /vocabulary/suggestions` | Words customers used that the engine didn't know, with the category they turned out to mean and how consistently |
+| `GET /lexicon?language=sn&status=draft&q=`, `GET /lexicon/export.csv` | The word list, drafts first, with example forms of verb roots and how many customers agreed; as a spreadsheet for offline review |
+| `POST /lexicon` | Add a word or change what one means (`term`, `language`, `role`, `categories`, `action`, `root`, `gloss`); approved straight away |
+| `POST /lexicon/review` | Approve, reject or reopen words (`{ "ids": [..], "status": "approved" }`) |
+| `POST /requests/:id/teach` | What a customer actually wanted (`{ "category": "…" }`): corrects the request and remembers the wording |
+| `GET /review/sample?days=7`, `POST /requests/:id/review` | Answers the engine gave on its own, for the weekly check; record `right`, `should_ask` or `wrong` with the right `category` |
 | `GET /categories`, `POST /categories/:slug/synonyms` | Categories with their words; add or remove words (`{ "add": ["kombi"] }`), effective immediately and kept across restarts |
 
 The field app talks to `/field/api` with the agent's token:
@@ -197,7 +225,8 @@ The field app talks to `/field/api` with the agent's token:
 | `npm run db:migrate` / `npm run db:seed` | Apply migrations / load reference data (and sample businesses when enabled) |
 | `npm run ops:user -- add\|reset\|list` | Ops console accounts from the command line |
 | `npm run templates [-- --create]` | Check (or submit) the WhatsApp message templates |
-| `npm run eval [-- --claude --model …]` | Score request understanding on `evals/requests.jsonl`, and show what the local engine answers on its own (free; `--claude` calls the API) |
+| `npm run eval [-- --claude --model …]` | Score request understanding on `evals/requests.jsonl`, and show what the ladder does with each: answered locally, "Did you mean…?", or passed on (free; `--trust-drafts` as if the Shona words were approved; `--claude` calls the API) |
+| `npm run explain -- "text"` | Show how the local engine reads a message, word by word |
 | `npm run eval:export -- --out evals/real.jsonl` | Export real requests to label for the eval (kept out of git) |
 
 Tests run two at a time because each starts its own embedded Postgres; set `VITEST_MAX_WORKERS` higher on a machine with more than 8 GB of memory.

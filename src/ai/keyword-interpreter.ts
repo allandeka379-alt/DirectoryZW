@@ -1,4 +1,6 @@
-import { containsPhrase, normalizeText, parseBudget, searchTokens } from "../text.js";
+import { containsPhrase, normalizeMessage, parseBudget, searchTokens } from "../text.js";
+import { Lexicon } from "./lexicon.js";
+import { readRequest, type Reading } from "./reading.js";
 import {
   sanitizeClassification,
   type BusinessClassification,
@@ -7,52 +9,62 @@ import {
   type RequestInterpretation,
 } from "./types.js";
 
-const GREETINGS = ["hi", "hello", "hey", "hie", "howzit", "mhoro", "mhoroi", "makadini", "salibonani", "sawubona", "good morning", "good afternoon", "good evening", "morning"];
-const THANKS = ["thanks", "thank you", "ndatenda", "ngiyabonga", "siyabonga", "ok", "okay", "cool"];
+const GREETINGS = [
+  "hi", "hello", "hey", "hie", "howzit", "good morning", "good afternoon", "good evening", "morning",
+  "mhoro", "mhoroi", "makadini", "maswera sei", "mangwanani", "masikati", "manheru", "hesi", "ndeipi", "zvirisei",
+  "salibonani", "sawubona",
+];
+const THANKS = ["thanks", "thank you", "ok", "okay", "cool", "ndatenda", "tatenda", "mazvita", "maita basa", "ndinotenda", "ngiyabonga", "siyabonga"];
 const HELP = ["help", "menu", "how does this work", "how it works", "what can you do"];
 const HUMAN = ["agent", "human", "real person", "customer care", "speak to someone", "talk to someone", "talk to a person"];
 const WHEN = /\b(today|tonight|tomorrow|this weekend|weekend|next week|saturday|sunday|monday|tuesday|wednesday|thursday|friday|asap|urgently|urgent)\b/;
 const QUESTION = /^(what|who|when|why|how|is|are|was|tell me|explain|define)\b/;
 const PURCHASE = /\b(buy|need|want|looking|hire|rent|find|where|sell|sells|get)\b/;
-const SHONA =
-  /\b(ndiri|ndinoda|ndoda|ndinotsvaga|ndirikutsvaga|ndirikuda|ndichada|mhoro|mhoroi|kupi|ndekupi|ndapota|zvakanaka|mune|muri|munhu|mumwe|anogona|ndibatsirei|ndibatsire|ku|kwa)\b/;
-const NDEBELE = /\b(ngifuna|ngiyafuna|ngicela|ngiyacela|sawubona|salibonani|ngiyabonga|kuphi|lapho|ngidinga|umuntu|omunye)\b/;
 
 /**
- * Offline interpreter: category synonyms, place names and a few patterns. Used when there is
- * no Claude API key, when Claude fails, and in tests. It is deliberately simple.
+ * The local engine: reads requests with the lexicon (category words, word roles, Shona words and
+ * verb roots), the action rules and place names. It answers on its own when it's sure (see
+ * local.ts), and classifies business descriptions and tips without Claude.
  */
 export class KeywordInterpreter implements Interpreter {
   readonly name = "keyword";
 
+  /** What each word of a request is, and which categories fit. */
+  read(text: string, ctx: InterpretContext): Reading {
+    return readRequest(text, {
+      taxonomy: ctx.taxonomy,
+      gazetteer: ctx.gazetteer,
+      lexicon: ctx.lexicon ?? Lexicon.fromSeeds(ctx.taxonomy),
+    });
+  }
+
   async interpretRequest(text: string, ctx: InterpretContext): Promise<RequestInterpretation> {
-    const norm = normalizeText(text);
-    const words = norm.split(" ").filter(Boolean);
-    const top = ctx.taxonomy.match(text)[0];
-    const area = ctx.gazetteer?.match(text);
+    return this.interpret(text, this.read(text, ctx), ctx);
+  }
+
+  /** What a reading amounts to: the intent, the most likely category, place, budget and timing. */
+  interpret(text: string, reading: Reading, ctx: InterpretContext): RequestInterpretation {
+    const norm = normalizeMessage(text);
     const base: RequestInterpretation = {
       intent: "search",
       category_slug: null,
-      query: "",
-      area: area?.name ?? null,
+      query: reading.query,
+      area: reading.area?.name ?? null,
       budget_usd: parseBudget(text),
       needed_by: norm.match(WHEN)?.[1] ?? null,
       clarifying_question: null,
-      language: SHONA.test(norm) ? "sn" : NDEBELE.test(norm) ? "nd" : "en",
+      language: reading.language,
     };
-    if (top?.category.risk === "blocked") return { ...base, intent: "blocked", category_slug: top.category.slug };
+    if (reading.blocked) return { ...base, intent: "blocked", category_slug: reading.blocked };
     if (HUMAN.some((p) => containsPhrase(norm, p))) return { ...base, intent: "human" };
-    if (!top && words.length <= 4 && [...GREETINGS, ...THANKS].some((g) => containsPhrase(norm, g))) {
+    const top = ctx.taxonomy.get(reading.candidates[0]);
+    if (!top && norm.split(" ").length <= 4 && [...GREETINGS, ...THANKS].some((g) => containsPhrase(norm, g))) {
       return { ...base, intent: "greeting" };
     }
     if (!top && HELP.some((h) => containsPhrase(norm, h))) return { ...base, intent: "help" };
-
-    const areaWords = new Set(area ? normalizeText([area.name, area.city, ...area.aliases].join(" ")).split(" ") : []);
-    const tokens = searchTokens(text).filter((t) => !areaWords.has(t));
-    const query = tokens.join(" ");
-    if (top) return { ...base, category_slug: top.category.slug, query: query || top.term };
+    if (top) return { ...base, category_slug: top.slug, query: reading.query || top.name.toLowerCase() };
     if (QUESTION.test(norm) && !PURCHASE.test(norm)) return { ...base, intent: "out_of_scope" };
-    if (query.length >= 3) return { ...base, query };
+    if (reading.query.length >= 3) return base;
     return {
       ...base,
       intent: "unclear",
@@ -61,11 +73,10 @@ export class KeywordInterpreter implements Interpreter {
   }
 
   async classifyBusiness(text: string, ctx: InterpretContext): Promise<BusinessClassification> {
-    const slugs = ctx.taxonomy
-      .match(text)
-      .filter((m) => m.category.risk === "normal" || m.category.risk === "high_scam")
-      .slice(0, 3)
-      .map((m) => m.category.slug);
-    return sanitizeClassification({ category_slugs: slugs, keywords: searchTokens(text).join(" ") }, ctx.taxonomy);
+    const slugs = this.read(text, ctx).mentioned.filter((slug) => {
+      const risk = ctx.taxonomy.get(slug)?.risk;
+      return risk === "normal" || risk === "high_scam";
+    });
+    return sanitizeClassification({ category_slugs: slugs.slice(0, 3), keywords: searchTokens(text).join(" ") }, ctx.taxonomy);
   }
 }

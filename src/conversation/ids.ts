@@ -12,6 +12,9 @@ export const Ids = {
   rate: (introId: string, stars: number) => `rate:${introId}:${stars}`,
   eraseYes: "erase:yes",
   eraseNo: "erase:no",
+  /** An answer to "Did you mean…?": a category, or none of them. */
+  mean: (slug: string) => `mean:${slug}`,
+  meanOther: "mean:",
   // Business number
   register: "breg:start",
   categoriesOk: "breg:catok",

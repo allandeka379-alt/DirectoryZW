@@ -63,7 +63,7 @@ export async function exportContact(db: Db, contactId: string): Promise<Record<s
     [contactId],
   );
   if (!contact) return undefined;
-  const [messages, requests, introductions, reports, recommendations, businesses] = await Promise.all([
+  const [messages, requests, introductions, reports, recommendations, businesses, questions] = await Promise.all([
     db.query("SELECT direction, kind, body, notes, created_at FROM messages WHERE contact_id = $1 ORDER BY created_at", [contactId]),
     db.query(
       `SELECT r.raw_text, r.query, r.category_slug, a.name AS area, r.status, r.created_at
@@ -85,13 +85,16 @@ export async function exportContact(db: Db, contactId: string): Promise<Record<s
       `SELECT name, phone, description, status, verification, created_at FROM businesses WHERE owner_contact_id = $1 ORDER BY created_at`,
       [contactId],
     ),
+    // "Did you mean…?" questions we asked them, and what they picked.
+    db.query("SELECT options, chosen, created_at FROM clarifications WHERE contact_id = $1 ORDER BY created_at", [contactId]),
   ]);
-  return { exported_at: new Date().toISOString(), contact, messages, requests, introductions, reports, recommendations, businesses };
+  return { exported_at: new Date().toISOString(), contact, messages, requests, introductions, reports, recommendations, businesses, questions };
 }
 
 export interface RetentionResult {
   messages: number;
   requests: number;
+  questions: number;
   sessions: number;
   jobs: number;
   opsSessions: number;
@@ -99,8 +102,9 @@ export interface RetentionResult {
 
 /**
  * The daily clean-up. Chats are kept for `messageDays`; requests keep their category, area and
- * outcome for statistics, but lose the customer's words after `requestDays`. Idle chat state,
- * finished jobs and expired ops sessions go too.
+ * outcome for statistics, but lose the customer's words (and what the engine noted about them)
+ * after `requestDays`, when "Did you mean…?" questions go too. Idle chat state, finished jobs
+ * and expired ops sessions go as well.
  */
 export async function applyRetention(db: Db, now: Date, keep: { messageDays: number; requestDays: number }): Promise<RetentionResult> {
   const daysAgo = (days: number) => new Date(now.getTime() - days * 24 * 3600_000);
@@ -108,10 +112,11 @@ export async function applyRetention(db: Db, now: Date, keep: { messageDays: num
   return {
     messages: await count("DELETE FROM messages WHERE created_at < $1 RETURNING id", [daysAgo(keep.messageDays)]),
     requests: await count(
-      `UPDATE requests SET raw_text = '', interpretation = '{}'::jsonb
+      `UPDATE requests SET raw_text = '', interpretation = '{}'::jsonb, reading = NULL
         WHERE created_at < $1 AND raw_text <> '' RETURNING id`,
       [daysAgo(keep.requestDays)],
     ),
+    questions: await count("DELETE FROM clarifications WHERE created_at < $1 RETURNING id", [daysAgo(keep.requestDays)]),
     // A chat waiting for a person is kept however old it is.
     sessions: await count(
       "DELETE FROM sessions WHERE updated_at < $1 AND COALESCE(state->>'stage', '') <> 'handoff' RETURNING contact_id",

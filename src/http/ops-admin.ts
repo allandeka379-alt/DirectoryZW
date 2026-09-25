@@ -83,7 +83,7 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
   ops.get("/system", async () => {
     const { services, config } = app;
     const now = services.now();
-    const [claudeToday, claudeWeek, understood, matched] = await Promise.all([
+    const [claudeToday, claudeWeek, understood, matched, questions, precision, words] = await Promise.all([
       app.db.query<{ feature: string; calls: number; usd: number }>(
         `SELECT feature, count(*)::int AS calls, COALESCE(sum(cost_usd), 0)::float8 AS usd
            FROM ai_usage WHERE created_at >= $1 GROUP BY feature ORDER BY feature`,
@@ -103,6 +103,26 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
       app.db.query<{ match: string; requests: number }>(
         `SELECT match, count(*)::int AS requests FROM requests
           WHERE match IS NOT NULL AND created_at > now() - interval '7 days' GROUP BY 1 ORDER BY 2 DESC`,
+      ),
+      // "Did you mean…?" questions this week, and what customers did with them.
+      one<{ asked: number; picked: number; something_else: number }>(
+        app.db,
+        `SELECT count(*)::int AS asked,
+                count(*) FILTER (WHERE chosen IS NOT NULL AND chosen <> 'other')::int AS picked,
+                count(*) FILTER (WHERE chosen = 'other')::int AS something_else
+           FROM clarifications WHERE created_at > now() - interval '7 days'`,
+      ),
+      // The weekly check of answers the engine gave on its own, over four weeks.
+      one<{ reviewed: number; right: number; wrong: number; should_ask: number }>(
+        app.db,
+        `SELECT count(*)::int AS reviewed,
+                count(*) FILTER (WHERE verdict = 'right')::int AS right,
+                count(*) FILTER (WHERE verdict = 'wrong')::int AS wrong,
+                count(*) FILTER (WHERE verdict = 'should_ask')::int AS should_ask
+           FROM understanding_reviews WHERE created_at > now() - interval '28 days'`,
+      ),
+      app.db.query<{ language: string; status: string; words: number }>(
+        "SELECT language, status, count(*)::int AS words FROM lexicon GROUP BY 1, 2 ORDER BY 1, 2",
       ),
     ]);
     const health = await one<Record<string, unknown>>(
@@ -138,6 +158,9 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
       },
       understood7d: understood,
       matched7d: matched,
+      questions7d: questions,
+      precision28d: precision,
+      lexicon: { trustDrafts: config.lexiconTrustDrafts, words },
       limits: config.limits,
       retention: config.retention,
       ...health,

@@ -2,10 +2,11 @@
 
 **Goal:** our own engine understands normal requests, for free and instantly. It calls Claude only for messages it genuinely can't read, and hands to a person when Claude can't either. Every hard case it sees once should be easy the next time.
 
-**Status:** Phase 1 is built (Milestone 5); Phases 2 and 3 are still to do. Since this was written, two decisions changed it:
+**Status:** Phase 1 is built (Milestone 5). Phase 2 is built for English and Shona (Milestone 6); Ndebele vocabulary comes next. Phase 3 needs real traffic. Since this was written, three decisions changed it:
 
 - **No web search.** "Found online" is gone. We're building up our own suppliers.
 - **Nothing found means suppliers first, then people.** When no supplier in the category is nearby, the customer gets suppliers in related categories (a gadget nobody lists goes to our electronics shops). When nothing fits, a person takes over in the same reply.
+- **Shona first, with a draft word list.** The developers wrote the starting Shona list, not native speakers. So a draft word can only ever lead to a "Did you mean…?" question, never a straight answer, until a native speaker approves it ([WORD_LIST.md](WORD_LIST.md)).
 
 ## Summary
 
@@ -108,7 +109,7 @@ Shona and Ndebele nouns and verbs belong in the lexicon too:
 - Nouns: *keke/ikhekhe* (cake), *muchato/umtshado* (wedding), *matende* (tents), *macheya* (chairs), *mota/imoto* (car), *firiji/ifriji* (fridge), *umakhenikha* (mechanic).
 - Verbs: *gadzira/lungisa* (repair), *tenga/thenga* (buy), *roja/qasha* (hire), *chera/gebha* (dig or drill), *takura/thutha* (carry or move).
 
-The first lists come from native speakers, not from us guessing. The phrasebook then adds what real customers write.
+The first lists should come from native speakers. In practice the developers drafted the Shona list, so draft words lead only to questions until a native speaker approves them. The phrasebook then adds what real customers write.
 
 **Rules (few, explicit, each with a test)**
 - An action changes the category family:
@@ -240,10 +241,24 @@ Each phase ships on its own and must keep the eval at least as accurate as Claud
 - A category picker instead of Claude at registration and for tips.
 - Web search removed. Related suppliers, then a person, when nothing matches.
 
-**Phase 2: a local engine that reads like a Zimbabwean (1–2 weeks, plus native-speaker review)**
-- The normaliser, word roles, word forms, fuzzy matching and locatives.
-- Core Shona and Ndebele vocabulary, and the action rules.
-- Clarifying questions (step 3). The phrasebook also learns from taps and handoffs. Vocabulary suggestions in the ops console. The weekly precision review screen.
+**Phase 2: a local engine that reads like a Zimbabwean (built for English and Shona; Ndebele next)**
+- Built:
+  - the normaliser (texting spellings, numbers stuck to units, stretched letters), word roles, English word forms, fuzzy matching (same first letter, 6+ letters) and place prefixes
+  - the lexicon in the database, editable in the ops console
+  - Shona word shapes: joining prefixes, "ma-" on borrowed words, verb roots with their prefixes and endings, common spelling variations. A word joined by "of" ("nyama yemombe") only describes the main word.
+  - a draft Shona list of about 460 words and roots
+  - the action rules
+  - "Did you mean…?" (step 3), learning from taps, handoffs and the weekly check
+  - vocabulary suggestions, the Word list review screen, and the Check answers screen
+- On the 117 test requests (56 Shona):
+  - With the Shona words still drafts: 57% are answered locally, 39% get a question (always offering the right option), 3% go to Claude or a person, and none is confidently wrong.
+  - With them approved: 93% are answered locally (95% of Shona), all correctly.
+  - The developers wrote these examples alongside the word list, so real traffic will score lower. That's what Phase 3 measures.
+- Not built yet:
+  - Ndebele vocabulary and word shapes
+  - out-of-hours handoff messages
+  - spotting frustration
+  - a "not what I asked" button on results
 
 **Phase 3: tune on real traffic (after the first 2–4 weeks)**
 - Label about 300 real requests and set the HIGH and MEDIUM thresholds from them.

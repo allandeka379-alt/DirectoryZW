@@ -258,24 +258,24 @@ describe("vocabulary", () => {
     const c = as(newCustomer());
     await c.consented();
     // Not understood twice: a person takes over.
-    await c.say("I need a kombi in Workington");
-    await c.say("A kombi in Workington please");
+    await c.say("I need a lowbed in Workington");
+    await c.say("A lowbed in Workington please");
     expect(textOf(c.last())).toContain("passed your message to our team");
     const unmatched = (await ops("GET", "/unmatched")).json();
-    expect(unmatched.find((u: { query: string }) => u.query === "kombi")).toMatchObject({ requests: 2 });
+    expect(unmatched.find((u: { query: string }) => u.query === "lowbed")).toMatchObject({ requests: 2 });
 
-    const res = await ops("POST", "/categories/transport_moving/synonyms", { add: ["Kombi", "kombi hire", "truck"] });
-    expect(res.json().extra_synonyms).toEqual(["kombi", "kombi hire"]); // "truck" is already a seeded synonym
+    const res = await ops("POST", "/categories/transport_moving/synonyms", { add: ["Lowbed", "lowbed hire", "truck"] });
+    expect(res.json().extra_synonyms).toEqual(["lowbed", "lowbed hire"]); // "truck" is already a seeded synonym
 
     await c.say("menu"); // back from the person to the assistant
-    await c.say("I need a kombi in Workington");
+    await c.say("I need a lowbed in Workington");
     expect(rowsOf(c.last()).some((t) => t.startsWith("Workington"))).toBe(true);
     const after = (await ops("GET", "/unmatched")).json();
-    expect(after.find((u: { query: string }) => u.query === "kombi")).toBeUndefined();
+    expect(after.find((u: { query: string }) => u.query === "lowbed")).toBeUndefined();
 
     // Reseeding (every start-up) keeps words added from the console.
     await seedReferenceData(app.db);
     await app.reloadTaxonomy();
-    expect(app.services.taxonomy.match("kombi")[0]?.category.slug).toBe("transport_moving");
+    expect(app.services.taxonomy.match("lowbed")[0]?.category.slug).toBe("transport_moving");
   });
 });
