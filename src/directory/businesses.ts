@@ -11,6 +11,8 @@ export interface Business {
   lat: number | null;
   lng: number | null;
   verification: "verified" | "registered";
+  /** When our team last checked it in person. */
+  verified_at: Date | null;
   status: "active" | "paused" | "removed";
   source: "field" | "self" | "import";
   owner_contact_id: string | null;

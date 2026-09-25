@@ -11,7 +11,14 @@ export interface BusinessView {
   distanceKm: number | null;
   ratingAvg: number | null;
   ratingCount: number;
+  /** When our team last checked it in person (cards only). */
+  verifiedAt?: Date | null;
+  /** How customers got on with it recently (cards only). */
+  record?: { answered: number; sorted: number };
 }
+
+/** Customers see a track record from this many answers (TRACK_RECORD_MIN in directory/trust.ts). */
+const TRACK_RECORD_SHOWN_FROM = 5;
 
 /** Price-list items that match the request, shown on a business card. */
 export interface PriceView {
@@ -220,8 +227,20 @@ export function relatedResults(requestId: string, hits: BusinessView[], need: Ne
   };
 }
 
+/**
+ * A business: when our team checked it, how customers got on with it through us (once enough of
+ * them have said), its description and matching prices.
+ */
 export function businessCard(requestId: string, b: BusinessView, prices?: PriceView): OutboundMessage {
-  const details = [badge(b), b.areaName, distance(b) ? `${distance(b)} away` : null, rating(b)].filter(Boolean).join(" · ");
+  const verified =
+    b.verification === "verified" && b.verifiedAt
+      ? `✅ Verified by our team in ${b.verifiedAt.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "Africa/Harare" })}`
+      : badge(b);
+  const details = [verified, b.areaName, distance(b) ? `${distance(b)} away` : null, rating(b)].filter(Boolean).join(" · ");
+  const record =
+    b.record && b.record.answered >= TRACK_RECORD_SHOWN_FROM
+      ? `\n👍 ${b.record.sorted} of the last ${b.record.answered} customers we sent them got what they needed`
+      : "";
   const buttons = [{ id: Ids.connect(requestId, b.id), title: "Connect me" }];
   if (requestId) buttons.push({ id: Ids.list(requestId), title: "Other options" });
   buttons.push({ id: Ids.report(b.id), title: "Report" });
@@ -232,7 +251,7 @@ export function businessCard(requestId: string, b: BusinessView, prices?: PriceV
     : "";
   return {
     kind: "buttons",
-    body: `*${b.name}*\n${details}${b.description ? `\n\n${b.description}` : ""}${priceLines}${b.verification === "verified" ? "" : `\n\n${UNVERIFIED_WARNING}`}`,
+    body: `*${b.name}*\n${details}${record}${b.description ? `\n\n${b.description}` : ""}${priceLines}${b.verification === "verified" ? "" : `\n\n${UNVERIFIED_WARNING}`}`,
     buttons,
   };
 }
@@ -457,7 +476,20 @@ export function followUp(introId: string, businessName: string): OutboundMessage
     buttons: [
       { id: Ids.feedback(introId, "sorted"), title: "Yes, sorted" },
       { id: Ids.feedback(introId, "not_yet"), title: "Not yet" },
+      { id: Ids.feedback(introId, "failed"), title: "It didn't work out" },
+    ],
+  };
+}
+
+/** After "It didn't work out": what went wrong, so we can hold the business to our promise. */
+export function whatHappened(introId: string, goods: boolean): OutboundMessage {
+  return {
+    kind: "buttons",
+    body: "Sorry about that. What happened?",
+    buttons: [
       { id: Ids.feedback(introId, "no_reply"), title: "They didn't reply" },
+      { id: Ids.feedback(introId, "couldnt_help"), title: goods ? "Didn't have it" : "Couldn't help" },
+      { id: Ids.feedback(introId, "other"), title: "Something else" },
     ],
   };
 }
@@ -490,12 +522,31 @@ export function notYet(requestId: string | null): OutboundMessage {
   };
 }
 
-export function noReply(requestId: string | null, businessId: string): OutboundMessage {
+/**
+ * They didn't reply, or couldn't help. It counts against the business: those that keep letting
+ * customers down go back to our field team (see recheckQueue).
+ */
+export function letDown(requestId: string | null, businessId: string, what: "no_reply" | "couldnt_help", goods: boolean): OutboundMessage {
   const buttons = requestId ? [{ id: Ids.list(requestId), title: "Other options" }] : [];
+  const sorry = what === "no_reply" ? "Sorry they didn't reply." : goods ? "Sorry they didn't have it." : "Sorry they couldn't help.";
   return {
     kind: "buttons",
-    body: "Sorry they didn't reply. Would you like to try another business?",
+    body:
+      `${sorry} Thanks for telling us: our team checks again any business that keeps letting customers down.\n\n` +
+      `Would you like to try another ${goods ? "store" : "business"}?`,
     buttons: [...buttons, { id: Ids.report(businessId), title: "Report them" }, { id: Ids.newSearch, title: "New search" }],
+  };
+}
+
+/** Everyone we had for this request has been tried. */
+export function noOtherOptions(requestId: string): OutboundMessage {
+  return {
+    kind: "buttons",
+    body: "We don't have any other businesses for that yet. Would you like someone from our team to help you find one?",
+    buttons: [
+      { id: Ids.human(requestId), title: "Talk to a person" },
+      { id: Ids.newSearch, title: "New search" },
+    ],
   };
 }
 

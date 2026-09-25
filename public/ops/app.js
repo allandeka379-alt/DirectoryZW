@@ -91,6 +91,8 @@ const ROLE_LABELS = {
   filler: "filler (ignored)",
 };
 
+const RECHECK_LABELS = { still_good: "still good", unverified: "✅ removed", paused: "paused" };
+
 const date = (v) => (v ? new Date(v).toLocaleString() : "");
 const day = (v) => (v ? new Date(v).toLocaleDateString() : "");
 
@@ -125,6 +127,7 @@ const screens = {
         tile(s.introductions_7d, "Customers connected, 7 days"),
         tile(s.open_handoffs, "Chats waiting for a person"),
         tile(s.open_reports, "Open reports"),
+        tile(s.reports_over_a_day, "Reports waiting over a day"),
         tile(s.active_agents, "Active field agents"),
         tile(s.new_recommendations, "New customer tips"),
       ),
@@ -213,6 +216,33 @@ const screens = {
           const note = h("input", { placeholder: "Note (optional)" });
           return h("div", { class: "row" }, outcome, note, h("button", { class: "primary", onclick: async () => {
             await post(`/businesses/${r.id}/audit`, { outcome: outcome.value, note: note.value || undefined });
+            render();
+          } }, "Save"));
+        } },
+      ], rows),
+    ];
+  },
+
+  async rechecks() {
+    const rows = await api("/rechecks");
+    const outcomes = [["still_good", "Still good: renew ✅"], ["unverified", "Remove ✅"], ["paused", "Pause the listing"]];
+    const detail = h("div");
+    return [
+      ...header("Re-checks", "Verified businesses to look at again: customers let down, open reports, low ratings, or verified over a year ago. " +
+        "Visit or phone them, then record what you found. We tell customers that verified businesses are genuine and reliable, so this list is how we keep that true."),
+      detail,
+      table([
+        { label: "Business", render: (r) => h("span", {}, r.name, r.status !== "active" ? [" ", h("span", { class: "tag warn" }, r.status)] : null, " ",
+          h("button", { onclick: async () => { detail.replaceChildren(await businessDetail(r.id)); window.scrollTo(0, 0); } }, "Details")) },
+        { label: "Phone", render: (r) => h("a", { href: `tel:+${r.phone}` }, `+${r.phone}`) },
+        { label: "Area", render: (r) => [r.area, r.city].filter(Boolean).join(", ") },
+        { label: "Why", render: (r) => h("ul", { class: "reasons" }, ...r.reasons.map((reason) => h("li", {}, reason))) },
+        { label: "Verified", render: (r) => day(r.verified_at) },
+        { label: "What you found", render: (r) => {
+          const outcome = h("select", {}, ...outcomes.map(([v, l]) => h("option", { value: v }, l)));
+          const note = h("input", { placeholder: "What you found (optional)" });
+          return h("div", { class: "row" }, outcome, note, h("button", { class: "primary", onclick: async () => {
+            await post(`/businesses/${r.id}/recheck`, { outcome: outcome.value, reasons: r.reasons, note: note.value || undefined });
             render();
           } }, "Save"));
         } },
@@ -782,6 +812,8 @@ async function businessDetail(id) {
       h("span", { class: "tag" }, `source: ${b.source}`),
       checks.length ? h("span", { class: "muted" }, checks.join(" · ")) : null),
     b.audits.length ? h("p", { class: "muted" }, "Call-backs: ", b.audits.map((a) => `${a.outcome} by ${a.audited_by} on ${day(a.created_at)}${a.note ? ` (${a.note})` : ""}`).join("; ")) : null,
+    b.record.answered ? h("p", { class: "muted" }, `Customers' follow-up answers, last 90 days: ${b.record.sorted} sorted, ${b.record.couldntHelp} couldn't help, ${b.record.noReply} didn't reply.`) : null,
+    b.rechecks.length ? h("p", { class: "muted" }, "Re-checks: ", b.rechecks.map((c) => `${RECHECK_LABELS[c.outcome] ?? c.outcome} by ${c.checked_by} on ${day(c.created_at)}${c.note ? ` (${c.note})` : ""}`).join("; ")) : null,
     photos,
     b.offerings.length ? h("details", {},
       h("summary", {}, `Price list: ${b.offerings.length} items (read ${day(b.offerings[0].created_at)})`),

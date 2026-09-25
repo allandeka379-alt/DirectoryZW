@@ -58,6 +58,7 @@ input, select, textarea { font: inherit; padding: 7px 10px; border: 1px solid va
 textarea { width: 100%; min-height: 60px; }
 form.inline, .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .muted { color: var(--muted); font-size: 13px; }
+ul.reasons { margin: 0; padding-left: 18px; }
 .tag { font-size: 12px; border-radius: 999px; padding: 2px 8px; background: var(--in); white-space: nowrap; }
 .tag.ok { color: var(--ok); }
 .tag.warn { color: var(--warn); }

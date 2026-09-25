@@ -14,6 +14,7 @@ import {
   verifyBusiness,
 } from "../directory/businesses.js";
 import { RECOMMENDATION_STATUSES, setRecommendationStatus } from "../directory/recommendations.js";
+import { RECHECK_OUTCOMES, recheckQueue, recordRecheck, trackRecord } from "../directory/trust.js";
 import { agentStats, createAgent, resetAgentToken, setAgentActive, setupUrl } from "../field/agents.js";
 import { AUDIT_OUTCOMES, auditQueue, recordAudit } from "../field/audits.js";
 import { logAction } from "../ops/accounts.js";
@@ -73,6 +74,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
              (SELECT count(*)::int FROM introductions WHERE created_at > now() - interval '7 days') AS introductions_7d,
              (SELECT count(*)::int FROM sessions WHERE state->>'stage' = 'handoff') AS open_handoffs,
              (SELECT count(*)::int FROM reports WHERE status = 'open') AS open_reports,
+             (SELECT count(*)::int FROM reports WHERE status = 'open' AND created_at < now() - interval '1 day') AS reports_over_a_day,
              (SELECT count(*)::int FROM agents WHERE active) AS active_agents,
              (SELECT count(*)::int FROM recommendations WHERE status = 'new') AS new_recommendations`,
         ),
@@ -168,6 +170,30 @@ export function registerOps(server: FastifyInstance, app: App): void {
         return { ok: true };
       });
 
+      // ----- Re-checks -----
+
+      // Verified businesses whose customers keep being let down, that have open reports, or
+      // were verified over a year ago: the field team looks at them again.
+      ops.get("/rechecks", async () => recheckQueue(app.db));
+
+      ops.post("/businesses/:id/recheck", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        const body = z
+          .object({
+            outcome: z.enum(RECHECK_OUTCOMES),
+            reasons: z.array(z.string().max(200)).max(10).default([]),
+            note: z.string().max(500).optional(),
+          })
+          .safeParse(req.body);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a business ID and what you found" });
+        const actor = actorOf(req);
+        if (!(await recordRecheck(app.db, params.data.id, { ...body.data, by: actor.name }))) {
+          return reply.code(404).send({ error: "Business not found" });
+        }
+        await logAction(app.db, actor, "business.recheck", params.data.id, { outcome: body.data.outcome });
+        return { ok: true };
+      });
+
       // ----- Businesses -----
 
       ops.get("/businesses", async (req) => {
@@ -190,13 +216,15 @@ export function registerOps(server: FastifyInstance, app: App): void {
         if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
         const b = await getBusiness(app.db, params.data.id);
         if (!b) return reply.code(404).send({ error: "Business not found" });
-        const [photos, audits, categories, offerings] = await Promise.all([
+        const [photos, audits, categories, offerings, rechecks, record] = await Promise.all([
           app.db.query("SELECT id, kind, content_type, bytes, created_at FROM business_photos WHERE business_id = $1 ORDER BY created_at", [b.id]),
           app.db.query("SELECT outcome, note, audited_by, created_at FROM audits WHERE business_id = $1 ORDER BY created_at DESC", [b.id]),
           categoriesOf(app.db, b.id),
           app.db.query("SELECT name, price_usd, price_text, created_at FROM offerings WHERE business_id = $1 ORDER BY name LIMIT 200", [b.id]),
+          app.db.query("SELECT outcome, reasons, note, checked_by, created_at FROM rechecks WHERE business_id = $1 ORDER BY created_at DESC", [b.id]),
+          trackRecord(app.db, b.id),
         ]);
-        return { ...b, area: app.services.gazetteer.get(b.area_id)?.name ?? null, categories, photos, audits, offerings };
+        return { ...b, area: app.services.gazetteer.get(b.area_id)?.name ?? null, categories, photos, audits, offerings, rechecks, record };
       });
 
       ops.get("/photos/:id", async (req, reply) => {

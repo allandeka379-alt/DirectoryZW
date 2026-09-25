@@ -9,6 +9,7 @@ import { matchingOfferings, priceLabel } from "../directory/offerings.js";
 import { createRecommendation } from "../directory/recommendations.js";
 import { fileReport, reportsSince } from "../directory/reports.js";
 import { searchBusinesses, searchRelated } from "../directory/search.js";
+import { trackRecord } from "../directory/trust.js";
 import type { Category } from "../directory/taxonomy.js";
 import { eraseContact } from "../privacy.js";
 import { containsPhrase, normalizeText, normalizeZimPhone } from "../text.js";
@@ -544,13 +545,8 @@ async function onAction(t: T, id: string): Promise<void> {
     case "new":
       resetSearch(state);
       return t.reply(copy.askWhatYouNeed(contact.profile_name));
-    case "rep": {
-      const dayAgo = new Date(svc.now().getTime() - 24 * 3600_000);
-      if ((await reportsSince(svc.db, contact.id, dayAgo)) >= svc.config.limits.reportsPerDay) return t.reply(copy.reportLimit());
-      state.stage = "awaiting_report";
-      state.reportBusinessId = args[0];
-      return t.reply(copy.askReport());
-    }
+    case "rep":
+      return startReport(t, args[0] ?? "");
     case "fb":
       return feedback(t, args[0] ?? "", args[1] ?? "");
     case "rate":
@@ -566,7 +562,9 @@ async function showBusiness(t: T, requestId: string, businessId: string): Promis
   if (!business || business.status !== "active") return t.reply(copy.noLongerAvailable());
   const request = await ownRequest(t, requestId);
   const prices = request ? await pricesFor(t, business.id, request) : undefined;
-  return t.reply(copy.businessCard(request?.id ?? "", viewOf(t, business, request), prices));
+  const record = await trackRecord(svc.db, business.id);
+  const view = { ...viewOf(t, business, request), verifiedAt: business.verified_at ? new Date(business.verified_at) : null, record };
+  return t.reply(copy.businessCard(request?.id ?? "", view, prices));
 }
 
 /** Price-list items matching what the customer asked for. */
@@ -608,15 +606,19 @@ async function reshowResults(t: T, requestId: string): Promise<void> {
   const { svc, contact } = t;
   const request = await ownRequest(t, requestId);
   if (!request) return t.reply(copy.askWhatYouNeed(contact.profile_name));
+  // Businesses they told us didn't reply or couldn't help aren't offered again for this request.
   const rows = await svc.db.query<Business & { rank: number }>(
     `SELECT b.*, rr.rank FROM request_results rr JOIN businesses b ON b.id = rr.business_id
-      WHERE rr.request_id = $1 AND b.status = 'active' ORDER BY rr.rank`,
+      WHERE rr.request_id = $1 AND b.status = 'active'
+        AND NOT EXISTS (SELECT 1 FROM introductions i WHERE i.request_id = rr.request_id AND i.business_id = b.id
+                          AND i.outcome IN ('no_reply', 'couldnt_help'))
+      ORDER BY rr.rank`,
     [request.id],
   );
   const category = svc.taxonomy.get(request.category_slug);
   const place = request.area_id != null ? svc.gazetteer.get(request.area_id)?.name : undefined;
   const what = need(request.interpretation, category, request.understood_by);
-  if (!rows.length) return t.reply(copy.askWhatYouNeed(contact.profile_name));
+  if (!rows.length) return t.reply(copy.noOtherOptions(request.id));
   const views = rows.map((b) => viewOf(t, b, request));
   if (request.match === "related" && category) return t.reply(copy.relatedResults(request.id, views, what, relatedLabel(t, category), place));
   return t.reply(copy.results(request.id, views, what, place));
@@ -749,17 +751,50 @@ async function saveRecommendation(t: T, phone: string | null): Promise<void> {
 
 // ---------- Follow-up answers ----------
 
+/**
+ * The follow-up's answers. "It didn't work out" asks what happened: no reply, or couldn't help
+ * (didn't have it). Those count against the business's track record and ranking, and a
+ * verified business that keeps letting customers down goes back to our field team.
+ */
 async function feedback(t: T, introId: string, outcome: string): Promise<void> {
   const { svc, contact } = t;
   const intro = await getIntroduction(svc.db, introId);
   if (!intro || intro.contact_id !== contact.id) return;
-  if (outcome !== "sorted" && outcome !== "not_yet" && outcome !== "no_reply") return;
+  const request = intro.request_id ? await getRequest(svc.db, intro.request_id) : undefined;
+  const goods = svc.taxonomy.get(request?.category_slug)?.goods ?? false;
+  switch (outcome) {
+    case "failed":
+      return t.reply(copy.whatHappened(intro.id, goods));
+    case "other":
+      // Something else went wrong: they tell us in their own words, as a report.
+      return startReport(t, intro.business_id);
+    case "sorted":
+    case "not_yet":
+    case "no_reply":
+    case "couldnt_help":
+      break;
+    default:
+      return;
+  }
   await svc.db.query("UPDATE introductions SET outcome = $2 WHERE id = $1", [intro.id, outcome]);
-  await adjustResponseScore(svc.db, intro.business_id, outcome === "no_reply" ? -0.1 : 0.05);
-  const business = await getBusiness(svc.db, intro.business_id);
-  if (outcome === "sorted") return t.reply(copy.askRating(intro.id, business?.name ?? "them"));
+  const change = outcome === "no_reply" ? -0.1 : outcome === "couldnt_help" ? -0.05 : outcome === "sorted" ? 0.05 : 0;
+  if (change) await adjustResponseScore(svc.db, intro.business_id, change);
+  if (outcome === "sorted") {
+    const business = await getBusiness(svc.db, intro.business_id);
+    return t.reply(copy.askRating(intro.id, business?.name ?? "them"));
+  }
   if (outcome === "not_yet") return t.reply(copy.notYet(intro.request_id));
-  return t.reply(copy.noReply(intro.request_id, intro.business_id));
+  return t.reply(copy.letDown(intro.request_id, intro.business_id, outcome, goods));
+}
+
+/** Ask what went wrong with a business; their next message is the report. A few a day at most. */
+async function startReport(t: T, businessId: string): Promise<void> {
+  const { svc, contact, state } = t;
+  const dayAgo = new Date(svc.now().getTime() - 24 * 3600_000);
+  if ((await reportsSince(svc.db, contact.id, dayAgo)) >= svc.config.limits.reportsPerDay) return t.reply(copy.reportLimit());
+  state.stage = "awaiting_report";
+  state.reportBusinessId = businessId;
+  return t.reply(copy.askReport());
 }
 
 async function rate(t: T, introId: string, stars: number): Promise<void> {

@@ -8,7 +8,12 @@ export const Ids = {
   human: (requestId = "") => `human:${requestId}`,
   newSearch: "new",
   report: (businessId: string) => `rep:${businessId}`,
-  feedback: (introId: string, outcome: "sorted" | "not_yet" | "no_reply") => `fb:${introId}:${outcome}`,
+  /**
+   * The follow-up: "failed" (It didn't work out) asks what happened; "other" (Something else)
+   * asks them to tell us, as a report.
+   */
+  feedback: (introId: string, outcome: "sorted" | "not_yet" | "failed" | "no_reply" | "couldnt_help" | "other") =>
+    `fb:${introId}:${outcome}`,
   rate: (introId: string, stars: number) => `rate:${introId}:${stars}`,
   eraseYes: "erase:yes",
   eraseNo: "erase:no",

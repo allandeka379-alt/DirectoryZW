@@ -514,4 +514,31 @@ ALTER TABLE categories ADD COLUMN sells_goods boolean NOT NULL DEFAULT false;
 ALTER TABLE categories ADD COLUMN phrase text;
 `,
   },
+  {
+    id: "011_keeping_our_promise",
+    sql: /* sql */ `
+-- "It didn't work out" in the follow-up: the business couldn't help (didn't have it, or couldn't
+-- do the job), as well as not replying.
+ALTER TABLE introductions DROP CONSTRAINT introductions_outcome_check;
+ALTER TABLE introductions ADD CONSTRAINT introductions_outcome_check
+  CHECK (outcome IN ('sorted', 'not_yet', 'no_reply', 'couldnt_help'));
+
+-- The field team's re-checks of verified businesses whose customers keep being let down, that
+-- have open reports, or were verified over a year ago (the Re-checks screen).
+CREATE TABLE rechecks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  outcome text NOT NULL CHECK (outcome IN ('still_good', 'unverified', 'paused')),
+  -- why it was on the list, as the team saw it
+  reasons text[] NOT NULL DEFAULT '{}',
+  note text,
+  checked_by text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX rechecks_business_idx ON rechecks (business_id, created_at);
+
+-- When the team was reminded about a report left open for a day, so each is raised once.
+ALTER TABLE reports ADD COLUMN reminded_at timestamptz;
+`,
+  },
 ];

@@ -211,6 +211,27 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
 - [x] **The welcome message says why verified businesses can be trusted:** "✅ Every business we verify is visited in person by our team, and we check who runs it, so you know it's genuine and reliable. Customers rate the businesses they contact, and we look into every report."
 - [x] Migrations 009 and 010; tests (165)
 
+## Milestone 10: keeping our promise
+
+The welcome message says verified businesses are genuine and reliable and that we look into every report, and results say verified stores have what the customer asked for. This milestone checks that it stays true.
+
+- [x] **The follow-up asks how it went**: "Yes, sorted", "Not yet" or "It didn't work out". "It didn't work out" asks what happened: "They didn't reply", "Didn't have it" (for stores; "Couldn't help" for services), or "Something else", which the customer tells us as a report.
+  - A business that didn't reply or couldn't help ranks lower, and "Other options" leaves it out for that request.
+  - When nobody else is left, the customer is offered a person from the team.
+- [x] **Track record on the business card**, once five customers have answered: "👍 8 of the last 9 customers we sent them got what they needed" (last 90 days).
+- [x] **When our team checked it**, on the card: "✅ Verified by our team in September 2026".
+- [x] **Re-checks screen** for the field team. Verified businesses are listed with the reasons:
+  - open reports
+  - fewer than half of 3+ customers got what they needed
+  - 2+ customers said they didn't reply this month
+  - an average rating under 3
+  - verified over a year ago
+  - The team visits or phones them, then records "still good" (renews the tick), "remove ✅" or "pause". Recording it closes the business's open reports.
+- [x] **Reports can't sit unread**: the team is alerted once about any report left open for a day. The overview shows how many are waiting.
+- [x] Migration 011; tests (172)
+- [ ] Re-submit the `follow_up` template if it was already submitted: its third button is now "It didn't work out"
+- [ ] Make re-checks part of the field team's week, like call-backs
+
 ## Later: monetization (only after traction)
 
 - [ ] Featured placement, lead credits and sponsored slots, as priced in the feasibility study

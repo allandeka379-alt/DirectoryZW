@@ -27,7 +27,7 @@ export const TEMPLATES: TemplateDefinition[] = [
     key: "followUp",
     body: "Did you get what you needed from {{1}}?",
     example: ["QuickFix Plumbing"],
-    quickReplies: ["Yes, sorted", "Not yet", "They didn't reply"],
+    quickReplies: ["Yes, sorted", "Not yet", "It didn't work out"],
     usedFor: "Asking a customer how it went, a few days after connecting",
   },
   {

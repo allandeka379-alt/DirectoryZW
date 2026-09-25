@@ -2,6 +2,7 @@ import { one } from "../db/client.js";
 import { getBusiness } from "../directory/businesses.js";
 import { getIntroduction } from "../directory/introductions.js";
 import { replaceOfferings } from "../directory/offerings.js";
+import { reportsWaiting } from "../directory/trust.js";
 import { MAX_JOB_ATTEMPTS, type JobHandler } from "../jobs/queue.js";
 import { applyRetention } from "../privacy.js";
 import type { Channel } from "../whatsapp/types.js";
@@ -30,7 +31,7 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
         quickReplies: [
           { id: Ids.feedback(intro.id, "sorted"), title: "Yes, sorted" },
           { id: Ids.feedback(intro.id, "not_yet"), title: "Not yet" },
-          { id: Ids.feedback(intro.id, "no_reply"), title: "They didn't reply" },
+          { id: Ids.feedback(intro.id, "failed"), title: "It didn't work out" },
         ],
       });
       await svc.db.query("UPDATE introductions SET followed_up_at = now() WHERE id = $1", [intro.id]);
@@ -49,6 +50,26 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
         svc.log.info({ ...result }, "Retention clean-up done");
       } finally {
         await svc.jobs.enqueue("retention", {}, nextDailyRun(now));
+      }
+    },
+
+    /**
+     * Every hour: remind the team about customer reports left open for a day. We tell customers
+     * we look into every report, so none should sit unread.
+     */
+    report_reminders: async () => {
+      try {
+        const waiting = await reportsWaiting(svc.db);
+        if (waiting.length) {
+          const names = [...new Set(waiting.map((w) => w.business))].slice(0, 5).join(", ");
+          svc.alerts.send(
+            "reports-waiting",
+            `${waiting.length} customer report${waiting.length === 1 ? " has" : "s have"} waited more than a day (${names}). ` +
+              "We tell customers we look into every report: see Reports in the ops console.",
+          );
+        }
+      } finally {
+        await svc.jobs.enqueue("report_reminders", {}, new Date(svc.now().getTime() + 3600_000));
       }
     },
 
@@ -152,6 +173,7 @@ export async function scheduleRecurringJobs(svc: Services): Promise<void> {
     ["weekly_summaries", nextWeeklyRun(svc.now())],
     ["retention", nextDailyRun(svc.now())],
     ["retrain_classifier", new Date(svc.now().getTime() + 3600_000)],
+    ["report_reminders", new Date(svc.now().getTime() + 3600_000)],
   ];
   if (svc.priceListBatches) recurring.push(["price_list_batches", new Date(svc.now().getTime() + PRICE_LIST_BATCH_EVERY_MS)]);
   for (const [kind, runAt] of recurring) {

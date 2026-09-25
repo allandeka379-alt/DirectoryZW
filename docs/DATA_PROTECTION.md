@@ -18,8 +18,8 @@ A working record of what personal data the service holds, where it goes, and how
 | Customers | "Did you mean…?" questions we asked them and what they picked | Understand them, and answer the same wording directly next time | 365 days (`REQUEST_RETENTION_DAYS`). The wording's key words and category are kept, unlinked from the person, in the phrasebook. |
 | Customers | The team's labels on a sample of requests (what the customer wanted) | Measure and tune how well requests are understood | With the request: deleted with the customer's data. The eval export (`evals/real*.jsonl`) holds request wording, so keep it private and delete it after use. |
 | Customers | Voice notes and photos | Understand the request | Not stored. Only the transcript or a short description is saved with the message. |
-| Customers | Ratings and reports about businesses | Rank businesses, stop scams | Until the customer deletes their data. Reports stay after that, with the link to the customer removed. |
-| Businesses | Name, WhatsApp number, location, description, photos, price list, ratings | The listing | While listed. Deleting their data removes the listing and photos. |
+| Customers | Ratings, follow-up answers ("sorted", "didn't reply", "didn't have it") and reports about businesses | Rank businesses, show track records, send businesses back for a re-check, stop scams | Until the customer deletes their data. Reports stay after that, with the link to the customer removed. Track records show counts only, never who answered. |
+| Businesses | Name, WhatsApp number, location, description, photos, price list, ratings, the field team's re-check notes | The listing | While listed. Deleting their data removes the listing, photos and re-checks. |
 | Field agents | Name, phone, city, registrations | Quality control | While they work with us. |
 | Ops team | Name, email, password hash, activity log | Accountability | Accounts while active. The activity log holds no message text. |
 

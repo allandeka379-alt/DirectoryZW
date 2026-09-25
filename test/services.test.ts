@@ -142,7 +142,7 @@ describe("message templates", () => {
       category: "UTILITY",
       components: [
         { type: "BODY", text: "Did you get what you needed from {{1}}?", example: { body_text: [["QuickFix Plumbing"]] } },
-        { type: "BUTTONS", buttons: ["Yes, sorted", "Not yet", "They didn't reply"].map((text) => ({ type: "QUICK_REPLY", text })) },
+        { type: "BUTTONS", buttons: ["Yes, sorted", "Not yet", "It didn't work out"].map((text) => ({ type: "QUICK_REPLY", text })) },
       ],
     });
   });
