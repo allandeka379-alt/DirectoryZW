@@ -115,3 +115,33 @@ export async function searchBusinesses(db: Db, taxonomy: Taxonomy, q: SearchQuer
   if (category?.risk === "high_scam" || verified.length >= q.minVerified) return verified.slice(0, q.limit);
   return [...verified, ...registered].slice(0, q.limit);
 }
+
+/**
+ * Suppliers in the categories related to this one (see relatedCategories in the seed data), for
+ * when none in the category itself are nearby: verified first, then the rest, closest and best
+ * first. A high-scam category is referred to verified businesses only.
+ */
+export async function searchRelated(
+  db: Db,
+  taxonomy: Taxonomy,
+  q: { categorySlug: string; lat?: number; lng?: number; limit: number; minVerified: number; maxKm?: number },
+): Promise<BusinessHit[]> {
+  const category = taxonomy.get(q.categorySlug);
+  if (!category) return [];
+  const seen = new Set<string>();
+  const hits: BusinessHit[] = [];
+  for (const slug of category.related) {
+    const related = taxonomy.get(slug);
+    if (!related || related.risk === "blocked" || related.risk === "restricted") continue;
+    const found = await searchBusinesses(db, taxonomy, { ...q, categorySlug: slug, text: "" });
+    for (const h of found) {
+      if (seen.has(h.id)) continue;
+      seen.add(h.id);
+      hits.push(h);
+    }
+  }
+  const byScore = (a: BusinessHit, b: BusinessHit) => b.score - a.score;
+  const verified = hits.filter((h) => h.verification === "verified").sort(byScore);
+  const registered = category.risk === "high_scam" ? [] : hits.filter((h) => h.verification === "registered").sort(byScore);
+  return [...verified, ...registered].slice(0, q.limit);
+}

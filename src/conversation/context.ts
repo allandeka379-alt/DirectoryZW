@@ -1,7 +1,8 @@
 import type { Alerts } from "../alerts.js";
-import type { OnlineFinder } from "../ai/online-finder.js";
+import type { ClaudeBudget } from "../ai/budget.js";
+import type { KeywordInterpreter } from "../ai/keyword-interpreter.js";
 import type { SpeechToText } from "../ai/speech.js";
-import type { Interpreter } from "../ai/types.js";
+import type { Understander } from "../ai/understanding.js";
 import type { Vision } from "../ai/vision.js";
 import type { Config } from "../config.js";
 import type { Db } from "../db/client.js";
@@ -21,7 +22,12 @@ export interface Services {
   config: Config;
   taxonomy: Taxonomy;
   gazetteer: Gazetteer;
-  interpreter: Interpreter;
+  /** Reads requests: locally first, then the phrasebook, then Claude within budget. */
+  understanding: Understander;
+  /** The local keyword engine, for classifying business descriptions and tips (never Claude). */
+  keywords: KeywordInterpreter;
+  /** Daily limit on Claude spending, checked before photos and price lists too. */
+  budget: ClaudeBudget;
   messenger: Messenger;
   jobs: JobQueue;
   /** Photos and voice notes people send. */
@@ -32,8 +38,6 @@ export interface Services {
   vision?: Vision;
   /** Optional: voice notes need a speech-to-text service. */
   speech?: SpeechToText;
-  /** Optional: "found online" results need Claude with web search. */
-  finder?: OnlineFinder;
   /** Tells the team when something needs a person. */
   alerts: Alerts;
   log: Logger;

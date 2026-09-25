@@ -1,5 +1,5 @@
 import type { Db } from "./client.js";
-import { categories } from "./seed-data/categories.js";
+import { categories, relatedCategories } from "./seed-data/categories.js";
 import { areas } from "./seed-data/areas.js";
 import { sampleBusinesses } from "./seed-data/sample-businesses.js";
 
@@ -8,11 +8,12 @@ export async function seedReferenceData(db: Db): Promise<void> {
   await db.transaction(async (tx) => {
     for (const c of categories) {
       await tx.query(
-        `INSERT INTO categories (slug, name, group_name, synonyms, risk, needs_location)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO categories (slug, name, group_name, synonyms, risk, needs_location, related)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (slug) DO UPDATE SET name = excluded.name, group_name = excluded.group_name,
-           synonyms = excluded.synonyms, risk = excluded.risk, needs_location = excluded.needs_location`,
-        [c.slug, c.name, c.group, c.synonyms, c.risk ?? "normal", c.needsLocation ?? true],
+           synonyms = excluded.synonyms, risk = excluded.risk, needs_location = excluded.needs_location,
+           related = excluded.related`,
+        [c.slug, c.name, c.group, c.synonyms, c.risk ?? "normal", c.needsLocation ?? true, relatedCategories[c.slug] ?? []],
       );
     }
     for (const a of areas) {

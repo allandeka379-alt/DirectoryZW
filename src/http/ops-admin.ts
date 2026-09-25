@@ -6,6 +6,7 @@ import { getBusiness, isUuid } from "../directory/businesses.js";
 import { logAction } from "../ops/accounts.js";
 import { eraseBusiness, eraseContact, exportContact } from "../privacy.js";
 import { normalizeZimPhone } from "../text.js";
+import { harareStartOfDay } from "../time.js";
 import { STARTED_AT, VERSION } from "../version.js";
 import { actorOf, refuseUnlessAdmin } from "./ops-auth.js";
 
@@ -78,9 +79,32 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
     return { ok: true };
   });
 
-  // Is everything working? Queues, failed sends, what's switched on, recent alerts.
+  // Is everything working? Queues, failed sends, what's switched on, Claude spend, recent alerts.
   ops.get("/system", async () => {
     const { services, config } = app;
+    const now = services.now();
+    const [claudeToday, claudeWeek, understood, matched] = await Promise.all([
+      app.db.query<{ feature: string; calls: number; usd: number }>(
+        `SELECT feature, count(*)::int AS calls, COALESCE(sum(cost_usd), 0)::float8 AS usd
+           FROM ai_usage WHERE created_at >= $1 GROUP BY feature ORDER BY feature`,
+        [harareStartOfDay(now)],
+      ),
+      one<{ calls: number; usd: number }>(
+        app.db,
+        "SELECT count(*)::int AS calls, COALESCE(sum(cost_usd), 0)::float8 AS usd FROM ai_usage WHERE created_at >= $1",
+        [new Date(now.getTime() - 7 * 24 * 3600_000)],
+      ),
+      // How requests were understood over the last week: locally, from the phrasebook, by Claude, or not at all.
+      app.db.query<{ by: string; requests: number }>(
+        `SELECT understood_by AS by, count(*)::int AS requests FROM requests
+          WHERE understood_by IS NOT NULL AND created_at > now() - interval '7 days' GROUP BY 1 ORDER BY 2 DESC`,
+      ),
+      // Whether they found suppliers in their own category, only related ones, or went to a person.
+      app.db.query<{ match: string; requests: number }>(
+        `SELECT match, count(*)::int AS requests FROM requests
+          WHERE match IS NOT NULL AND created_at > now() - interval '7 days' GROUP BY 1 ORDER BY 2 DESC`,
+      ),
+    ]);
     const health = await one<Record<string, unknown>>(
       app.db,
       `SELECT
@@ -101,12 +125,19 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
       whatsapp: config.whatsapp.transport,
       storage: app.store.name,
       features: {
-        interpreter: services.interpreter.name,
+        understanding: services.understanding.description,
         photos: !!services.vision,
-        foundOnline: !!services.finder,
         voiceNotes: services.speech?.name ?? null,
         alertsTo: config.alertWebhookUrl ? "webhook" : "log only",
       },
+      claude: {
+        dailyBudgetUsd: config.claudeBudget.dailyUsd,
+        perNumberPerDay: config.claudeBudget.perNumberPerDay,
+        today: claudeToday,
+        last7Days: claudeWeek,
+      },
+      understood7d: understood,
+      matched7d: matched,
       limits: config.limits,
       retention: config.retention,
       ...health,

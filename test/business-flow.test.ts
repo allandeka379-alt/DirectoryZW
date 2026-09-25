@@ -67,7 +67,7 @@ describe("business number", () => {
     await b.say("register");
     await b.say("Mai Chipo Cakes");
     await b.say("xyzzy");
-    expect(b.last()).toContain("couldn't tell which category");
+    expect(b.last()).toContain("couldn't tell from that. Which of these best describes your business?");
     await b.say("cancel");
     expect(b.last()).toContain("Registration cancelled");
   });

@@ -8,7 +8,7 @@ In order. The code is ready for each step; most of the work here is accounts, ap
 - [ ] Add **two phone numbers** to the WhatsApp Cloud API: one for customers, one for businesses and field teams. Use numbers that have never had a WhatsApp account, or delete the account first.
 - [ ] Set each number's **display name** (Meta reviews it) and business profile: description, address, website and the privacy notice link.
 - [ ] Create a **system user** with a permanent access token that has `whatsapp_business_messaging` and `whatsapp_business_management`.
-- [ ] Submit the **message templates**: `npm run templates -- --create`, then run `npm run templates` until all five show APPROVED.
+- [ ] Submit the **message templates**: `npm run templates -- --create`, then run `npm run templates` until all three show APPROVED.
 - [ ] Register the **webhook** at `https://<domain>/webhook/whatsapp` with your verify token, subscribe to `messages`, and set the app secret.
 
 ## 2. Hosting (see [DEPLOY.md](DEPLOY.md))

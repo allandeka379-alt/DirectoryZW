@@ -12,7 +12,6 @@ import {
   setBusinessStatus,
   verifyBusiness,
 } from "../directory/businesses.js";
-import { closeLead, setLeadStatus } from "../directory/online-leads.js";
 import { RECOMMENDATION_STATUSES, setRecommendationStatus } from "../directory/recommendations.js";
 import { agentStats, createAgent, resetAgentToken, setAgentActive, setupUrl } from "../field/agents.js";
 import { AUDIT_OUTCOMES, auditQueue, recordAudit } from "../field/audits.js";
@@ -70,7 +69,6 @@ export function registerOps(server: FastifyInstance, app: App): void {
              (SELECT count(*)::int FROM sessions WHERE state->>'stage' = 'handoff') AS open_handoffs,
              (SELECT count(*)::int FROM reports WHERE status = 'open') AS open_reports,
              (SELECT count(*)::int FROM agents WHERE active) AS active_agents,
-             (SELECT count(*)::int FROM online_leads WHERE expires_at > now()) AS online_leads,
              (SELECT count(*)::int FROM recommendations WHERE status = 'new') AS new_recommendations`,
         ),
       );
@@ -79,7 +77,8 @@ export function registerOps(server: FastifyInstance, app: App): void {
         const q = req.query as { status?: string; limit?: string };
         const limit = Math.min(Number(q.limit) || 50, 200);
         return app.db.query(
-          `SELECT r.id, r.created_at, r.status, r.raw_text, r.query, r.category_slug, a.name AS area, r.result_count, c.wa_id
+          `SELECT r.id, r.created_at, r.status, r.match, r.understood_by, r.raw_text, r.query, r.category_slug, a.name AS area,
+                  r.result_count, c.wa_id
              FROM requests r JOIN contacts c ON c.id = r.contact_id LEFT JOIN areas a ON a.id = r.area_id
             WHERE ($1::text IS NULL OR r.status = $1)
             ORDER BY r.created_at DESC LIMIT $2`,
@@ -87,14 +86,14 @@ export function registerOps(server: FastifyInstance, app: App): void {
         );
       });
 
-      // What people ask for that we can't answer: where field teams should go next.
+      // What people ask for that we can't answer from their own category: where field teams go next.
       ops.get("/supply-gaps", async (req) => {
         const days = Math.min(Number((req.query as { days?: string }).days) || 7, 90);
         return app.db.query(
           `SELECT COALESCE(r.category_slug, '(unknown)') AS category, COALESCE(a.name, '(no area)') AS area,
                   count(*)::int AS requests, (array_agg(r.raw_text ORDER BY r.created_at DESC))[1:3] AS examples
              FROM requests r LEFT JOIN areas a ON a.id = r.area_id
-            WHERE r.status IN ('no_results', 'asked_around', 'handoff')
+            WHERE (r.status IN ('no_results', 'asked_around', 'handoff') OR r.match IN ('related', 'none'))
               AND r.created_at > now() - make_interval(days => $1)
             GROUP BY 1, 2 ORDER BY requests DESC LIMIT 100`,
           [days],
@@ -301,41 +300,6 @@ export function registerOps(server: FastifyInstance, app: App): void {
         if (!params.success || !body.success) return reply.code(400).send({ error: "Give an agent ID and active true/false" });
         if (!(await setAgentActive(app.db, params.data.id, body.data.active))) return reply.code(404).send({ error: "Agent not found" });
         await logAction(app.db, actorOf(req), body.data.active ? "agent.activate" : "agent.deactivate", params.data.id);
-        return { ok: true };
-      });
-
-      // ----- Found online -----
-
-      // Businesses found on the web for requests we couldn't answer: the field team's invitation list.
-      ops.get("/online-leads", async (req) => {
-        const q = req.query as { status?: string };
-        return app.db.query(
-          `SELECT l.id, l.name, l.phone, l.description, l.area_text, a.name AS area, a.city, l.category_slug,
-                  c.name AS category, l.query, l.source_url, l.source_title, l.status, l.times_shown,
-                  l.times_connected, l.found_at, l.expires_at
-             FROM online_leads l LEFT JOIN areas a ON a.id = l.area_id LEFT JOIN categories c ON c.slug = l.category_slug
-            WHERE l.expires_at > $2 AND ($1::text IS NULL OR l.status = $1)
-            ORDER BY l.times_connected DESC, l.times_shown DESC, l.found_at DESC LIMIT 300`,
-          [q.status || null, app.services.now()],
-        );
-      });
-
-      ops.post("/online-leads/:id/status", async (req, reply) => {
-        const params = Id.safeParse(req.params);
-        const body = z.object({ status: z.enum(["new", "invited"]) }).safeParse(req.body);
-        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a lead ID and a status" });
-        if (!(await setLeadStatus(app.db, params.data.id, body.data.status))) return reply.code(404).send({ error: "Lead not found" });
-        await logAction(app.db, actorOf(req), "lead.status", params.data.id, { status: body.data.status });
-        return { ok: true };
-      });
-
-      // Done with a lead: it's now listed, it declined (never show it again), or the details were wrong.
-      ops.post("/online-leads/:id/close", async (req, reply) => {
-        const params = Id.safeParse(req.params);
-        const body = z.object({ reason: z.enum(["listed", "declined", "wrong"]) }).safeParse(req.body);
-        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a lead ID and a reason" });
-        if (!(await closeLead(app.db, params.data.id, body.data.reason))) return reply.code(404).send({ error: "Lead not found" });
-        await logAction(app.db, actorOf(req), "lead.close", params.data.id, { reason: body.data.reason });
         return { ok: true };
       });
 

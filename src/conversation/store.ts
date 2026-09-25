@@ -125,6 +125,10 @@ export interface RequestRow {
   lng: number | null;
   status: RequestStatus;
   result_count: number;
+  /** local, phrasebook, claude, photo or fallback */
+  understood_by: string | null;
+  /** exact, related or none */
+  match: "exact" | "related" | "none" | null;
   created_at: Date;
 }
 
@@ -140,12 +144,13 @@ export async function createRequest(
     lat?: number | null;
     lng?: number | null;
     status?: RequestStatus;
+    understoodBy?: string | null;
   },
 ): Promise<RequestRow> {
   const row = await one<RequestRow>(
     db,
-    `INSERT INTO requests (contact_id, raw_text, interpretation, category_slug, query, area_id, lat, lng, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    `INSERT INTO requests (contact_id, raw_text, interpretation, category_slug, query, area_id, lat, lng, status, understood_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
     [
       r.contactId,
       r.rawText.slice(0, 1000),
@@ -156,6 +161,7 @@ export async function createRequest(
       r.lat ?? null,
       r.lng ?? null,
       r.status ?? "open",
+      r.understoodBy ?? null,
     ],
   );
   return row!;
@@ -166,12 +172,17 @@ export async function getRequest(db: Db, id: string): Promise<RequestRow | undef
   return one<RequestRow>(db, "SELECT * FROM requests WHERE id = $1", [id]);
 }
 
-export async function setRequestStatus(db: Db, id: string, status: RequestStatus, resultCount?: number): Promise<void> {
-  await db.query("UPDATE requests SET status = $2, result_count = COALESCE($3, result_count) WHERE id = $1", [
-    id,
-    status,
-    resultCount ?? null,
-  ]);
+export async function setRequestStatus(
+  db: Db,
+  id: string,
+  status: RequestStatus,
+  resultCount?: number,
+  match?: RequestRow["match"],
+): Promise<void> {
+  await db.query(
+    "UPDATE requests SET status = $2, result_count = COALESCE($3, result_count), match = COALESCE($4, match) WHERE id = $1",
+    [id, status, resultCount ?? null, match ?? null],
+  );
 }
 
 export async function saveResults(db: Db, requestId: string, businessIds: string[]): Promise<void> {

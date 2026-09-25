@@ -4,16 +4,15 @@ import { seedReferenceData } from "../src/db/seed.js";
 import { searchBusinesses } from "../src/directory/search.js";
 import { createServer, registerRoutes } from "../src/http/server.js";
 import type { InboundContent } from "../src/whatsapp/types.js";
-import { FakeFinder, FakeVision, found, interpretation } from "./fakes.js";
+import { FakeVision, interpretation } from "./fakes.js";
 import { testApp, textOf, type TestApp } from "./helpers.js";
 
 const vision = new FakeVision();
-const finder = new FakeFinder();
 let app: TestApp;
 let server: FastifyInstance;
 
 beforeAll(async () => {
-  app = await testApp({ ONLINE_SEARCHES_PER_DAY: "2" }, { vision, finder });
+  app = await testApp({}, { vision });
   server = createServer({ logger: false });
   registerRoutes(server, app);
   await server.ready();
@@ -258,13 +257,17 @@ describe("vocabulary", () => {
   it("grows the categories from searches that matched none", async () => {
     const c = as(newCustomer());
     await c.consented();
+    // Not understood twice: a person takes over.
     await c.say("I need a kombi in Workington");
+    await c.say("A kombi in Workington please");
+    expect(textOf(c.last())).toContain("passed your message to our team");
     const unmatched = (await ops("GET", "/unmatched")).json();
-    expect(unmatched.find((u: { query: string }) => u.query === "kombi")).toMatchObject({ requests: 1 });
+    expect(unmatched.find((u: { query: string }) => u.query === "kombi")).toMatchObject({ requests: 2 });
 
     const res = await ops("POST", "/categories/transport_moving/synonyms", { add: ["Kombi", "kombi hire", "truck"] });
     expect(res.json().extra_synonyms).toEqual(["kombi", "kombi hire"]); // "truck" is already a seeded synonym
 
+    await c.say("menu"); // back from the person to the assistant
     await c.say("I need a kombi in Workington");
     expect(rowsOf(c.last()).some((t) => t.startsWith("Workington"))).toBe(true);
     const after = (await ops("GET", "/unmatched")).json();
@@ -274,102 +277,5 @@ describe("vocabulary", () => {
     await seedReferenceData(app.db);
     await app.reloadTaxonomy();
     expect(app.services.taxonomy.match("kombi")[0]?.category.slug).toBe("transport_moving");
-  });
-});
-
-// Last: these tests move the clock forward.
-describe("found online", () => {
-  const venues = () => [
-    found("Avondale Gardens Venue", "263772100001", { area: "Avondale" }),
-    found("Rose Hall", "263772100002"),
-  ];
-
-  it("shows unchecked businesses from the web when nothing is listed", async () => {
-    finder.answer = (q) => (q.query.includes("venue") ? venues() : []);
-    const c = as(newCustomer());
-    await c.say("I need a wedding venue in Avondale");
-    await c.tap("I agree");
-
-    expect(c.texts().at(-2)).toContain("checking online");
-    expect(finder.calls.at(-1)).toMatchObject({ categoryName: "Venues", place: "Avondale, Harare", city: "Harare" });
-    const list = c.last();
-    expect(textOf(list)).toContain("Our team hasn't checked this business");
-    expect(rowsOf(list)).toEqual(["Avondale Gardens Venue", "Rose Hall"]);
-    expect(rowsOf(list, 1)).toEqual(["Ask around", "Talk to a person"]);
-
-    await c.tap("Avondale Gardens");
-    const card = textOf(c.last());
-    expect(card).toContain("🌐 Found online");
-    expect(card).toContain("facebook.com");
-
-    await c.tap("Connect me");
-    const link = c.last();
-    if (link.kind !== "cta_url") throw new Error(`Expected a link, got ${link.kind}`);
-    const url = new URL(link.url);
-    expect(url.pathname).toBe("/263772100001");
-    expect(url.searchParams.get("text")).toContain("I found your business online through TestDir");
-    expect(app.outbox("business", "263772100001")).toHaveLength(0); // they never signed up, so we don't message them
-
-    // Still a gap for the field team.
-    const gaps = (await ops("GET", "/supply-gaps")).json();
-    expect(gaps.some((g: { category: string; area: string }) => g.category === "venues" && g.area === "Avondale")).toBe(true);
-  });
-
-  it("reuses recent finds instead of searching again", async () => {
-    const searches = finder.calls.length;
-    const c = as(newCustomer());
-    await c.consented();
-    await c.say("I need a wedding venue in Avondale");
-    expect(finder.calls.length).toBe(searches);
-    expect(rowsOf(c.last())).toEqual(["Avondale Gardens Venue", "Rose Hall"]);
-  });
-
-  it("never searches the web for high-scam categories", async () => {
-    const searches = finder.calls.length;
-    const c = as(newCustomer());
-    await c.consented();
-    await c.say("I want to buy a used car in Avondale");
-    expect(finder.calls.length).toBe(searches);
-    expect(textOf(c.last())).toContain("couldn't find a listed business");
-  });
-
-  it("limits how many web searches one customer can trigger in a day", async () => {
-    const searches = finder.calls.length;
-    const c = as(newCustomer());
-    await c.consented();
-    await c.say("I need a tailor in Avondale");
-    await c.say("I need a welder in Avondale");
-    await c.say("I need car hire in Avondale");
-    expect(finder.calls.length).toBe(searches + 2);
-    expect(c.texts().filter((t) => t.includes("checking online"))).toHaveLength(2);
-    expect(textOf(c.last())).toContain("couldn't find a listed business");
-  });
-
-  it("lets the field team work through the list; declined businesses never come back", async () => {
-    const leads = (await ops("GET", "/online-leads")).json();
-    const gardens = leads.find((l: { name: string }) => l.name === "Avondale Gardens Venue");
-    const rose = leads.find((l: { name: string }) => l.name === "Rose Hall");
-    expect(gardens).toMatchObject({ times_connected: 1, category: "Venues", area: "Avondale", phone: "263772100001" });
-    expect((await ops("POST", `/online-leads/${gardens.id}/status`, { status: "invited" })).statusCode).toBe(200);
-    expect((await ops("POST", `/online-leads/${gardens.id}/close`, { reason: "declined" })).statusCode).toBe(200);
-    expect((await ops("POST", `/online-leads/${rose.id}/close`, { reason: "wrong" })).statusCode).toBe(200);
-
-    // The web still lists both, but only Rose Hall may be shown again.
-    const searches = finder.calls.length;
-    const c = as(newCustomer());
-    await c.consented();
-    await c.say("I need a wedding venue in Avondale");
-    expect(finder.calls.length).toBe(searches + 1);
-    expect(rowsOf(c.last())).toEqual(["Rose Hall"]);
-    const [optOuts] = await app.db.query<{ n: number }>("SELECT count(*)::int AS n FROM online_optouts");
-    expect(optOuts!.n).toBe(1); // only a hash of the number is kept
-  });
-
-  it("deletes web finds when they expire", async () => {
-    const count = async () => (await app.db.query<{ n: number }>("SELECT count(*)::int AS n FROM online_leads"))[0]!.n;
-    expect(await count()).toBeGreaterThan(0);
-    app.advanceHours(31 * 24);
-    await app.runJobs();
-    expect(await count()).toBe(0);
   });
 });

@@ -360,4 +360,56 @@ CREATE TABLE ops_audit (
 CREATE INDEX ops_audit_created_idx ON ops_audit (created_at);
 `,
   },
+  {
+    id: "005_local_first_understanding",
+    sql: /* sql */ `
+-- Web search ("found online") and ask-around are gone. A request is answered from our own
+-- suppliers (or related ones), and anything else goes to a person.
+DELETE FROM jobs WHERE kind = 'expire_online_leads';
+DROP TABLE request_online_results;
+DROP TABLE online_leads;
+DROP TABLE online_optouts;
+DROP TABLE ask_around;
+ALTER TABLE requests DROP COLUMN online_searched_at, DROP COLUMN online_results;
+
+-- Categories whose suppliers a customer is referred to when none match their own category.
+ALTER TABLE categories ADD COLUMN related text[] NOT NULL DEFAULT '{}';
+
+ALTER TABLE requests
+  -- how the request was understood: local, phrasebook, claude, photo or fallback
+  ADD COLUMN understood_by text,
+  -- exact (suppliers in its category), related (suppliers in related categories) or none (handed to a person)
+  ADD COLUMN match text;
+
+-- What Claude, customers and the team worked out for wording the local engine couldn't read.
+-- The signature is the request's content words, normalised and sorted, without places or numbers.
+CREATE TABLE phrasebook (
+  signature text PRIMARY KEY,
+  intent text NOT NULL,
+  category_slug text REFERENCES categories(slug),
+  query text NOT NULL DEFAULT '',
+  language text,
+  source text NOT NULL CHECK (source IN ('claude', 'customer', 'team')),
+  hits integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_used_at timestamptz
+);
+
+-- Every Claude call, for the daily budget and the System screen.
+CREATE TABLE ai_usage (
+  id bigserial PRIMARY KEY,
+  feature text NOT NULL,
+  model text NOT NULL,
+  contact_id uuid REFERENCES contacts(id) ON DELETE SET NULL,
+  input_tokens integer NOT NULL DEFAULT 0,
+  cache_read_tokens integer NOT NULL DEFAULT 0,
+  cache_write_tokens integer NOT NULL DEFAULT 0,
+  output_tokens integer NOT NULL DEFAULT 0,
+  cost_usd numeric(10, 6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ai_usage_created_idx ON ai_usage (created_at);
+CREATE INDEX ai_usage_contact_idx ON ai_usage (contact_id, created_at);
+`,
+  },
 ];

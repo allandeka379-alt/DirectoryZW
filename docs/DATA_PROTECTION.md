@@ -18,7 +18,6 @@ A working record of what personal data the service holds, where it goes, and how
 | Customers | Voice notes and photos | Understand the request | Not stored. Only the transcript or a short description is saved with the message. |
 | Customers | Ratings and reports about businesses | Rank businesses, stop scams | Until the customer deletes their data. Reports stay after that, with the link to the customer removed. |
 | Businesses | Name, WhatsApp number, location, description, photos, price list, ratings | The listing | While listed. Deleting their data removes the listing and photos. |
-| Businesses found online | Name, public number, website address | Show customers unchecked options; field team invites them | 30 days (`ONLINE_LEAD_DAYS`), or until the field team closes the lead. A business that declines is remembered only as a hash of its number. |
 | Field agents | Name, phone, city, registrations | Quality control | While they work with us. |
 | Ops team | Name, email, password hash, activity log | Accountability | Accounts while active. The activity log holds no message text. |
 
@@ -29,7 +28,7 @@ Idle chat state is deleted after 90 days (except chats waiting for a person). Fi
 | Provider | Receives | Where |
 | --- | --- | --- |
 | Meta (WhatsApp Cloud API) | All messages, numbers and names | Meta's data centres (outside Zimbabwe) |
-| Anthropic (Claude) | Request text, business descriptions, photos, web-search requests | United States |
+| Anthropic (Claude) | Only requests the local engine can't read (and hasn't seen before), customers' photos, and price-list photos | United States |
 | Google Cloud (Speech-to-Text), if enabled | Voice notes | The region in `GOOGLE_STT_LOCATION` (europe-west4 by default) |
 | Hosting and database provider | Everything in the database | Your chosen region |
 | Storage provider (S3 or R2) | Business photos | Your chosen region |

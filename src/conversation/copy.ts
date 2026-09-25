@@ -13,17 +13,6 @@ export interface BusinessView {
   ratingCount: number;
 }
 
-/** A business found on the web, as customers see it. */
-export interface LeadView {
-  id: string;
-  name: string;
-  description: string;
-  areaName: string | null;
-  distanceKm: number | null;
-  /** Website the details came from, e.g. "facebook.com". */
-  source: string | null;
-}
-
 /** Price-list items that match the request, shown on a business card. */
 export interface PriceView {
   items: { name: string; price: string | null }[];
@@ -31,7 +20,6 @@ export interface PriceView {
 }
 
 const UNVERIFIED_WARNING = "⚠️ Not yet checked by our team. Don't pay a deposit before you see the item or the work.";
-const ONLINE_WARNING = "⚠️ Found online. Our team hasn't checked this business. Don't pay a deposit before you see the item or the work.";
 
 function firstName(name?: string | null): string {
   return name?.trim().split(/\s+/)[0] ?? "";
@@ -99,24 +87,45 @@ export function locationSaved(place: string): OutboundMessage {
   return { kind: "text", text: `Thanks, I'll search near *${place}*. What are you looking for?` };
 }
 
-export function results(requestId: string, hits: BusinessView[], need: string, place?: string): OutboundMessage {
-  const count = hits.length === 1 ? "1 place" : `${hits.length} places`;
-  const warning = hits.some((h) => h.verification !== "verified")
+function businessRows(requestId: string, hits: BusinessView[]) {
+  return hits.map((h) => ({
+    id: Ids.business(requestId, h.id),
+    title: h.name,
+    description: [badge(h), h.areaName, distance(h), rating(h)].filter(Boolean).join(" · "),
+  }));
+}
+
+function unverifiedNote(hits: BusinessView[]): string {
+  return hits.some((h) => h.verification !== "verified")
     ? "\n⚠️ Businesses without ✅ signed up themselves. Don't pay a deposit before you see the item or the work."
     : "";
+}
+
+export function results(requestId: string, hits: BusinessView[], need: string, place?: string): OutboundMessage {
+  const count = hits.length === 1 ? "1 place" : `${hits.length} places`;
   return {
     kind: "list",
-    body: `I found ${count} for *${need}*${place ? ` near ${place}` : ""}. Tap *See options* and pick one.\n\n✅ = checked in person by our team.${warning}`,
+    body: `I found ${count} for *${need}*${place ? ` near ${place}` : ""}. Tap *See options* and pick one.\n\n✅ = checked in person by our team.${unverifiedNote(hits)}`,
+    button: "See options",
+    sections: [{ title: "Businesses", rows: businessRows(requestId, hits) }],
+    footer: "Type menu to start a new search",
+  };
+}
+
+/**
+ * Nobody lists what they asked for, but suppliers in related categories might have it or know
+ * where to get it: "these electronics and appliances businesses".
+ */
+export function relatedResults(requestId: string, hits: BusinessView[], need: string, label: string, place?: string): OutboundMessage {
+  return {
+    kind: "list",
+    body:
+      `I couldn't find a business listing *${need}*${place ? ` near ${place}` : ""} yet, but these ${label} may have it or know where to get it. ` +
+      `Tap *See options*.\n\n✅ = checked in person by our team.${unverifiedNote(hits)}`,
     button: "See options",
     sections: [
-      {
-        title: "Businesses",
-        rows: hits.map((h) => ({
-          id: Ids.business(requestId, h.id),
-          title: h.name,
-          description: [badge(h), h.areaName, distance(h), rating(h)].filter(Boolean).join(" · "),
-        })),
-      },
+      { title: "Businesses", rows: businessRows(requestId, hits.slice(0, 9)) },
+      { title: "Not what you need?", rows: [{ id: Ids.human(requestId), title: "Talk to a person", description: "Someone from our team helps you find it" }] },
     ],
     footer: "Type menu to start a new search",
   };
@@ -156,84 +165,23 @@ export function connectLink(b: BusinessView, url: string, refCode: string, fromP
   };
 }
 
-export function noResults(requestId: string, need: string, place?: string): OutboundMessage {
-  return {
-    kind: "buttons",
-    body:
-      `I couldn't find a listed business for *${need}*${place ? ` near ${place}` : ""} yet. ` +
-      "I can ask businesses nearby and message you when one can help, or a person from our team can take over.\n\n" +
-      "Know a good business that does this? Type *recommend* and we'll invite them.",
-    buttons: [
-      { id: Ids.askAround(requestId), title: "Ask around" },
-      { id: Ids.human(requestId), title: "Talk to a person" },
-      { id: Ids.newSearch, title: "New search" },
-    ],
-  };
-}
-
-// ---------- Found online ----------
-
-function leadLine(l: LeadView): string {
-  const where = l.distanceKm != null ? `${l.areaName ?? "nearby"} · ${l.distanceKm < 1 ? "under 1 km" : `${l.distanceKm.toFixed(0)} km`}` : l.areaName;
-  return ["🌐 Found online", where, l.source].filter(Boolean).join(" · ");
-}
-
-export function searchingOnline(need: string, place?: string): OutboundMessage {
+/** Nothing on our list: a person takes over straight away, in the same reply. */
+export function noSupplierHandoff(need: string, place?: string): OutboundMessage {
   return {
     kind: "text",
-    text: `Nothing is listed with us for *${need}*${place ? ` near ${place}` : ""} yet. 🌐 I'm checking online. This can take up to a minute…`,
+    text:
+      `I couldn't find a business for *${need}*${place ? ` near ${place}` : ""} on our list yet, so I've passed your request to our team. ` +
+      "A person will reply here to help you find it (Monday to Saturday, 8am to 6pm).\n\n" +
+      "Know a good business that does this? Tell the team, and we'll invite them. Type *menu* to go back to the assistant.",
   };
 }
 
-export function onlineResults(requestId: string, leads: LeadView[], need: string, place?: string): OutboundMessage {
-  const count = leads.length === 1 ? "1 business" : `${leads.length} businesses`;
+export function notUnderstoodHandoff(): OutboundMessage {
   return {
-    kind: "list",
-    body:
-      `Nothing is listed with us for *${need}*${place ? ` near ${place}` : ""} yet, but I found ${count} online. Tap *See options*.\n\n${ONLINE_WARNING}`,
-    button: "See options",
-    sections: [
-      {
-        title: "Found online",
-        rows: leads.map((l) => ({ id: Ids.onlineBusiness(requestId, l.id), title: l.name, description: leadLine(l) })),
-      },
-      {
-        title: "More options",
-        rows: [
-          { id: Ids.askAround(requestId), title: "Ask around", description: "Ask businesses we know if they can help" },
-          { id: Ids.human(requestId), title: "Talk to a person", description: "Someone from our team takes over" },
-        ],
-      },
-    ],
-    footer: "Type menu to start a new search",
-  };
-}
-
-export function onlineCard(requestId: string, l: LeadView): OutboundMessage {
-  return {
-    kind: "buttons",
-    body: `*${l.name}*\n${leadLine(l)}${l.description ? `\n\n${l.description}` : ""}\n\n${ONLINE_WARNING}`,
-    buttons: [
-      { id: Ids.onlineConnect(requestId, l.id), title: "Connect me" },
-      { id: Ids.list(requestId), title: "Other options" },
-      { id: Ids.askAround(requestId), title: "Ask around" },
-    ],
-  };
-}
-
-export function onlinePrefilledMessage(brand: string, businessName: string, summary: string): string {
-  return `Hi ${businessName}, I found your business online through ${brand}. I'm looking for: ${summary}`;
-}
-
-export function onlineConnectLink(l: LeadView, url: string, fromPhoto = false): OutboundMessage {
-  return {
-    kind: "cta_url",
-    body:
-      `Tap below to chat with *${l.name}* on WhatsApp. Your message is ready, so just press send.` +
-      (fromPhoto ? " Then send them your photo too." : "") +
-      `\n\n${ONLINE_WARNING}`,
-    displayText: "Chat with them",
-    url,
+    kind: "text",
+    text:
+      "Sorry, I'm still not sure what you need, so I've passed your message to our team. " +
+      "A person will reply here soon (Monday to Saturday, 8am to 6pm). Type *menu* to go back to the assistant.",
   };
 }
 
@@ -274,29 +222,6 @@ export function recCancelled(): OutboundMessage {
   return { kind: "text", text: "No problem. What are you looking for?" };
 }
 
-export function askAroundStarted(count: number): OutboundMessage {
-  return {
-    kind: "text",
-    text: `Done. I've asked ${count} business${count === 1 ? "" : "es"} and will message you here as soon as one says they can help.`,
-  };
-}
-
-export function askAroundReplyToCustomer(
-  requestId: string,
-  business: { id: string; name: string },
-  areaName: string | null,
-  need: string,
-): OutboundMessage {
-  return {
-    kind: "buttons",
-    body: `Good news! *${business.name}*${areaName ? ` (${areaName})` : ""} says they can help with *${need}*.`,
-    buttons: [
-      { id: Ids.connect(requestId, business.id), title: "Connect me" },
-      { id: Ids.business(requestId, business.id), title: "See details" },
-    ],
-  };
-}
-
 export function handoff(): OutboundMessage {
   return {
     kind: "text",
@@ -326,6 +251,10 @@ export function clarify(question: string | null): OutboundMessage {
 
 export function photosNotYet(): OutboundMessage {
   return { kind: "text", text: "I can't read photos yet. Please describe what you're looking for in words." };
+}
+
+export function photosBusy(): OutboundMessage {
+  return { kind: "text", text: "I can't look at photos right now. Please describe what you're looking for in words." };
 }
 
 export function photoUnreadable(): OutboundMessage {
@@ -471,17 +400,6 @@ export function leadNotification(brand: string, refCode: string, summary: string
   };
 }
 
-export function askAroundToBusiness(askId: string, need: string, place?: string | null, neededBy?: string | null): OutboundMessage {
-  return {
-    kind: "buttons",
-    body: `🔎 A customer${place ? ` near ${place}` : ""} is looking for: *${need}*${neededBy ? ` (needed ${neededBy})` : ""}.\n\nCan you help?`,
-    buttons: [
-      { id: Ids.askAroundYes(askId), title: "Yes, I can help" },
-      { id: Ids.askAroundNo(askId), title: "No" },
-    ],
-  };
-}
-
 export function bizWelcome(brand: string): OutboundMessage {
   return {
     kind: "buttons",
@@ -517,11 +435,30 @@ export function regAskWhat(): OutboundMessage {
   };
 }
 
-export function regNoCategory(): OutboundMessage {
-  return {
-    kind: "text",
-    text: 'I couldn\'t tell which category fits. Please describe it differently, for example "we repair phones" or "we sell building materials".',
-  };
+const PICK_PER_PAGE = 9;
+
+/** First step of choosing a category by hand: the kind of business. */
+export function pickGroup(groups: string[], page: number, intro = "Which of these best describes your business?"): OutboundMessage {
+  const start = page * PICK_PER_PAGE;
+  const rows: { id: string; title: string; description?: string }[] = groups
+    .slice(start, start + PICK_PER_PAGE)
+    .map((g, i) => ({ id: Ids.pickGroup(start + i), title: g, description: g }));
+  if (start + PICK_PER_PAGE < groups.length) rows.push({ id: Ids.pickGroupsPage(page + 1), title: "More…", description: "Other kinds of business" });
+  return { kind: "list", body: intro, button: "Choose", sections: [{ title: "Kinds of business", rows }] };
+}
+
+/** Second step: the category within that kind. */
+export function pickCategory(group: string, groupIndex: number, categories: { slug: string; name: string }[], page: number): OutboundMessage {
+  const start = page * PICK_PER_PAGE;
+  const rows: { id: string; title: string; description?: string }[] = categories
+    .slice(start, start + PICK_PER_PAGE)
+    .map((c) => ({ id: Ids.pickCategory(c.slug), title: c.name, description: c.name }));
+  if (start + PICK_PER_PAGE < categories.length) {
+    rows.push({ id: Ids.pickCategoriesPage(groupIndex, page + 1), title: "More…", description: `More in ${group}` });
+  } else {
+    rows.push({ id: Ids.pickGroupsPage(0), title: "Back", description: "Other kinds of business" });
+  }
+  return { kind: "list", body: `*${group}*: which one fits best?`, button: "Choose", sections: [{ title: group.slice(0, 24), rows }] };
 }
 
 export function regConfirmCategories(names: string[]): OutboundMessage {
@@ -625,7 +562,7 @@ export function editConfirmCategories(names: string[]): OutboundMessage {
     body: `I'll list you under:\n• ${names.join("\n• ")}\n\nSave this?`,
     buttons: [
       { id: Ids.editSave, title: "Save" },
-      { id: Ids.editWhat, title: "Change it" },
+      { id: Ids.categoriesChange, title: "Change it" },
     ],
   };
 }
@@ -740,20 +677,4 @@ export function bizErased(): OutboundMessage {
 
 export function bizNoListing(): OutboundMessage {
   return { kind: "text", text: "You don't have a listing yet. Type *register* to list your business." };
-}
-
-export function askAroundThanks(): OutboundMessage {
-  return { kind: "text", text: "Thanks! We've told the customer. They'll message you directly." };
-}
-
-export function askAroundNoThanks(): OutboundMessage {
-  return { kind: "text", text: "No problem, thanks for letting us know." };
-}
-
-export function askAroundAlreadyAnswered(): OutboundMessage {
-  return { kind: "text", text: "Thanks, you've already answered this one." };
-}
-
-export function notYourRequest(): OutboundMessage {
-  return { kind: "text", text: "This request was sent to a different business." };
 }

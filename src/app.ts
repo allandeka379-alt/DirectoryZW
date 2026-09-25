@@ -1,11 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { WebhookAlerts, type Alerts } from "./alerts.js";
+import { ClaudeBudget } from "./ai/budget.js";
 import { ClaudeInterpreter } from "./ai/claude-interpreter.js";
 import { GoogleSpeechToText, loadServiceAccount } from "./ai/google-speech.js";
 import { KeywordInterpreter } from "./ai/keyword-interpreter.js";
-import { ClaudeOnlineFinder, type OnlineFinder } from "./ai/online-finder.js";
 import { HttpSpeechToText, SimulatorSpeechToText, type SpeechToText } from "./ai/speech.js";
-import type { Interpreter } from "./ai/types.js";
+import { Understander, type RequestReader } from "./ai/understanding.js";
 import { ClaudeVision, type Vision } from "./ai/vision.js";
 import type { Config } from "./config.js";
 import type { Services } from "./conversation/context.js";
@@ -47,11 +47,10 @@ export interface AppOptions {
   store?: FileStore;
   media?: MediaSource;
   alerts?: Alerts;
-  interpreter?: Interpreter;
   /** Pass null to switch a feature off even when it is configured. */
+  claude?: RequestReader | null;
   vision?: Vision | null;
   speech?: SpeechToText | null;
-  finder?: OnlineFinder | null;
   log?: Logger;
   now?: () => Date;
 }
@@ -89,12 +88,13 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
   const simulatorMedia = media instanceof SimulatorMediaSource ? media : undefined;
 
   const alerts = opts.alerts ?? new WebhookAlerts({ webhookUrl: config.alertWebhookUrl, brand: config.brandName, log, now });
+  const budget = new ClaudeBudget({ db, ...config.claudeBudget, alerts, log, now });
   const client = config.anthropicApiKey ? new Anthropic({ apiKey: config.anthropicApiKey }) : undefined;
-  const claude = client ? { client, model: config.claudeModel, brand: config.brandName, log, alerts } : undefined;
+  const claudeOpts = client ? { client, model: config.claudeModel, brand: config.brandName, log, alerts, meter: budget } : undefined;
   const keywords = new KeywordInterpreter();
-  const interpreter = opts.interpreter ?? (claude ? new ClaudeInterpreter({ ...claude, fallback: keywords }) : keywords);
-  const vision = pick(opts.vision, () => (claude ? new ClaudeVision(claude) : undefined));
-  const finder = pick(opts.finder, () => (claude && config.onlineSearch.enabled ? new ClaudeOnlineFinder(claude) : undefined));
+  const claude = pick(opts.claude, () => (claudeOpts ? new ClaudeInterpreter(claudeOpts) : undefined));
+  const understanding = new Understander({ db, local: keywords, claude, budget, log });
+  const vision = pick(opts.vision, () => (claudeOpts ? new ClaudeVision(claudeOpts) : undefined));
   const speech = pick(opts.speech, () => {
     const google = config.speech.google;
     if (google) {
@@ -123,14 +123,15 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     config,
     taxonomy,
     gazetteer,
-    interpreter,
+    understanding,
+    keywords,
+    budget,
     messenger,
     jobs,
     media,
     store,
     vision,
     speech,
-    finder,
     alerts,
     log,
     now,

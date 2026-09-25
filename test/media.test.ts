@@ -1,9 +1,6 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
-import { ClaudeOnlineFinder, checkReport } from "../src/ai/online-finder.js";
 import { HttpSpeechToText } from "../src/ai/speech.js";
 import { sanitizePriceList } from "../src/ai/vision.js";
-import { silentLogger } from "../src/logger.js";
 import { CloudMediaSource, MediaError } from "../src/whatsapp/media.js";
 
 type Call = { url: string; init?: RequestInit };
@@ -86,74 +83,3 @@ describe("price lists read from photos", () => {
   });
 });
 
-describe("finding businesses online", () => {
-  const searchResult = {
-    type: "web_search_tool_result",
-    tool_use_id: "srv_1",
-    content: [
-      { type: "web_search_result", url: "https://www.facebook.com/avondalegardens", title: "Avondale Gardens | Facebook", encrypted_content: "x", page_age: null },
-      { type: "web_search_result", url: "https://venues.co.zw/rose-hall", title: "Rose Hall - Venues ZW", encrypted_content: "y", page_age: null },
-    ],
-  };
-  const report = (businesses: unknown[]) => ({ type: "tool_use", id: "tu_1", name: "report_businesses", input: { businesses } });
-
-  function fakeClient(responses: unknown[]) {
-    const requests: Record<string, unknown>[] = [];
-    const client = {
-      messages: {
-        create: async (params: Record<string, unknown>) => {
-          requests.push(structuredClone(params));
-          const next = responses.shift();
-          if (next instanceof Error) throw next;
-          return next;
-        },
-      },
-    } as unknown as Anthropic;
-    return { client, requests };
-  }
-
-  it("resumes a paused search and keeps only results it can check", async () => {
-    const { client, requests } = fakeClient([
-      { stop_reason: "pause_turn", content: [{ type: "server_tool_use", id: "srv_1", name: "web_search", input: { query: "wedding venue avondale" } }, searchResult] },
-      {
-        stop_reason: "tool_use",
-        content: [
-          { type: "text", text: "Here is what I found." },
-          report([
-            { name: "Avondale Gardens", phone: "+263 77 210 0001", what_they_offer: "Garden weddings", area: "Avondale", source_url: "https://facebook.com/avondalegardens/posts/1" },
-            { name: "Made-up Venue", phone: "0772100003", what_they_offer: "Venue", area: null, source_url: "https://not-searched.example/venue" },
-            { name: "Landline Hall", phone: "0242 123 456", what_they_offer: "Hall", area: null, source_url: "https://venues.co.zw/landline" },
-            { name: "Avondale Gardens again", phone: "0772100001", what_they_offer: "Venue", area: null, source_url: "https://www.facebook.com/avondalegardens" },
-            { name: "Rose Hall", phone: "0712 100 002", what_they_offer: "Hall hire\nfor 200", area: null, source_url: "https://venues.co.zw/rose-hall" },
-          ]),
-        ],
-      },
-    ]);
-    const finder = new ClaudeOnlineFinder({ client, model: "claude-opus-5", brand: "TestDir", log: silentLogger });
-    const results = await finder.find({ query: "wedding venue", categoryName: "Venues", place: "Avondale, Harare", city: "Harare" });
-
-    expect(results).toEqual([
-      { name: "Avondale Gardens", phone: "263772100001", description: "Garden weddings", area: "Avondale", sourceUrl: "https://facebook.com/avondalegardens/posts/1", sourceTitle: null },
-      { name: "Rose Hall", phone: "263712100002", description: "Hall hire for 200", area: null, sourceUrl: "https://venues.co.zw/rose-hall", sourceTitle: "Rose Hall - Venues ZW" },
-    ]);
-    expect(requests).toHaveLength(2);
-    const second = requests[1] as { messages: { role: string }[]; tools: Record<string, unknown>[] };
-    expect(second.messages.map((m) => m.role)).toEqual(["user", "assistant"]); // no extra "continue" message
-    expect(second.tools[0]).toMatchObject({ type: "web_search_20260209", max_uses: 3, user_location: { country: "ZW", city: "Harare" } });
-    expect(second.tools[1]).toMatchObject({ name: "report_businesses", strict: true });
-  });
-
-  it("returns nothing when Claude doesn't report or the API fails", async () => {
-    const quiet = fakeClient([{ stop_reason: "end_turn", content: [{ type: "text", text: "Nothing found." }] }]);
-    const finder = new ClaudeOnlineFinder({ client: quiet.client, model: "m", brand: "b", log: silentLogger });
-    expect(await finder.find({ query: "x", categoryName: null, place: null, city: null })).toEqual([]);
-
-    const failing = fakeClient([new Error("overloaded")]);
-    const finder2 = new ClaudeOnlineFinder({ client: failing.client, model: "m", brand: "b", log: silentLogger });
-    expect(await finder2.find({ query: "x", categoryName: null, place: null, city: null })).toEqual([]);
-  });
-
-  it("rejects a malformed report", () => {
-    expect(checkReport({ businesses: [{ name: "No phone" }] }, new Map())).toEqual([]);
-  });
-});

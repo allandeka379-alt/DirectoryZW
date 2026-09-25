@@ -1,7 +1,6 @@
 import type { Db } from "./db/client.js";
 import { one } from "./db/client.js";
 import { isUuid } from "./directory/businesses.js";
-import { phoneHash } from "./directory/online-leads.js";
 import type { FileStore } from "./storage.js";
 
 /**
@@ -37,8 +36,7 @@ export async function eraseContact(db: Db, contactId: string): Promise<{ message
 
 /**
  * Delete a business listing completely: categories, photos (and their files), price list,
- * call-backs and introductions. Its number is also kept out of future web searches, since
- * the owner asked us to forget them.
+ * call-backs and introductions.
  */
 export async function eraseBusiness(db: Db, store: FileStore, businessId: string): Promise<boolean> {
   if (!isUuid(businessId)) return false;
@@ -47,8 +45,6 @@ export async function eraseBusiness(db: Db, store: FileStore, businessId: string
     if (!business) return undefined;
     const photos = await tx.query<{ storage_key: string }>("SELECT storage_key FROM business_photos WHERE business_id = $1", [businessId]);
     await tx.query("DELETE FROM businesses WHERE id = $1", [businessId]);
-    await tx.query("DELETE FROM online_leads WHERE phone = $1", [business.phone]);
-    await tx.query("INSERT INTO online_optouts (phone_hash) VALUES ($1) ON CONFLICT DO NOTHING", [phoneHash(business.phone)]);
     return photos.map((p) => p.storage_key);
   });
   if (!deleted) return false;

@@ -2,12 +2,15 @@
 
 **Goal:** our own engine understands normal requests, for free and instantly. It calls Claude only for messages it genuinely can't read, and hands to a person when Claude can't either. Every hard case it sees once should be easy the next time.
 
-**Status:** design, not built yet. The rollout plan is at the end.
+**Status:** Phase 1 is built (Milestone 5); Phases 2 and 3 are still to do. Since this was written, two decisions changed it:
+
+- **No web search.** "Found online" is gone. We're building up our own suppliers.
+- **Nothing found means suppliers first, then people.** When no supplier in the category is nearby, the customer gets suppliers in related categories (a gadget nobody lists goes to our electronics shops). When nothing fits, a person takes over in the same reply.
 
 ## Summary
 
-- Today every free-text message goes to Claude Opus 5, including "hi", "thanks" and business descriptions at registration. Photos, price lists and "found online" searches call Claude too.
-- A request costs about half a US cent on Opus. The expensive events are web searches (about 15 cents each) and price lists (about 5 cents).
+- Before Milestone 5, every free-text message went to Claude Opus 5, including "hi", "thanks" and business descriptions at registration. Photos, price lists and "found online" searches called Claude too.
+- A request costs about half a US cent on Opus. The expensive events were web searches (about 15 cents each, now removed) and price lists (about 5 cents).
 - The design is a ladder of five steps. Each message stops at the first step that understands it:
   1. **Structured input** (buttons, lists, commands).
   2. **Local engine** (vocabulary, rules and a confidence score).
@@ -15,7 +18,7 @@
   4. **Ask the customer** (two or three close options, as buttons).
   5. **Claude**, then **a person**.
 - Every answer from steps 4 and 5 is saved, so the local engine keeps getting better. Claude calls should fall week by week.
-- Expected effect at 10,000 conversations a month: Claude spend falls from about **$280 to about $50** (−80%). Most of what's left is optional web searches.
+- Expected effect at 10,000 conversations a month: Claude spend falls from about **$100 to about $10**. Web search, which would have added about $180, is gone.
 - After that, WhatsApp's own per-message charges (from October 2026) are the bigger bill. So the design avoids adding conversation turns just to save a Claude call.
 
 ## 1. Where Claude is used today, and what it costs
@@ -36,7 +39,7 @@ The Batch API halves every price, and web search adds $10 per 1,000 searches.
 | Business description at registration or edit; customer tips | Always Claude | ~$0.005 | ~$0.002 |
 | Customer photo | Always Claude | ~$0.012 (~1,600 image tokens) | ~$0.005 |
 | Price-list photo | Always Claude | ~$0.05 (long output) | ~$0.02; ~$0.01 with the Batch API |
-| "Found online" web search | When nothing is listed (cached, capped per customer) | ~$0.15 (3 searches plus 10–30k tokens of results) | ~$0.08 |
+| "Found online" web search (removed) | When nothing was listed | ~$0.15 (3 searches plus 10–30k tokens of results) | ~$0.08 |
 | For comparison: one WhatsApp reply | | ~$0.004 from 1 Oct 2026 (our September research; re-check) | |
 
 Haiku 4.5 is cheapest per token, but it only caches prompts of 4,096 tokens or more. Our request prompt is about 2,900 tokens, so on Haiku every call pays full price (about $0.0035). Sonnet 5 caches it and costs about $0.0017. Model choice should come from the eval (`npm run eval -- --claude --model …`), not from list prices.
@@ -166,12 +169,13 @@ The target is **98% or better precision for HIGH answers**, checked weekly on a 
 - **Business registration and customer tips:** no Claude.
   - Use the local engine. If it's unsure, show a category picker: a list of groups, then the categories in the chosen group. Owners confirm their categories anyway.
   - Tips the engine can't place wait for the team to categorise.
-- **Found online:** ask first. "Nothing is listed yet. Shall I check online? It takes a minute." Only customers who want it trigger a search. Run it on Sonnet 5 unless the eval says Opus finds much better results. Caching and the per-customer caps stay.
+- **No web search.** When our suppliers don't have it, related suppliers or a person do the finding (see step 5).
 
 ## 8. Step 5: people
 
 - **Triggers:**
-  - Claude couldn't make sense of it (unclear twice)
+  - no supplier in the category or in related categories (built: the reply itself says a person will help)
+  - nobody could make sense of it after one "please say it differently" (built)
   - over budget, and the engine didn't understand
   - the customer repeats themselves or shows frustration ("you don't understand", "useless")
   - several needs in one message
@@ -216,10 +220,9 @@ The scenario:
 | --- | --- | --- |
 | Text understanding | 15,000 Opus calls, about $75 | About 15% escalated, 2,250 Sonnet calls: about $4 |
 | Photos | 500, about $6 | Caption-first, downscaled, 300 small-model calls: about $1.50 |
-| Found online | About 1,200 searches, about $180 | Ask first (assume 40% say yes), Sonnet: about $40 |
 | Price lists | 300, about $15 | Batch and small model: about $3 |
 | Registration and tips | About 1,000 calls, about $5 | None |
-| **Claude total** | **about $280** | **about $50** |
+| **Claude total** | **about $100** | **about $10** |
 
 WhatsApp replies are a separate cost. At about $0.004 each (if the October 2026 change applies as researched), 10,000 conversations × about 6 replies is about $240 a month. Once Claude is optimised, messaging is the bigger variable cost, so every extra question has to earn its place. A side benefit: requests handled locally never leave our servers, which means fewer cross-border transfers to record for POTRAZ.
 
@@ -227,13 +230,15 @@ WhatsApp replies are a separate cost. At about $0.004 each (if the October 2026 
 
 Each phase ships on its own and must keep the eval at least as accurate as Claude-only.
 
-**Phase 1: stop paying for easy messages (about a week)**
+**Phase 1: stop paying for easy messages (built)**
 - A router with confidence bands:
   - greetings, thanks, help, agent and blocked words are always local
   - HIGH local answers skip Claude, using today's keyword engine and a strict gate
+  - on the 56 test requests, 46% are answered locally, all correctly
 - Claude escalations on the small model, with thinking off and the local notes in the message; metering, the budget guard and the System screen figures.
 - A phrasebook filled from Claude's answers.
-- "Ask first" for found online. A category picker instead of Claude at registration and for tips.
+- A category picker instead of Claude at registration and for tips.
+- Web search removed. Related suppliers, then a person, when nothing matches.
 
 **Phase 2: a local engine that reads like a Zimbabwean (1–2 weeks, plus native-speaker review)**
 - The normaliser, word roles, word forms, fuzzy matching and locatives.

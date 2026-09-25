@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebhookAlerts } from "../src/alerts.js";
-import { KeywordInterpreter } from "../src/ai/keyword-interpreter.js";
-import type { Interpreter } from "../src/ai/types.js";
+import type { RequestInterpretation } from "../src/ai/types.js";
+import type { RequestReader } from "../src/ai/understanding.js";
 import { logInbound } from "../src/conversation/store.js";
 import { silentLogger } from "../src/logger.js";
 import type { OutboundMessage } from "../src/whatsapp/outbound.js";
@@ -20,27 +20,25 @@ class FlakyTransport implements Transport {
   }
 }
 
-/** Throws while `broken` is set, else reads requests like the keyword interpreter. */
-class BreakableInterpreter implements Interpreter {
+/** Stands in for Claude, and crashes the handling of a message while `broken` is set. */
+class BreakableReader implements RequestReader {
   readonly name = "breakable";
   broken = false;
-  private readonly keywords = new KeywordInterpreter();
-  interpretRequest: Interpreter["interpretRequest"] = async (text, ctx) => {
-    if (this.broken) throw new Error("interpreter exploded");
-    return this.keywords.interpretRequest(text, ctx);
-  };
-  classifyBusiness: Interpreter["classifyBusiness"] = (text, ctx) => this.keywords.classifyBusiness(text, ctx);
+  async interpretRequest(): Promise<RequestInterpretation | null> {
+    if (this.broken) throw new Error("reader exploded");
+    return null;
+  }
 }
 
 const transport = new FlakyTransport();
-const interpreter = new BreakableInterpreter();
+const reader = new BreakableReader();
 const alerts = new WebhookAlerts({ brand: "TestDir", log: silentLogger });
 let app: TestApp;
 let n = 0;
 const newCustomer = () => `26377333${String(++n).padStart(4, "0")}`;
 
 beforeAll(async () => {
-  app = await testApp({}, { transport, interpreter, alerts });
+  app = await testApp({}, { transport, claude: reader, alerts });
 });
 afterAll(async () => {
   await app.close();
@@ -80,19 +78,20 @@ describe("messages survive a crash", () => {
   it("retries a message that failed, then gives up and alerts the team", async () => {
     const customer = newCustomer();
     await consented(customer);
-    interpreter.broken = true;
+    reader.broken = true;
     try {
-      await app.say("I need an electrician in Belvedere", customer);
+      // The local engine can't read this, so it goes to the (broken) reader.
+      await app.say("I need a flux capacitor in Belvedere", customer);
       for (let i = 0; i < 3; i++) {
         app.advanceHours(0.1);
         await app.engine.recover();
         await app.engine.idle();
       }
     } finally {
-      interpreter.broken = false;
+      reader.broken = false;
     }
     const [row] = await app.db.query<{ attempts: number; processed_at: Date | null }>(
-      "SELECT attempts, processed_at FROM messages WHERE direction = 'in' AND body->>'text' = 'I need an electrician in Belvedere'",
+      "SELECT attempts, processed_at FROM messages WHERE direction = 'in' AND body->>'text' = 'I need a flux capacitor in Belvedere'",
     );
     expect(row).toMatchObject({ attempts: 3 });
     expect(row?.processed_at).not.toBeNull();

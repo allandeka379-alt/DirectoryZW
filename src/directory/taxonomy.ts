@@ -9,6 +9,8 @@ export interface Category {
   synonyms: string[];
   risk: CategoryRisk;
   needsLocation: boolean;
+  /** Categories to refer customers to when none of this category's suppliers are nearby. */
+  related: string[];
 }
 
 export interface CategoryMatch {
@@ -38,8 +40,9 @@ export class Taxonomy {
       synonyms: string[];
       risk: CategoryRisk;
       needs_location: boolean;
+      related: string[];
     }>(
-      `SELECT slug, name, group_name, synonyms || extra_synonyms AS synonyms, risk, needs_location
+      `SELECT slug, name, group_name, synonyms || extra_synonyms AS synonyms, risk, needs_location, related
          FROM categories ORDER BY slug`,
     );
     return new Taxonomy(
@@ -50,6 +53,7 @@ export class Taxonomy {
         synonyms: r.synonyms,
         risk: r.risk,
         needsLocation: r.needs_location,
+        related: r.related,
       })),
     );
   }

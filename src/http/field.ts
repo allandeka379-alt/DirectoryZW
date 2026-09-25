@@ -3,6 +3,7 @@ import type { App } from "../app.js";
 import { agentByToken, type Agent } from "../field/agents.js";
 import { findDuplicates, FieldRegistrationSchema, registerFromField } from "../field/registration.js";
 import { normalizeZimPhone } from "../text.js";
+import { harareStartOfDay } from "../time.js";
 import { serveFile } from "./static.js";
 
 declare module "fastify" {
@@ -98,10 +99,4 @@ export function registerField(server: FastifyInstance, app: App): void {
     },
     { prefix: "/field/api" },
   );
-}
-
-/** Midnight in Harare (UTC+2, no daylight saving) for the given moment. */
-function harareStartOfDay(now: Date): Date {
-  const local = new Date(now.getTime() + 2 * 3600_000);
-  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - 2 * 3600_000);
 }

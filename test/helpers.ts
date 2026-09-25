@@ -1,4 +1,3 @@
-import { KeywordInterpreter } from "../src/ai/keyword-interpreter.js";
 import { createApp, type App, type AppOptions } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { openDb } from "../src/db/client.js";
@@ -26,7 +25,7 @@ export interface TestApp extends App {
 }
 
 /**
- * A full app on an in-memory database, the simulator transport, the keyword interpreter,
+ * A full app on an in-memory database, the simulator transport, local understanding only,
  * in-memory file storage and a controllable clock. The clock starts at the real time because
  * the database stamps rows with its own now(). `options` swaps in fakes (vision, web search).
  */
@@ -49,7 +48,6 @@ export async function testApp(env: Record<string, string> = {}, options: AppOpti
     db,
     transport: sim,
     store: files,
-    interpreter: new KeywordInterpreter(),
     log: silentLogger,
     now: () => clock.now,
     ...options,

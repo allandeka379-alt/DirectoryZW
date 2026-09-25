@@ -85,7 +85,6 @@ const screens = {
         tile(s.open_handoffs, "Chats waiting for a person"),
         tile(s.open_reports, "Open reports"),
         tile(s.active_agents, "Active field agents"),
-        tile(s.online_leads, "Found online, to invite"),
         tile(s.new_recommendations, "New customer tips"),
       ),
     ];
@@ -94,7 +93,7 @@ const screens = {
   async handoffs() {
     const chats = await api("/handoffs");
     return [
-      ...header("Handoffs", "Customers who asked for a person. Replies go out on the customer number."),
+      ...header("Handoffs", "Customers waiting for a person: they asked for one, we had no supplier for them, or we couldn't understand them. Replies go out on the customer number."),
       ...(chats.length ? chats.map(handoffCard) : [h("p", { class: "muted" }, "No one is waiting.")]),
     ];
   },
@@ -103,7 +102,7 @@ const screens = {
     const days = Number(new URLSearchParams(location.hash.split("?")[1]).get("days")) || 7;
     const rows = await api(`/supply-gaps?days=${days}`);
     return [
-      ...header("Supply gaps", "What people asked for that we couldn't answer. Send field teams here first."),
+      ...header("Supply gaps", "What people asked for that no supplier in its own category could answer: they got related suppliers, or a person took over. Send field teams here first."),
       h("p", { class: "row" }, "Period: ",
         h("select", { onchange: (e) => { location.hash = `gaps?days=${e.target.value}`; } },
           ...[7, 30, 90].map((d) => h("option", { value: String(d), selected: d === days || null }, `${d} days`)))),
@@ -221,33 +220,6 @@ const screens = {
     ], list);
     tableBox.replaceChildren(agentTable(rows));
     return [...header("Field agents", "Add agents, send them their setup link, and watch quality."), h("div", { class: "card" }, form, result), tableBox];
-  },
-
-  async online() {
-    const rows = await api("/online-leads");
-    const close = (r, reason, question) => async () => {
-      if (question && !confirm(question)) return;
-      await post(`/online-leads/${r.id}/close`, { reason });
-      render();
-    };
-    return [
-      ...header("Found online", "Businesses the web search found when nothing was listed. Customers saw them marked as unchecked. Invite them to list for free; each one is deleted when it expires."),
-      table([
-        { label: "Business", render: (r) => h("span", {}, h("strong", {}, r.name), r.status === "invited" ? [" ", h("span", { class: "tag" }, "invited")] : null, h("br"), h("span", { class: "muted" }, r.description)) },
-        { label: "Phone", render: (r) => h("a", { href: `tel:+${r.phone}` }, `+${r.phone}`) },
-        { label: "Area", render: (r) => [r.area || r.area_text, r.city].filter(Boolean).join(", ") },
-        { label: "Category", render: (r) => r.category || r.query },
-        { label: "Source", render: (r) => h("a", { href: r.source_url, target: "_blank", rel: "noopener noreferrer" }, r.source_title || new URL(r.source_url).hostname) },
-        { label: "Shown", key: "times_shown", num: true },
-        { label: "Chats", key: "times_connected", num: true },
-        { label: "Expires", render: (r) => day(r.expires_at) },
-        { label: "", render: (r) => h("div", { class: "row" },
-          r.status !== "invited" ? h("button", { onclick: async () => { await post(`/online-leads/${r.id}/status`, { status: "invited" }); render(); } }, "Invited") : null,
-          h("button", { class: "primary", onclick: close(r, "listed") }, "Now listed"),
-          h("button", { onclick: close(r, "declined", `${r.name} will never be shown from web results again. Continue?`) }, "Declined"),
-          h("button", { class: "danger", onclick: close(r, "wrong") }, "Wrong details")) },
-      ], rows),
-    ];
   },
 
   async tips() {
@@ -378,6 +350,17 @@ const screens = {
     const s = await api("/system");
     const tile = (n, label, bad) => h("div", { class: `tile${bad ? " alert" : ""}` }, h("b", {}, n ?? 0), h("span", {}, label));
     const f = s.features;
+    const usd = (n) => `$${Number(n || 0).toFixed(2)}`;
+    const spentToday = s.claude.today.reduce((sum, r) => sum + r.usd, 0);
+    const callsToday = s.claude.today.reduce((sum, r) => sum + r.calls, 0);
+    const byLabel = { local: "Understood locally", phrasebook: "From the phrasebook", claude: "By Claude", photo: "From a photo", fallback: "Not understood" };
+    const matchLabel = { exact: "Suppliers in their category", related: "Related suppliers only", none: "Handed to a person" };
+    const shares = (rows, labels, key) => {
+      const total = rows.reduce((sum, r) => sum + r.requests, 0);
+      return rows.length
+        ? rows.map((r) => `${labels[r[key]] || r[key]}: ${r.requests} (${Math.round((100 * r.requests) / total)}%)`).join(" · ")
+        : "no requests yet";
+    };
     return [
       ...header("System", `Version ${s.version} · ${s.env} · running since ${date(s.startedAt)}`),
       h("div", { class: "tiles" },
@@ -386,11 +369,20 @@ const screens = {
         tile(s.outbound_failed_24h, "Replies failed, 24 hours", s.outbound_failed_24h > 0),
         tile(s.jobs_due, "Background jobs due"),
         tile(s.jobs_failed_24h, "Background jobs failed, 24 hours", s.jobs_failed_24h > 0),
+        tile(usd(spentToday), `Claude today, of ${usd(s.claude.dailyBudgetUsd)}`, spentToday >= 0.8 * s.claude.dailyBudgetUsd && s.claude.dailyBudgetUsd > 0),
+        tile(callsToday, "Claude calls today"),
       ),
+      h("div", { class: "card" },
+        h("p", {}, h("strong", {}, "Requests, last 7 days: "), shares(s.understood7d, byLabel, "by")),
+        h("p", {}, h("strong", {}, "Results, last 7 days: "), shares(s.matched7d, matchLabel, "match")),
+        h("p", { class: "muted" },
+          `Claude, last 7 days: ${s.claude.last7Days?.calls ?? 0} calls, ${usd(s.claude.last7Days?.usd)}. ` +
+          `Today by use: ${s.claude.today.map((r) => `${r.feature} ${r.calls} (${usd(r.usd)})`).join(", ") || "none"}. ` +
+          `At most ${s.claude.perNumberPerDay} Claude calls per number a day.`)),
       h("div", { class: "card" },
         h("p", {}, `Last message in: ${date(s.last_inbound_at) || "none yet"} · last reply out: ${date(s.last_sent_at) || "none yet"}`),
         h("p", {}, `Database: ${s.database} · WhatsApp: ${s.whatsapp} · photos stored on: ${s.storage}`),
-        h("p", {}, `Understanding requests: ${f.interpreter} · photos: ${f.photos ? "on" : "off"} · found online: ${f.foundOnline ? "on" : "off"} · voice notes: ${f.voiceNotes || "off"} · alerts: ${f.alertsTo}`),
+        h("p", {}, `Understanding requests: ${f.understanding} · photos: ${f.photos ? "on" : "off"} · voice notes: ${f.voiceNotes || "off"} · alerts: ${f.alertsTo}`),
         h("p", { class: "muted" }, `Limits per number: ${s.limits.perMinute} a minute, ${s.limits.perDay} a day, ${s.limits.mediaPerDay} photos and voice notes a day. Chats kept ${s.retention.messageDays} days; request wording kept ${s.retention.requestDays} days.`)),
       h("h2", {}, "Recent alerts"),
       s.alerts.length

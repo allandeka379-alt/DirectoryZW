@@ -20,7 +20,7 @@ const timer = setInterval(() => {
 
 await server.listen({ port: config.port, host: config.host });
 server.log.info(
-  `Interpreter: ${app.services.interpreter.name}. WhatsApp: ${config.whatsapp.transport}. Storage: ${app.store.name}.` +
+  `Understanding: ${app.services.understanding.description}. WhatsApp: ${config.whatsapp.transport}. Storage: ${app.store.name}.` +
     (app.simulator ? ` Simulator: http://localhost:${config.port}/simulator` : ""),
 );
 

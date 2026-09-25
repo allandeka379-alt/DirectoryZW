@@ -150,7 +150,6 @@ describe("message templates", () => {
   it("offer the same buttons as the messages they stand in for", () => {
     const titles = (m: ReturnType<typeof copy.followUp>) => (m.kind === "buttons" ? m.buttons.map((b) => b.title) : []);
     expect(TEMPLATES.find((t) => t.key === "followUp")!.quickReplies).toEqual(titles(copy.followUp("i", "B")));
-    expect(TEMPLATES.find((t) => t.key === "askAround")!.quickReplies).toEqual(titles(copy.askAroundToBusiness("a", "x")));
   });
 });
 

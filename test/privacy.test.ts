@@ -55,7 +55,7 @@ describe("customers deleting their data", () => {
 });
 
 describe("business owners deleting their data", () => {
-  it("deletes their listings with photos and price lists, and keeps them out of web results", async () => {
+  it("deletes their listings with photos and price lists", async () => {
     const owner = "263779777001";
     const b = (text: string) => app.send("business", owner, { type: "text", text });
     await b("register");
@@ -78,7 +78,6 @@ describe("business owners deleting their data", () => {
     expect(await count("SELECT count(*)::int AS n FROM offerings WHERE business_id = $1", [biz!.id])).toBe(0);
     expect([...app.files.files.keys()].some((k) => k.includes(biz!.id))).toBe(false);
     expect(await count("SELECT count(*)::int AS n FROM contacts WHERE wa_id = $1 AND channel = 'business'", [owner])).toBe(0);
-    expect(await count("SELECT count(*)::int AS n FROM online_optouts", [])).toBe(1);
   });
 });
 

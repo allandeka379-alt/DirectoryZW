@@ -1,30 +1,19 @@
 import type { RequestInterpretation } from "../ai/types.js";
-import type { Db } from "../db/client.js";
+import type { UnderstoodBy } from "../ai/understanding.js";
 import { one } from "../db/client.js";
 import { adjustResponseScore, getBusiness, recordRating, type Business } from "../directory/businesses.js";
 import { haversineKm } from "../directory/gazetteer.js";
 import { createIntroduction, getIntroduction, waMeLink } from "../directory/introductions.js";
 import { matchingOfferings, priceLabel } from "../directory/offerings.js";
-import {
-  cachedLeads,
-  getLead,
-  leadsForRequest,
-  linkLeadsToRequest,
-  markLeadConnected,
-  onlineSearchesSince,
-  saveLeads,
-  type OnlineLead,
-} from "../directory/online-leads.js";
 import { createRecommendation } from "../directory/recommendations.js";
 import { fileReport, reportsSince } from "../directory/reports.js";
-import { eraseContact } from "../privacy.js";
-import { searchBusinesses } from "../directory/search.js";
+import { searchBusinesses, searchRelated } from "../directory/search.js";
 import type { Category } from "../directory/taxonomy.js";
-import { hostOf } from "../ai/online-finder.js";
+import { eraseContact } from "../privacy.js";
 import { normalizeText, normalizeZimPhone } from "../text.js";
 import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
-import type { BusinessView, LeadView, PriceView } from "./copy.js";
+import type { BusinessView, PriceView } from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
 import { fetchMedia, hearVoiceNote } from "./media.js";
 import {
@@ -44,7 +33,7 @@ export interface CustomerState {
   /** A photo or voice note sent before consent; handled once they agree. */
   pendingMedia?: { type: "image" | "audio"; mediaId: string; caption?: string; waMessageId: string };
   /** A request waiting for the customer's location. */
-  pending?: { raw: string; interpretation: RequestInterpretation };
+  pending?: { raw: string; interpretation: RequestInterpretation; by: UnderstoodBy | "photo" };
   lastRequestId?: string;
   lastQuery?: string;
   location?: { lat: number; lng: number; areaId: number | null; label: string };
@@ -53,6 +42,8 @@ export interface CustomerState {
   rec?: { name?: string; what?: string; areaText?: string | null; areaId?: number | null };
   /** Language of their last request, a hint for reading their next voice note. */
   lang?: "sn" | "nd" | "en";
+  /** We already asked them to say it differently; next time a person takes over. */
+  unclear?: boolean;
 }
 
 type T = Turn<CustomerState>;
@@ -185,21 +176,28 @@ async function onText(t: T, text: string): Promise<void> {
     if (area) {
       const place = { areaId: area.id, lat: area.lat, lng: area.lng, label: area.name };
       state.location = place;
-      return runSearch(t, pending.raw, pending.interpretation, place);
+      return runSearch(t, pending.raw, pending.interpretation, pending.by, place);
     }
     // Not a place we know: treat it as a new request.
   }
 
-  const interpretation = await svc.interpreter.interpretRequest(raw, {
+  // Local engine first; the phrasebook and Claude only for what it can't read.
+  const understood = await svc.understanding.understand(raw, {
     taxonomy: svc.taxonomy,
     gazetteer: svc.gazetteer,
     previousRequest: state.lastQuery,
+    contactId: contact.id,
   });
-  return handleInterpretation(t, raw, interpretation);
+  return handleInterpretation(t, raw, understood.interpretation, understood.by);
 }
 
 /** What to do with a request once we know what it means, whether it came as text, a voice note or a photo. */
-async function handleInterpretation(t: T, raw: string, interpretation: RequestInterpretation): Promise<void> {
+async function handleInterpretation(
+  t: T,
+  raw: string,
+  interpretation: RequestInterpretation,
+  by: UnderstoodBy | "photo",
+): Promise<void> {
   const { svc, state, contact } = t;
   if (interpretation.language !== "other") state.lang = interpretation.language;
   switch (interpretation.intent) {
@@ -222,7 +220,7 @@ async function handleInterpretation(t: T, raw: string, interpretation: RequestIn
     case "out_of_scope":
       return t.reply(copy.outOfScope());
     case "unclear":
-      return t.reply(copy.clarify(interpretation.clarifying_question));
+      return notUnderstood(t, raw, interpretation, by);
     case "search":
       break;
   }
@@ -230,36 +228,65 @@ async function handleInterpretation(t: T, raw: string, interpretation: RequestIn
   const category = svc.taxonomy.get(interpretation.category_slug);
   if (category?.risk === "blocked") return t.reply(copy.blocked());
   if (category?.risk === "restricted") return t.reply(copy.restricted(category.name));
-  if (!category && (!interpretation.query || interpretation.clarifying_question)) {
-    return t.reply(copy.clarify(interpretation.clarifying_question));
+  // No category from anyone (local engine, phrasebook or Claude): we don't know what they want.
+  if (!category && (by === "fallback" || !interpretation.query || interpretation.clarifying_question)) {
+    return notUnderstood(t, raw, interpretation, by);
   }
+  state.unclear = undefined;
 
   const area = (interpretation.area && svc.gazetteer.match(interpretation.area)) || svc.gazetteer.match(raw);
   const place: Place | undefined = area ? { areaId: area.id, lat: area.lat, lng: area.lng, label: area.name } : state.location;
   if (!place && category?.needsLocation !== false) {
     state.stage = "awaiting_area";
-    state.pending = { raw, interpretation };
+    state.pending = { raw, interpretation, by };
     return t.reply(copy.askLocation(need(interpretation, category)));
   }
   if (area) state.location = place;
-  return runSearch(t, raw, interpretation, category?.needsLocation === false && !area ? undefined : place);
+  return runSearch(t, raw, interpretation, by, category?.needsLocation === false && !area ? undefined : place);
+}
+
+/** Ask them to put it differently once; if we still can't tell, a person takes over. */
+async function notUnderstood(t: T, raw: string, interpretation: RequestInterpretation, by: UnderstoodBy | "photo"): Promise<void> {
+  const { svc, state, contact } = t;
+  const second = !!state.unclear;
+  // Recorded either way, so the wording shows up in the Vocabulary screen for the team to teach.
+  const request = await createRequest(svc.db, {
+    contactId: contact.id,
+    rawText: raw,
+    interpretation,
+    categorySlug: null,
+    query: interpretation.query,
+    status: second ? "handoff" : "no_results",
+    understoodBy: by,
+  });
+  if (!second) {
+    state.unclear = true;
+    return t.reply(copy.clarify(interpretation.clarifying_question));
+  }
+  state.unclear = undefined;
+  state.stage = "handoff";
+  await setRequestStatus(svc.db, request.id, "handoff", 0, "none");
+  svc.log.info({ contactId: contact.id, requestId: request.id }, "Not understood twice; handed over to a person");
+  return t.reply(copy.notUnderstoodHandoff());
 }
 
 async function onPhoto(t: T, mediaId: string, caption?: string): Promise<void> {
-  const { svc, state } = t;
+  const { svc, state, contact } = t;
   if (!svc.vision) return t.reply(copy.photosNotYet());
+  if (!(await svc.budget.allows(contact.id))) return t.reply(copy.photosBusy());
   const image = await fetchMedia(t, mediaId);
   if (!image) return;
   const interpretation = await svc.vision.interpretPhoto(image, caption, {
     taxonomy: svc.taxonomy,
     gazetteer: svc.gazetteer,
     previousRequest: state.lastQuery,
+    contactId: contact.id,
   });
   if (!interpretation) return t.reply(copy.photoUnreadable());
   await annotateInbound(svc.db, t.inbound.waMessageId, { seen: interpretation.query });
   resetSearch(state);
   const raw = `${PHOTO_MARK}${caption?.trim() ? `${caption.trim()} (${interpretation.query})` : interpretation.query}`;
-  return handleInterpretation(t, raw, interpretation);
+  return handleInterpretation(t, raw, interpretation, "photo");
 }
 
 async function onVoice(t: T, mediaId: string, waMessageId?: string): Promise<void> {
@@ -277,12 +304,24 @@ async function onLocation(t: T, lat: number, lng: number): Promise<void> {
     const pending = state.pending;
     state.stage = undefined;
     state.pending = undefined;
-    return runSearch(t, pending.raw, pending.interpretation, place);
+    return runSearch(t, pending.raw, pending.interpretation, pending.by, place);
   }
   return t.reply(copy.locationSaved(place.label));
 }
 
-async function runSearch(t: T, raw: string, interpretation: RequestInterpretation, place?: Place): Promise<void> {
+/**
+ * Suppliers for a request: those in its own category first. If none are nearby, suppliers in
+ * related categories (a gadget nobody lists goes to our electronics shops). If there are none of
+ * those either, a person from the team takes over straight away. Related-only and handed-over
+ * requests are supply gaps for the field team.
+ */
+async function runSearch(
+  t: T,
+  raw: string,
+  interpretation: RequestInterpretation,
+  by: UnderstoodBy | "photo",
+  place?: Place,
+): Promise<void> {
   const { svc, state, contact } = t;
   const category = svc.taxonomy.get(interpretation.category_slug);
   const request = await createRequest(svc.db, {
@@ -294,75 +333,40 @@ async function runSearch(t: T, raw: string, interpretation: RequestInterpretatio
     areaId: place?.areaId ?? null,
     lat: place?.lat ?? null,
     lng: place?.lng ?? null,
+    understoodBy: by,
   });
-  const hits = await searchBusinesses(svc.db, svc.taxonomy, {
-    categorySlug: category?.slug ?? null,
-    text: interpretation.query || raw,
+  state.lastRequestId = request.id;
+  state.lastQuery = raw;
+  const what = need(interpretation, category);
+  const search = {
     lat: place?.lat,
     lng: place?.lng,
     limit: svc.config.maxResults,
     minVerified: svc.config.minVerifiedResults,
-  });
-  await saveResults(svc.db, request.id, hits.map((h) => h.id));
-  await setRequestStatus(svc.db, request.id, hits.length ? "answered" : "no_results", hits.length);
-  state.lastRequestId = request.id;
-  state.lastQuery = raw;
-  const what = need(interpretation, category);
-  if (hits.length) return t.reply(copy.results(request.id, hits, what, place?.label));
+  };
 
-  // Nothing listed: look online, labelled as unchecked. The request stays a supply gap for the field team.
-  const leads = await findOnline(t, request, interpretation, category, place);
-  if (leads.length) return t.reply(copy.onlineResults(request.id, leads.map((l) => leadView(l, request)), what, place?.label));
-  return t.reply(copy.noResults(request.id, what, place?.label));
-}
-
-/**
- * Businesses found on the web for a request with no listed results. Reuses recent finds for the
- * same category nearby before searching again, never runs for high-scam categories, and caps how
- * many web searches one customer can trigger per day.
- */
-async function findOnline(
-  t: T,
-  request: RequestRow,
-  interpretation: RequestInterpretation,
-  category: Category | undefined,
-  place?: Place,
-): Promise<OnlineLead[]> {
-  const { svc, contact } = t;
-  if (!svc.finder || category?.risk === "high_scam" || category?.risk === "blocked" || category?.risk === "restricted") return [];
-  const query = interpretation.query || category?.name.toLowerCase() || "";
-  if (!query) return [];
-  let leads = await cachedLeads(svc.db, {
+  const hits = await searchBusinesses(svc.db, svc.taxonomy, {
+    ...search,
     categorySlug: category?.slug ?? null,
-    query,
-    lat: place?.lat,
-    lng: place?.lng,
-    maxKm: 40,
-    limit: 5,
-    now: svc.now(),
+    text: interpretation.query || raw,
   });
-  if (!leads.length) {
-    const dayAgo = new Date(svc.now().getTime() - 24 * 3600_000);
-    if ((await onlineSearchesSince(svc.db, contact.id, dayAgo)) >= svc.config.onlineSearch.perCustomerPerDay) return [];
-    await t.reply(copy.searchingOnline(need(interpretation, category), place?.label));
-    const area = place?.areaId != null ? svc.gazetteer.get(place.areaId) : undefined;
-    const found = await svc.finder.find({
-      query,
-      categoryName: category?.name ?? null,
-      place: area ? (area.name === area.city ? area.name : `${area.name}, ${area.city}`) : null,
-      city: area?.city ?? null,
-    });
-    leads = await saveLeads(svc.db, svc.gazetteer, found, {
-      categorySlug: category?.slug ?? null,
-      query,
-      place,
-      expiresAt: new Date(svc.now().getTime() + svc.config.onlineSearch.leadDays * 24 * 3600_000),
-    });
-    await svc.db.query("UPDATE requests SET online_searched_at = $2 WHERE id = $1", [request.id, svc.now()]);
+  if (hits.length) {
+    await saveResults(svc.db, request.id, hits.map((h) => h.id));
+    await setRequestStatus(svc.db, request.id, "answered", hits.length, "exact");
+    return t.reply(copy.results(request.id, hits, what, place?.label));
   }
-  await linkLeadsToRequest(svc.db, request.id, leads.map((l) => l.id));
-  await svc.db.query("UPDATE requests SET online_results = $2 WHERE id = $1", [request.id, leads.length]);
-  return leads;
+
+  const related = category ? await searchRelated(svc.db, svc.taxonomy, { ...search, categorySlug: category.slug }) : [];
+  if (category && related.length) {
+    await saveResults(svc.db, request.id, related.map((h) => h.id));
+    await setRequestStatus(svc.db, request.id, "answered", related.length, "related");
+    return t.reply(copy.relatedResults(request.id, related, what, relatedLabel(t, category), place?.label));
+  }
+
+  await setRequestStatus(svc.db, request.id, "handoff", 0, "none");
+  state.stage = "handoff";
+  svc.log.info({ contactId: contact.id, requestId: request.id }, "No supplier found; handed over to a person");
+  return t.reply(copy.noSupplierHandoff(what, place?.label));
 }
 
 async function onAction(t: T, id: string): Promise<void> {
@@ -375,14 +379,8 @@ async function onAction(t: T, id: string): Promise<void> {
       return showBusiness(t, args[0] ?? "", args[1] ?? "");
     case "con":
       return connect(t, args[0] ?? "", args[1] ?? "");
-    case "obiz":
-      return showLead(t, args[0] ?? "", args[1] ?? "");
-    case "ocon":
-      return connectLead(t, args[0] ?? "", args[1] ?? "");
     case "list":
       return reshowResults(t, args[0] ?? "");
-    case "ask":
-      return askAround(t, args[0] ?? "");
     case "human":
       return startHandoff(t, args[0] || null, null);
     case "new":
@@ -448,28 +446,6 @@ async function connect(t: T, requestId: string, businessId: string): Promise<voi
   await svc.jobs.enqueue("follow_up", { introductionId: intro.id }, runAt);
 }
 
-async function showLead(t: T, requestId: string, leadId: string): Promise<void> {
-  const lead = await getLead(t.svc.db, leadId);
-  const request = await ownRequest(t, requestId);
-  if (!lead || !request) return t.reply(copy.noLongerAvailable());
-  return t.reply(copy.onlineCard(request.id, leadView(lead, request)));
-}
-
-/**
- * Open a chat with a business found online. They never signed up, so we don't message them
- * and don't follow up; the customer gets a link with their request typed in.
- */
-async function connectLead(t: T, requestId: string, leadId: string): Promise<void> {
-  const { svc } = t;
-  const lead = await getLead(svc.db, leadId);
-  const request = await ownRequest(t, requestId);
-  if (!lead || !request) return t.reply(copy.noLongerAvailable());
-  await markLeadConnected(svc.db, lead.id);
-  const summary = truncate(request.raw_text, 160);
-  const link = waMeLink(lead.phone, copy.onlinePrefilledMessage(svc.config.brandName, lead.name, summary));
-  return t.reply(copy.onlineConnectLink(leadView(lead, request), link, fromPhoto(request)));
-}
-
 async function reshowResults(t: T, requestId: string): Promise<void> {
   const { svc, contact } = t;
   const request = await ownRequest(t, requestId);
@@ -482,76 +458,13 @@ async function reshowResults(t: T, requestId: string): Promise<void> {
   const category = svc.taxonomy.get(request.category_slug);
   const place = request.area_id != null ? svc.gazetteer.get(request.area_id)?.name : undefined;
   const what = need(request.interpretation, category);
-  if (rows.length) return t.reply(copy.results(request.id, rows.map((b) => viewOf(t, b, request)), what, place));
-  const leads = await leadsForRequest(svc.db, request.id);
-  if (leads.length) return t.reply(copy.onlineResults(request.id, leads.map((l) => leadView(l, request)), what, place));
-  return t.reply(copy.noResults(request.id, what, place));
+  if (!rows.length) return t.reply(copy.askWhatYouNeed(contact.profile_name));
+  const views = rows.map((b) => viewOf(t, b, request));
+  if (request.match === "related" && category) return t.reply(copy.relatedResults(request.id, views, what, relatedLabel(t, category), place));
+  return t.reply(copy.results(request.id, views, what, place));
 }
 
-/** Send the request to businesses that might help and aren't in the results yet. */
-async function askAround(t: T, requestId: string): Promise<void> {
-  const { svc } = t;
-  const request = await ownRequest(t, requestId);
-  if (!request) return t.reply(copy.askWhatYouNeed(t.contact.profile_name));
-  const category = svc.taxonomy.get(request.category_slug);
-  const targets = category ? await askAroundTargets(svc.db, request, category) : [];
-  if (!targets.length) return startHandoff(t, request.id, null);
-
-  const place = request.area_id != null ? svc.gazetteer.get(request.area_id)?.name : null;
-  const what = truncate(request.raw_text, 160);
-  let sent = 0;
-  for (const b of targets) {
-    const ask = await one<{ id: string }>(
-      svc.db,
-      "INSERT INTO ask_around (request_id, business_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id",
-      [request.id, b.id],
-    );
-    if (!ask) continue;
-    await svc.messenger.notify("business", b.phone, copy.askAroundToBusiness(ask.id, what, place, request.interpretation?.needed_by), {
-      name: svc.config.whatsapp.templates.askAround,
-      params: [what, place ?? "Zimbabwe"],
-      quickReplies: [
-        { id: Ids.askAroundYes(ask.id), title: "Yes, I can help" },
-        { id: Ids.askAroundNo(ask.id), title: "No" },
-      ],
-    });
-    sent++;
-  }
-  if (!sent) return startHandoff(t, request.id, null);
-  await setRequestStatus(svc.db, request.id, "asked_around");
-  return t.reply(copy.askAroundStarted(sent));
-}
-
-async function askAroundTargets(
-  db: Db,
-  request: RequestRow,
-  category: Category,
-): Promise<{ id: string; phone: string; lat: number | null; lng: number | null }[]> {
-  const shown = (
-    await db.query<{ business_id: string }>("SELECT business_id FROM request_results WHERE request_id = $1", [request.id])
-  ).map((r) => r.business_id);
-  const run = async (condition: string, value: string) => {
-    const rows = await db.query<{ id: string; phone: string; lat: number | null; lng: number | null; verification: string }>(
-      `SELECT b.id, b.phone, b.lat, b.lng, b.verification FROM businesses b
-        WHERE b.status = 'active' AND b.opted_in_at IS NOT NULL AND NOT (b.id::text = ANY($2::text[]))
-          AND EXISTS (SELECT 1 FROM business_categories bc JOIN categories c ON c.slug = bc.category_slug
-                       WHERE bc.business_id = b.id AND ${condition} AND c.risk IN ('normal', 'high_scam'))
-        ORDER BY (b.verification = 'verified') DESC, b.response_score DESC
-        LIMIT 100`,
-      [value, shown],
-    );
-    return rows.filter((b) => {
-      if (category.risk === "high_scam" && b.verification !== "verified") return false;
-      if (request.lat == null || request.lng == null || b.lat == null || b.lng == null) return true;
-      return haversineKm(request.lat, request.lng, b.lat, b.lng) <= 60;
-    });
-  };
-  const sameCategory = await run("bc.category_slug = $1", category.slug);
-  const targets = sameCategory.length ? sameCategory : await run("c.group_name = $1", category.group);
-  return targets.slice(0, 8);
-}
-
-async function startHandoff(t: T, requestId: string | null, text: string | null): Promise<void> {
+async function startHandoff(t: T, requestId: string | null, text: string | null, message = copy.handoff()): Promise<void> {
   const { svc, state, contact } = t;
   state.stage = "handoff";
   const request = requestId ? await ownRequest(t, requestId) : undefined;
@@ -577,7 +490,7 @@ async function startHandoff(t: T, requestId: string | null, text: string | null)
     });
   }
   svc.log.info({ contactId: contact.id, requestId }, "Handed over to a person");
-  return t.reply(copy.handoff());
+  return t.reply(message);
 }
 
 // ---------- Deleting their data ----------
@@ -647,7 +560,8 @@ async function saveRecommendation(t: T, phone: string | null): Promise<void> {
     const listed = await one<{ name: string }>(svc.db, "SELECT name FROM businesses WHERE phone = $1 AND status = 'active' LIMIT 1", [phone]);
     if (listed) return t.reply(copy.recAlreadyListed(listed.name));
   }
-  const classified = await svc.interpreter.classifyBusiness(rec.what, { taxonomy: svc.taxonomy });
+  // Local only: a tip the engine can't place waits for the team to categorise.
+  const classified = await svc.keywords.classifyBusiness(rec.what, { taxonomy: svc.taxonomy });
   await createRecommendation(svc.db, {
     contactId: contact.id,
     name: rec.name,
@@ -715,20 +629,11 @@ function viewOf(t: T, b: Business, request?: RequestRow): BusinessView {
   };
 }
 
-function leadView(l: OnlineLead, request?: RequestRow): LeadView {
-  // A lead placed at the searched area (its page didn't say where it is) has no real distance.
-  const distanceKm =
-    l.area_id != null && request?.lat != null && request.lng != null && l.lat != null && l.lng != null
-      ? haversineKm(request.lat, request.lng, l.lat, l.lng)
-      : null;
-  return {
-    id: l.id,
-    name: l.name,
-    description: l.description,
-    areaName: l.area_text,
-    distanceKm,
-    source: hostOf(l.source_url),
-  };
+/** "electronics and appliances businesses" when the related categories are one kind of business. */
+function relatedLabel(t: T, category: Category): string {
+  const groups = new Set(category.related.map((slug) => t.svc.taxonomy.get(slug)?.group).filter(Boolean));
+  const [group] = [...groups];
+  return groups.size === 1 && group ? `${group.toLowerCase()} businesses` : "businesses that sell or do similar things";
 }
 
 function fromPhoto(request?: RequestRow): boolean {
@@ -750,6 +655,7 @@ function resetSearch(state: CustomerState): void {
   state.pendingMedia = undefined;
   state.reportBusinessId = undefined;
   state.rec = undefined;
+  state.unclear = undefined;
 }
 
 function isCommand(text: string, words: string[]): boolean {

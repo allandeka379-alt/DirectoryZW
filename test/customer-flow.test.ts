@@ -90,22 +90,16 @@ describe("customer journey", () => {
     expect(textOf(c.last())).toContain("near Arcadia");
   });
 
-  it("asks around when nothing is listed and passes on a business that can help", async () => {
+  it("offers related suppliers when nothing in the category is listed, and connects to one", async () => {
     const c = as(newCustomer());
     await c.consented();
     await c.say("I need a wedding venue in Avondale");
-    expect(textOf(c.last())).toContain("couldn't find");
-    await c.tap("Ask around");
-    expect(textOf(c.last())).toMatch(/I've asked \d+ businesses/);
-
-    const eventHire = await app.phoneOf("Msasa Event Hire (sample)");
-    expect(textOf(app.last("business", eventHire))).toContain("wedding venue");
-    await app.tap("Yes, I can help", "business", eventHire);
-    expect(textOf(app.last("business", eventHire))).toContain("told the customer");
-
-    expect(textOf(c.last())).toContain("Msasa Event Hire");
+    expect(textOf(c.last())).toContain("couldn't find a business listing *wedding venue* near Avondale yet, but these events businesses");
+    await c.tap("Msasa Event Hire");
     await c.tap("Connect me");
     expect(c.last().kind).toBe("cta_url");
+    const eventHire = await app.phoneOf("Msasa Event Hire (sample)");
+    expect(textOf(app.last("business", eventHire))).toContain("wedding venue");
   });
 
   it("refuses blocked requests and off-topic questions", async () => {

@@ -108,3 +108,45 @@ export const categories: CategorySeed[] = [
   { slug: "blocked_documents", name: "Fake documents", group: "Blocked", synonyms: ["fake id", "fake passport", "fake certificate", "fake licence"], risk: "blocked" },
   { slug: "blocked_live_animals", name: "Pets and live animals", group: "Blocked", synonyms: ["puppy", "puppies", "dogs for sale", "cats for sale", "parrot"], risk: "blocked" },
 ];
+
+/**
+ * Where to refer a customer when no supplier in their category is nearby: suppliers who sell
+ * similar things or are likely to know who does. Trades and professional services are left
+ * out on purpose; nobody wants an electrician when they asked for a plumber.
+ */
+export const relatedCategories: Record<string, string[]> = {
+  tv_audio: ["phones", "computers", "appliances"],
+  phones: ["computers", "tv_audio", "electronics_repair"],
+  computers: ["phones", "tv_audio", "electronics_repair"],
+  appliances: ["tv_audio"],
+  electronics_repair: ["phones", "computers"],
+  appliance_repair: ["appliances"],
+  solar: ["generators", "electrical"],
+  generators: ["solar"],
+  building_materials: ["hardware"],
+  hardware: ["building_materials"],
+  furniture: ["home_decor", "carpentry"],
+  home_decor: ["furniture"],
+  car_repairs: ["car_parts"],
+  car_parts: ["car_repairs"],
+  transport_moving: ["courier"],
+  courier: ["transport_moving"],
+  venues: ["event_hire", "catering"],
+  event_hire: ["venues"],
+  catering: ["cakes", "restaurants"],
+  cakes: ["catering"],
+  entertainment: ["event_hire"],
+  groceries: ["fresh_produce", "butchery"],
+  fresh_produce: ["groceries"],
+  butchery: ["groceries"],
+  clothing: ["tailoring"],
+  tailoring: ["clothing"],
+  rentals: ["estate_agents"],
+  property_sales: ["estate_agents"],
+  estate_agents: ["rentals", "property_sales"],
+  stationery: ["printing"],
+  printing: ["stationery"],
+  agri_inputs: ["vets"],
+  livestock: ["vets", "agri_inputs"],
+  vets: ["agri_inputs"],
+};

@@ -1,5 +1,5 @@
-import type { FoundBusiness, OnlineFinder, OnlineSearch } from "../src/ai/online-finder.js";
 import type { InterpretContext, RequestInterpretation } from "../src/ai/types.js";
+import type { ReaderContext, RequestReader } from "../src/ai/understanding.js";
 import type { PriceList, Vision } from "../src/ai/vision.js";
 import type { Media } from "../src/whatsapp/media.js";
 
@@ -35,25 +35,14 @@ export class FakeVision implements Vision {
   }
 }
 
-/** Stands in for the web search: returns whatever the test says for a query. */
-export class FakeFinder implements OnlineFinder {
-  readonly calls: OnlineSearch[] = [];
-  answer: (q: OnlineSearch) => FoundBusiness[] = () => [];
+/** Stands in for Claude reading requests: answers come from the test, and every call is counted. */
+export class FakeClaude implements RequestReader {
+  readonly name = "fake-claude";
+  readonly calls: { text: string; notes?: string[]; contactId?: string }[] = [];
+  answer: (text: string) => RequestInterpretation | null = () => null;
 
-  async find(q: OnlineSearch): Promise<FoundBusiness[]> {
-    this.calls.push(q);
-    return this.answer(q);
+  async interpretRequest(text: string, ctx: ReaderContext): Promise<RequestInterpretation | null> {
+    this.calls.push({ text, notes: ctx.notes, contactId: ctx.contactId });
+    return this.answer(text);
   }
-}
-
-export function found(name: string, phone: string, fields: Partial<FoundBusiness> = {}): FoundBusiness {
-  return {
-    name,
-    phone,
-    description: `${name} description`,
-    area: null,
-    sourceUrl: `https://www.facebook.com/${name.replace(/\W+/g, "").toLowerCase()}`,
-    sourceTitle: `${name} | Facebook`,
-    ...fields,
-  };
 }

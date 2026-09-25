@@ -3,8 +3,9 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import type { Alerts } from "../alerts.js";
 import type { Logger } from "../logger.js";
-import { alertOnClaudeError, describeError } from "./errors.js";
 import type { Media } from "../whatsapp/media.js";
+import type { UsageMeter } from "./budget.js";
+import { alertOnClaudeError, describeError } from "./errors.js";
 import { photoSystemPrompt, photoUserMessage, priceListSystemPrompt } from "./prompts.js";
 import {
   RequestInterpretationSchema,
@@ -29,9 +30,9 @@ export type PriceListItem = PriceList["items"][number];
 /** Reads photos. Like the interpreter, it only describes; the database decides what exists. */
 export interface Vision {
   /** What a customer is looking for, from a photo and its caption. Null when the photo can't be used. */
-  interpretPhoto(image: Media, caption: string | undefined, ctx: InterpretContext): Promise<RequestInterpretation | null>;
+  interpretPhoto(image: Media, caption: string | undefined, ctx: InterpretContext & { contactId?: string }): Promise<RequestInterpretation | null>;
   /** Items and prices from a photo of a price list or menu. Null when reading failed. */
-  readPriceList(image: Media): Promise<PriceList | null>;
+  readPriceList(image: Media, opts?: { contactId?: string }): Promise<PriceList | null>;
 }
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
@@ -49,20 +50,27 @@ export interface ClaudeVisionOptions {
   brand: string;
   log: Logger;
   alerts?: Alerts;
+  /** Records each call's cost against the daily budget. */
+  meter?: UsageMeter;
 }
 
 /** Claude vision with structured output. Any failure returns null so the chat can ask for words instead. */
 export class ClaudeVision implements Vision {
   constructor(private readonly opts: ClaudeVisionOptions) {}
 
-  async interpretPhoto(image: Media, caption: string | undefined, ctx: InterpretContext): Promise<RequestInterpretation | null> {
+  async interpretPhoto(
+    image: Media,
+    caption: string | undefined,
+    ctx: InterpretContext & { contactId?: string },
+  ): Promise<RequestInterpretation | null> {
     if (!isReadableImage(image)) return null;
     try {
       const response = await this.opts.client.beta.messages.parse({
         model: this.opts.model,
-        max_tokens: 4000,
+        max_tokens: 1000,
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
+        thinking: { type: "disabled" },
         system: [{ type: "text", text: photoSystemPrompt(this.opts.brand, ctx.taxonomy), cache_control: { type: "ephemeral" } }],
         messages: [
           {
@@ -75,6 +83,7 @@ export class ClaudeVision implements Vision {
         ],
         output_config: { effort: "low", format: betaZodOutputFormat(RequestInterpretationSchema) },
       });
+      await this.opts.meter?.record("photo", response.model, response.usage, ctx.contactId);
       if (response.stop_reason === "refusal" || response.stop_reason === "max_tokens" || !response.parsed_output) {
         this.opts.log.warn({ stopReason: response.stop_reason }, "Claude couldn't read the customer's photo");
         return null;
@@ -87,14 +96,15 @@ export class ClaudeVision implements Vision {
     }
   }
 
-  async readPriceList(image: Media): Promise<PriceList | null> {
+  async readPriceList(image: Media, opts: { contactId?: string } = {}): Promise<PriceList | null> {
     if (!isReadableImage(image)) return null;
     try {
       const response = await this.opts.client.beta.messages.parse({
         model: this.opts.model,
-        max_tokens: 16000,
+        max_tokens: 8000,
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
+        thinking: { type: "disabled" },
         system: [{ type: "text", text: priceListSystemPrompt(), cache_control: { type: "ephemeral" } }],
         messages: [
           {
@@ -107,6 +117,7 @@ export class ClaudeVision implements Vision {
         ],
         output_config: { effort: "low", format: betaZodOutputFormat(PriceListSchema) },
       });
+      await this.opts.meter?.record("price_list", response.model, response.usage, opts.contactId);
       if (response.stop_reason === "refusal" || response.stop_reason === "max_tokens" || !response.parsed_output) {
         this.opts.log.warn({ stopReason: response.stop_reason }, "Claude couldn't read the price list");
         return null;
@@ -131,7 +142,7 @@ export function sanitizePriceList(list: PriceList): PriceList {
     seen.add(key);
     const usd = item.price_usd != null && Number.isFinite(item.price_usd) && item.price_usd > 0 && item.price_usd < 1_000_000 ? Math.round(item.price_usd * 100) / 100 : null;
     items.push({ name, price_usd: usd, price_text: item.price_text ? oneLine(item.price_text, 30) || null : null });
-    if (items.length >= 100) break;
+    if (items.length >= 60) break;
   }
   return { is_price_list: list.is_price_list && items.length > 0, items: list.is_price_list ? items : [] };
 }

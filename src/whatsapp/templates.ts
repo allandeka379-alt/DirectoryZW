@@ -31,20 +31,6 @@ export const TEMPLATES: TemplateDefinition[] = [
     usedFor: "Asking a customer how it went, a few days after connecting",
   },
   {
-    key: "askAround",
-    body: "A customer is looking for: {{1}} near {{2}}. Can you help?",
-    example: ["100 chairs and a tent for Saturday", "Avondale"],
-    quickReplies: ["Yes, I can help", "No"],
-    usedFor: "Asking businesses about a request nobody listed can answer",
-  },
-  {
-    key: "askAroundReply",
-    body: "Good news! {{1}} says they can help with: {{2}}.",
-    example: ["Msasa Event Hire", "100 chairs and a tent for Saturday"],
-    quickReplies: ["Connect me"],
-    usedFor: "Telling a customer a business answered their ask-around",
-  },
-  {
     key: "weeklySummary",
     body: "Your week: {{1}} was shown in {{2}} searches and {{3}} customers connected with you.",
     example: ["QuickFix Plumbing", "14", "3"],

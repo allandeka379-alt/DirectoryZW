@@ -24,10 +24,9 @@ const EnvSchema = z.object({
   PUBLIC_BASE_URL: optionalString,
   SEED_SAMPLE_DATA: flag(false),
   ANTHROPIC_API_KEY: optionalString,
-  CLAUDE_MODEL: z.string().default("claude-opus-5"),
-  ONLINE_SEARCH: flag(true),
-  ONLINE_LEAD_DAYS: z.coerce.number().int().min(1).max(90).default(30),
-  ONLINE_SEARCHES_PER_DAY: z.coerce.number().int().min(0).default(5),
+  CLAUDE_MODEL: z.string().default("claude-sonnet-5"),
+  CLAUDE_DAILY_BUDGET_USD: z.coerce.number().min(0).default(5),
+  CLAUDE_CALLS_PER_NUMBER_PER_DAY: z.coerce.number().int().min(0).default(5),
   SPEECH_TO_TEXT_URL: optionalString,
   SPEECH_TO_TEXT_TOKEN: optionalString,
   SPEECH_LANGUAGES: z.string().default("sn,nd,en"),
@@ -67,8 +66,6 @@ const EnvSchema = z.object({
   TEMPLATE_LANGUAGE: z.string().default("en"),
   TEMPLATE_LEAD_NOTIFICATION: z.string().default("lead_notification"),
   TEMPLATE_FOLLOW_UP: z.string().default("follow_up"),
-  TEMPLATE_ASK_AROUND: z.string().default("ask_around"),
-  TEMPLATE_ASK_AROUND_REPLY: z.string().default("ask_around_reply"),
   TEMPLATE_WEEKLY_SUMMARY: z.string().default("weekly_summary"),
   OPS_TOKEN: optionalString,
   FOLLOW_UP_DELAY_HOURS: z.coerce.number().positive().default(72),
@@ -92,15 +89,10 @@ export interface Config {
   publicBaseUrl: string;
   seedSampleData: boolean;
   anthropicApiKey?: string;
+  /** Used only when the local engine can't understand a request, and for photos. */
   claudeModel: string;
-  /** "Found online" results from a web search when nothing is listed. Needs ANTHROPIC_API_KEY. */
-  onlineSearch: {
-    enabled: boolean;
-    /** How long a found business is kept for the field team before it is deleted. */
-    leadDays: number;
-    /** Web searches one customer can trigger per day (cached results don't count). */
-    perCustomerPerDay: number;
-  };
+  /** Claude spending stops for the day at `dailyUsd`; one number can cause `perNumberPerDay` calls. */
+  claudeBudget: { dailyUsd: number; perNumberPerDay: number };
   /** Speech-to-text for voice notes: Google Chirp 2, or any service behind the HTTP contract in src/ai/speech.ts. */
   speech: {
     url?: string;
@@ -144,8 +136,6 @@ export interface Config {
       language: string;
       leadNotification: string;
       followUp: string;
-      askAround: string;
-      askAroundReply: string;
       weeklySummary: string;
     };
   };
@@ -172,11 +162,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     seedSampleData: e.SEED_SAMPLE_DATA,
     anthropicApiKey: e.ANTHROPIC_API_KEY,
     claudeModel: e.CLAUDE_MODEL,
-    onlineSearch: {
-      enabled: e.ONLINE_SEARCH,
-      leadDays: e.ONLINE_LEAD_DAYS,
-      perCustomerPerDay: e.ONLINE_SEARCHES_PER_DAY,
-    },
+    claudeBudget: { dailyUsd: e.CLAUDE_DAILY_BUDGET_USD, perNumberPerDay: e.CLAUDE_CALLS_PER_NUMBER_PER_DAY },
     speech: {
       url: e.SPEECH_TO_TEXT_URL,
       token: e.SPEECH_TO_TEXT_TOKEN,
@@ -231,8 +217,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         language: e.TEMPLATE_LANGUAGE,
         leadNotification: e.TEMPLATE_LEAD_NOTIFICATION,
         followUp: e.TEMPLATE_FOLLOW_UP,
-        askAround: e.TEMPLATE_ASK_AROUND,
-        askAroundReply: e.TEMPLATE_ASK_AROUND_REPLY,
         weeklySummary: e.TEMPLATE_WEEKLY_SUMMARY,
       },
     },

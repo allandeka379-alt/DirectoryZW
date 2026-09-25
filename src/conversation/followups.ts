@@ -2,7 +2,6 @@ import { one } from "../db/client.js";
 import { getBusiness } from "../directory/businesses.js";
 import { getIntroduction } from "../directory/introductions.js";
 import { replaceOfferings } from "../directory/offerings.js";
-import { expireLeads } from "../directory/online-leads.js";
 import { MAX_JOB_ATTEMPTS, type JobHandler } from "../jobs/queue.js";
 import { applyRetention } from "../privacy.js";
 import type { Channel } from "../whatsapp/types.js";
@@ -51,20 +50,14 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
       }
     },
 
-    /** Once a day: delete businesses found online that the field team didn't get to in time. */
-    expire_online_leads: async () => {
-      const now = svc.now();
-      try {
-        const n = await expireLeads(svc.db, now);
-        if (n) svc.log.info({ expired: n }, "Deleted expired online leads");
-      } finally {
-        await svc.jobs.enqueue("expire_online_leads", {}, nextDailyRun(now));
-      }
-    },
-
     /** A field agent photographed a price list: read it into the listing. */
     read_price_list: async (payload) => {
       if (!svc.vision) return;
+      // Over today's Claude budget: try again tomorrow rather than failing.
+      if (!(await svc.budget.allows())) {
+        await svc.jobs.enqueue("read_price_list", payload, nextDailyRun(svc.now()));
+        return;
+      }
       const photo = await one<{ id: string; business_id: string; storage_key: string; content_type: string }>(
         svc.db,
         "SELECT id, business_id, storage_key, content_type FROM business_photos WHERE id = $1 AND kind = 'price_list'",
@@ -134,7 +127,6 @@ export function nextDailyRun(now: Date): Date {
 export async function scheduleRecurringJobs(svc: Services): Promise<void> {
   const recurring: [string, Date][] = [
     ["weekly_summaries", nextWeeklyRun(svc.now())],
-    ["expire_online_leads", nextDailyRun(svc.now())],
     ["retention", nextDailyRun(svc.now())],
   ];
   for (const [kind, runAt] of recurring) {

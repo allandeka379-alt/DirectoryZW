@@ -5,7 +5,6 @@ export const Ids = {
   business: (requestId: string, businessId: string) => `biz:${requestId}:${businessId}`,
   connect: (requestId: string, businessId: string) => `con:${requestId}:${businessId}`,
   list: (requestId: string) => `list:${requestId}`,
-  askAround: (requestId: string) => `ask:${requestId}`,
   human: (requestId = "") => `human:${requestId}`,
   newSearch: "new",
   report: (businessId: string) => `rep:${businessId}`,
@@ -13,8 +12,6 @@ export const Ids = {
   rate: (introId: string, stars: number) => `rate:${introId}:${stars}`,
   eraseYes: "erase:yes",
   eraseNo: "erase:no",
-  onlineBusiness: (requestId: string, leadId: string) => `obiz:${requestId}:${leadId}`,
-  onlineConnect: (requestId: string, leadId: string) => `ocon:${requestId}:${leadId}`,
   // Business number
   register: "breg:start",
   categoriesOk: "breg:catok",
@@ -29,8 +26,6 @@ export const Ids = {
   resume: "bresume",
   remove: "bremove",
   removeConfirm: "bremove:yes",
-  askAroundYes: (askId: string) => `aa:${askId}:yes`,
-  askAroundNo: (askId: string) => `aa:${askId}:no`,
   switchBusiness: "bswitch",
   selectBusiness: (businessId: string) => `bsel:${businessId}`,
   editWhat: "bedit:what",
@@ -39,6 +34,11 @@ export const Ids = {
   priceList: "bprice:start",
   priceSave: "bprice:save",
   priceRetry: "bprice:retry",
+  // Choosing a category by hand: a page of kinds of business, one kind's categories, one category.
+  pickGroupsPage: (page: number) => `bpick:g:${page}`,
+  pickGroup: (groupIndex: number) => `bpick:c:${groupIndex}:0`,
+  pickCategoriesPage: (groupIndex: number, page: number) => `bpick:c:${groupIndex}:${page}`,
+  pickCategory: (slug: string) => `bpick:s:${slug}`,
 } as const;
 
 export function parseAction(id: string): { action: string; args: string[] } {

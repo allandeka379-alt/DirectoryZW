@@ -31,7 +31,7 @@ export function createServer(opts: { logger: boolean }): FastifyInstance {
 
 export function registerRoutes(server: FastifyInstance, app: App): void {
   // Liveness: the process is up. Readiness: it can reach the database.
-  server.get("/health", async () => ({ ok: true, interpreter: app.services.interpreter.name }));
+  server.get("/health", async () => ({ ok: true, understanding: app.services.understanding.description }));
   server.get("/ready", async (_req, reply) => {
     try {
       await app.db.query("SELECT 1");

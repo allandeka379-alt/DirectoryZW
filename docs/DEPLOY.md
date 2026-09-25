@@ -10,7 +10,7 @@ The app is one Node.js process with a web server, a background job loop and the 
 | Managed PostgreSQL 15+ with daily backups and point-in-time recovery | Everything except photos | Neon, Supabase, AWS RDS, DigitalOcean |
 | S3-compatible bucket, private | Business photos and price lists | Cloudflare R2, AWS S3, Backblaze B2 |
 | Meta WhatsApp Business account with two numbers | Customer number and business number | See [LAUNCH.md](LAUNCH.md) |
-| Anthropic API key | Understanding requests, photos, found online | console.anthropic.com |
+| Anthropic API key | Wording the local engine can't read, and photos (within `CLAUDE_DAILY_BUDGET_USD`) | console.anthropic.com |
 | Google Cloud project (optional) | Voice notes in Shona (Chirp 2) | Enable the Speech-to-Text API, create a service account |
 | Chat webhook (optional) | Alerts | Slack, Discord or Google Chat incoming webhook |
 
@@ -87,6 +87,7 @@ It prints a password once. Sign in at `https://your-domain/ops`, then add the re
 
 - **Alerts** go to `ALERT_WEBHOOK_URL` (at most once every 30 minutes per kind) and to the logs. They cover:
   - WhatsApp or Claude rejecting their keys, or Claude billing problems
+  - Claude spend reaching 80% and 100% of the daily budget
   - replies that still fail after retries
   - background jobs and incoming messages that keep failing
   - businesses paused by customer reports

@@ -9,7 +9,7 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
 - [x] Local simulator with customer and business chats
 - [x] Category taxonomy (about 80 categories, including high-scam, restricted and blocked), Zimbabwe place names
 - [x] Search: verified first, unverified only to fill gaps, distance limit, high-scam verified-only
-- [x] Customer flow: consent, request understanding, asking where, results, business card, Connect me with a reference code, lead notification, follow-up and rating, reports, ask around, handoff to a person
+- [x] Customer flow: consent, request understanding, asking where, results, business card, Connect me with a reference code, lead notification, follow-up and rating, reports, ask around (removed in Milestone 5), handoff to a person
 - [x] Business flow: self-registration, summary, pause, resume, remove, answering ask-around requests, claiming a field-registered listing
 - [x] Claude interpreter (structured output, prompt caching, refusal fallbacks) with keyword fallback
 - [x] Ops API: summary, supply gaps, handoffs, replies, reports, field registration, verification
@@ -30,7 +30,7 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
 
 ## Milestone 3: answer more requests (done, except translated replies and semantic search)
 
-- [x] "Found online": Claude's web search runs when nothing is listed, never for high-scam categories.
+- [x] "Found online": Claude's web search runs when nothing is listed, never for high-scam categories. (Removed in Milestone 5.)
   - Results are labelled unchecked and connect by link only; the business isn't messaged.
   - Each result is checked: a Zimbabwe mobile number, and a source site the search returned.
   - Finds are reused for the same category nearby, and each customer has a daily limit on searches.
@@ -96,11 +96,25 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
 - [ ] About 300 real requests labelled; compare Claude models and pick the cheapest that scores as well
 - [ ] Soft launch in Harare with 2,000+ verified businesses
 
-## Next: understand requests locally, pay for Claude only when stuck
+## Milestone 5: understand requests locally, pay for Claude only when stuck
 
-Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests understood without Claude, and Claude spend down about 80%.
+Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests understood without Claude.
 
-- [ ] Phase 1: router with confidence bands; greetings, help and blocked words never reach Claude; small-model escalations with thinking off; spend metering and a daily budget; phrasebook from Claude's answers; "ask first" before web searches; category picker instead of Claude at registration and for tips
+- [x] Phase 1: understand locally first, and keep Claude to a budget
+  - Every request goes through the understanding ladder: the local engine, then the phrasebook, then Claude, then a person.
+  - The local engine settles greetings, help, "agent", off-topic questions, blocked items and clear requests. Unknown words in Shona or Ndebele, or in a high-scam category, send a request on rather than risking a wrong answer.
+  - On the 56 test requests, 46% are answered locally, all correctly.
+  - Claude is the backup. It gets the local notes, runs with thinking off, and uses `claude-sonnet-5` by default. Every call is costed, with a daily budget, a per-number cap, and alerts at 80% and 100%.
+  - The phrasebook remembers Claude's answers, so the same wording never costs twice.
+  - Business sign-up and customer tips never use Claude: owners pick a category from a list when their description doesn't match.
+  - The System screen shows Claude spend and how requests were understood and matched.
+- [x] Suppliers first, then people:
+  - When nobody in the category is nearby, the customer gets suppliers in related categories, a curated list (a gadget nobody lists goes to the electronics shops).
+  - When nothing fits, a person takes over in the same reply.
+  - Requests nobody understands are asked once more, then handed over.
+  - Related-only and handed-over requests count as supply gaps.
+- [x] Removed "found online" web search, and ask-around (related suppliers do its job), with their tables and two message templates
+- [x] Tests (114)
 - [ ] Phase 2: local engine v2 (normalising, word roles, word forms, fuzzy spelling, Shona and Ndebele vocabulary reviewed by native speakers, action rules), "Did you mean…?" questions, vocabulary suggestions, weekly precision review
 - [ ] Phase 3: thresholds and escalation model tuned on about 300 labelled real requests; optional small local classifier; caption-first photos; field price lists through the Batch API
 
@@ -115,7 +129,7 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
 - Area coordinates are approximate centroids; refine them from field GPS pins.
 - Replies are in English only.
 - Customers' photos aren't stored, so a person taking over a chat sees Claude's description of the photo, not the photo itself.
-- Web search results depend on what Zimbabwean businesses publish online, mostly Facebook pages and directories, so coverage outside the big towns will be thin.
+- The related-categories list is a first draft: review it with the field team, especially across groups (solar to electricians, catering to restaurants).
 - The field name for WhatsApp's business-scoped user IDs is unconfirmed; the parser accepts `from` and `from_user_id`.
 - Simulator messages live in memory and reset when the server restarts; the database persists.
 - Run a single instance: messages from each person are kept in order in memory, and the login lockout and alert throttling are in memory too.

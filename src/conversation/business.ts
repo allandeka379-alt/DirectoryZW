@@ -1,16 +1,15 @@
 import { one } from "../db/client.js";
 import {
-  adjustResponseScore,
   businessesOwnedBy,
   claimBusinessesByPhone,
   createBusiness,
-  getBusiness,
   setBusinessStatus,
   updateBusinessLocation,
   updateBusinessOffer,
   type Business,
 } from "../directory/businesses.js";
 import type { Area } from "../directory/gazetteer.js";
+import type { Taxonomy } from "../directory/taxonomy.js";
 import { priceLabel, replaceOfferings, saveBusinessPhoto } from "../directory/offerings.js";
 import { eraseBusiness, eraseContact } from "../privacy.js";
 import type { PriceListItem } from "../ai/vision.js";
@@ -20,7 +19,7 @@ import * as copy from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
 import { ERASE_WORDS } from "./customer.js";
 import { fetchMedia, hearVoiceNote } from "./media.js";
-import { getContactById, getRequest, setConsent } from "./store.js";
+import { setConsent } from "./store.js";
 
 type Stage =
   | "reg_name"
@@ -115,8 +114,9 @@ async function onAction(t: T, id: string): Promise<void> {
           state.stage = "reg_area";
           return t.reply(copy.regAskArea());
         case "catchange":
-          state.stage = "reg_what";
-          return t.reply(copy.regAskWhat());
+          // Pick the category by hand; a new description still works too.
+          state.stage = state.stage?.startsWith("edit_") ? "edit_what" : "reg_what";
+          return t.reply(copy.pickGroup(businessGroups(t.svc.taxonomy), 0));
         case "phonethis":
           if (!state.stage) return showMenu(t);
           if (contact.phone) return setPhone(t, contact.phone);
@@ -155,8 +155,8 @@ async function onAction(t: T, id: string): Promise<void> {
       return withBusiness(t, (b) => setPaused(t, b, false));
     case "bremove":
       return withBusiness(t, (b) => (args[0] === "yes" ? removeListing(t, b) : t.reply(copy.bizConfirmRemove())));
-    case "aa":
-      return askAroundResponse(t, args[0] ?? "", args[1] === "yes");
+    case "bpick":
+      return pickCategoryStep(t, args);
     case "bprice":
       if (args[0] === "save") return savePriceList(t);
       return withBusiness(t, () => askForPriceList(t));
@@ -209,11 +209,14 @@ async function continueStage(t: T, text: string): Promise<void> {
       return t.reply(copy.regAskWhat());
     case "reg_what":
     case "edit_what": {
-      const result = await svc.interpreter.classifyBusiness(value, { taxonomy: svc.taxonomy });
-      if (!result.category_slugs.length) return t.reply(copy.regNoCategory());
+      // Local keywords only; when they don't fit, the owner picks from a list. No Claude call.
+      const result = await svc.keywords.classifyBusiness(value, { taxonomy: svc.taxonomy });
       draft.description = value.slice(0, 300);
-      draft.categories = result.category_slugs;
       draft.keywords = result.keywords;
+      if (!result.category_slugs.length) {
+        return t.reply(copy.pickGroup(businessGroups(svc.taxonomy), 0, "I couldn't tell from that. Which of these best describes your business?"));
+      }
+      draft.categories = result.category_slugs;
       const names = result.category_slugs.map((s) => svc.taxonomy.get(s)?.name ?? s);
       if (state.stage === "edit_what") {
         state.stage = "edit_confirm";
@@ -438,41 +441,37 @@ async function removeListing(t: T, b: Business): Promise<void> {
   return t.reply(copy.bizRemoved());
 }
 
-// ---------- Ask-around replies ----------
+// ---------- Choosing a category by hand ----------
 
-async function askAroundResponse(t: T, askId: string, yes: boolean): Promise<void> {
-  const { svc, contact } = t;
-  if (!/^[0-9a-f-]{36}$/i.test(askId)) return showMenu(t);
-  const ask = await one<{ id: string; request_id: string; business_id: string; response: string | null }>(
-    svc.db,
-    "SELECT id, request_id, business_id, response FROM ask_around WHERE id = $1",
-    [askId],
-  );
-  if (!ask) return showMenu(t);
-  const business = await getBusiness(svc.db, ask.business_id);
-  if (!business || (business.owner_contact_id !== contact.id && business.phone !== contact.phone)) {
-    return t.reply(copy.notYourRequest());
-  }
-  if (ask.response) return t.reply(copy.askAroundAlreadyAnswered());
-  await svc.db.query("UPDATE ask_around SET response = $2, responded_at = now() WHERE id = $1", [ask.id, yes ? "yes" : "no"]);
-  if (!yes) return t.reply(copy.askAroundNoThanks());
+/** Kinds of business an owner can list under, alphabetically. */
+function businessGroups(taxonomy: Taxonomy): string[] {
+  return [...new Set(taxonomy.searchable().map((c) => c.group))].sort((a, b) => a.localeCompare(b));
+}
 
-  await adjustResponseScore(svc.db, business.id, 0.05);
-  const request = await getRequest(svc.db, ask.request_id);
-  const customer = request ? await getContactById(svc.db, request.contact_id) : undefined;
-  if (request && customer && !customer.is_blocked) {
-    const what = request.raw_text.length > 120 ? `${request.raw_text.slice(0, 119)}…` : request.raw_text;
-    const areaName = svc.gazetteer.get(business.area_id)?.name ?? null;
-    await svc.messenger.notify(
-      "customer",
-      customer.wa_id,
-      copy.askAroundReplyToCustomer(request.id, business, areaName, what),
-      {
-        name: svc.config.whatsapp.templates.askAroundReply,
-        params: [business.name, what],
-        quickReplies: [{ id: Ids.connect(request.id, business.id), title: "Connect me" }],
-      },
-    );
+/** The picker's steps: a page of kinds of business ("g"), one kind's categories ("c"), a chosen category ("s"). */
+async function pickCategoryStep(t: T, args: string[]): Promise<void> {
+  const { svc, state } = t;
+  const choosing = ["reg_what", "reg_confirm", "edit_what", "edit_confirm"];
+  if (!state.stage || !choosing.includes(state.stage)) return askCurrent(t);
+  const editing = state.stage.startsWith("edit_");
+  const groups = businessGroups(svc.taxonomy);
+  const [step, first, second] = args;
+  if (step === "c") {
+    const index = Number(first);
+    const group = groups[index];
+    if (!group) return t.reply(copy.pickGroup(groups, 0));
+    const categories = svc.taxonomy
+      .searchable()
+      .filter((c) => c.group === group)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return t.reply(copy.pickCategory(group, index, categories, Number(second) || 0));
   }
-  return t.reply(copy.askAroundThanks());
+  if (step === "s") {
+    const category = svc.taxonomy.get(first);
+    if (!category || category.risk === "blocked" || category.risk === "restricted") return t.reply(copy.pickGroup(groups, 0));
+    (state.draft ??= {}).categories = [category.slug];
+    state.stage = editing ? "edit_confirm" : "reg_confirm";
+    return t.reply(editing ? copy.editConfirmCategories([category.name]) : copy.regConfirmCategories([category.name]));
+  }
+  return t.reply(copy.pickGroup(groups, Number(first) || 0));
 }

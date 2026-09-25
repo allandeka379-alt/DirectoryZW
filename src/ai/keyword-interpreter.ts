@@ -14,8 +14,9 @@ const HUMAN = ["agent", "human", "real person", "customer care", "speak to someo
 const WHEN = /\b(today|tonight|tomorrow|this weekend|weekend|next week|saturday|sunday|monday|tuesday|wednesday|thursday|friday|asap|urgently|urgent)\b/;
 const QUESTION = /^(what|who|when|why|how|is|are|was|tell me|explain|define)\b/;
 const PURCHASE = /\b(buy|need|want|looking|hire|rent|find|where|sell|sells|get)\b/;
-const SHONA = /\b(ndiri|ndinoda|ndoda|ndinotsvaga|ndirikuda|mhoro|kupi|ndapota|zvakanaka|mune|muri)\b/;
-const NDEBELE = /\b(ngifuna|ngicela|sawubona|salibonani|ngiyabonga|kuphi|ngidinga)\b/;
+const SHONA =
+  /\b(ndiri|ndinoda|ndoda|ndinotsvaga|ndirikutsvaga|ndirikuda|ndichada|mhoro|mhoroi|kupi|ndekupi|ndapota|zvakanaka|mune|muri|munhu|mumwe|anogona|ndibatsirei|ndibatsire|ku|kwa)\b/;
+const NDEBELE = /\b(ngifuna|ngiyafuna|ngicela|ngiyacela|sawubona|salibonani|ngiyabonga|kuphi|lapho|ngidinga|umuntu|omunye)\b/;
 
 /**
  * Offline interpreter: category synonyms, place names and a few patterns. Used when there is
