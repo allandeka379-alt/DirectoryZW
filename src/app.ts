@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { WebhookAlerts, type Alerts } from "./alerts.js";
 import { ClaudeInterpreter } from "./ai/claude-interpreter.js";
+import { GoogleSpeechToText, loadServiceAccount } from "./ai/google-speech.js";
 import { KeywordInterpreter } from "./ai/keyword-interpreter.js";
 import { ClaudeOnlineFinder, type OnlineFinder } from "./ai/online-finder.js";
 import { HttpSpeechToText, SimulatorSpeechToText, type SpeechToText } from "./ai/speech.js";
@@ -17,7 +19,7 @@ import { Gazetteer } from "./directory/gazetteer.js";
 import { Taxonomy } from "./directory/taxonomy.js";
 import { JobQueue } from "./jobs/queue.js";
 import { consoleLogger, type Logger } from "./logger.js";
-import { DiskStore, type FileStore } from "./storage.js";
+import { DiskStore, S3Store, type FileStore } from "./storage.js";
 import { CloudMediaSource, SimulatorMediaSource, type MediaSource } from "./whatsapp/media.js";
 import { CloudApiTransport, SimulatorTransport, type Transport } from "./whatsapp/transport.js";
 
@@ -44,6 +46,7 @@ export interface AppOptions {
   transport?: Transport;
   store?: FileStore;
   media?: MediaSource;
+  alerts?: Alerts;
   interpreter?: Interpreter;
   /** Pass null to switch a feature off even when it is configured. */
   vision?: Vision | null;
@@ -85,21 +88,36 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
       : new SimulatorMediaSource());
   const simulatorMedia = media instanceof SimulatorMediaSource ? media : undefined;
 
+  const alerts = opts.alerts ?? new WebhookAlerts({ webhookUrl: config.alertWebhookUrl, brand: config.brandName, log, now });
   const client = config.anthropicApiKey ? new Anthropic({ apiKey: config.anthropicApiKey }) : undefined;
-  const claude = client ? { client, model: config.claudeModel, brand: config.brandName, log } : undefined;
+  const claude = client ? { client, model: config.claudeModel, brand: config.brandName, log, alerts } : undefined;
   const keywords = new KeywordInterpreter();
   const interpreter = opts.interpreter ?? (claude ? new ClaudeInterpreter({ ...claude, fallback: keywords }) : keywords);
   const vision = pick(opts.vision, () => (claude ? new ClaudeVision(claude) : undefined));
   const finder = pick(opts.finder, () => (claude && config.onlineSearch.enabled ? new ClaudeOnlineFinder(claude) : undefined));
   const speech = pick(opts.speech, () => {
+    const google = config.speech.google;
+    if (google) {
+      return new GoogleSpeechToText({
+        projectId: google.projectId,
+        location: google.location,
+        languages: google.languages,
+        credentials: loadServiceAccount(google.credentialsFile, google.credentialsJson),
+      });
+    }
     if (config.speech.url) return new HttpSpeechToText({ url: config.speech.url, token: config.speech.token, languages: config.speech.languages });
     // In the simulator, a voice note carries the words typed when it was sent.
     return simulatorMedia ? new SimulatorSpeechToText(simulatorMedia) : undefined;
   });
-  const store = opts.store ?? new DiskStore(config.uploadsDir);
+  const store = opts.store ?? (config.storage.driver === "s3" ? await S3Store.create(config.storage) : new DiskStore(config.uploadsDir));
+  if (config.env === "production" && store.name === "disk") {
+    log.warn({ dir: config.uploadsDir }, "Photos are stored on local disk; make sure it survives redeploys, or set STORAGE=s3");
+  }
 
-  const messenger = new Messenger(db, transport, config, log, now);
-  const jobs = new JobQueue(db, log, now);
+  const jobs = new JobQueue(db, log, now, (job, error) =>
+    alerts.send(`job:${job.kind}`, `Background job "${job.kind}" failed ${job.attempts} times: ${error.slice(0, 200)}`),
+  );
+  const messenger = new Messenger(db, transport, config, log, { now, jobs, alerts });
   const services: Services = {
     db,
     config,
@@ -113,6 +131,7 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     vision,
     speech,
     finder,
+    alerts,
     log,
     now,
   };

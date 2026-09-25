@@ -11,6 +11,8 @@ export const Ids = {
   report: (businessId: string) => `rep:${businessId}`,
   feedback: (introId: string, outcome: "sorted" | "not_yet" | "no_reply") => `fb:${introId}:${outcome}`,
   rate: (introId: string, stars: number) => `rate:${introId}:${stars}`,
+  eraseYes: "erase:yes",
+  eraseNo: "erase:no",
   onlineBusiness: (requestId: string, leadId: string) => `obiz:${requestId}:${leadId}`,
   onlineConnect: (requestId: string, leadId: string) => `ocon:${requestId}:${leadId}`,
   // Business number

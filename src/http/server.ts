@@ -30,7 +30,16 @@ export function createServer(opts: { logger: boolean }): FastifyInstance {
 }
 
 export function registerRoutes(server: FastifyInstance, app: App): void {
+  // Liveness: the process is up. Readiness: it can reach the database.
   server.get("/health", async () => ({ ok: true, interpreter: app.services.interpreter.name }));
+  server.get("/ready", async (_req, reply) => {
+    try {
+      await app.db.query("SELECT 1");
+      return { ok: true };
+    } catch {
+      return reply.code(503).send({ ok: false, error: "database unreachable" });
+    }
+  });
 
   // Meta calls this once when you register the webhook URL.
   server.get("/webhook/whatsapp", async (req, reply) => {
@@ -42,7 +51,8 @@ export function registerRoutes(server: FastifyInstance, app: App): void {
     return reply.code(403).send("Forbidden");
   });
 
-  // Every message and delivery status arrives here. Reply fast; handle messages in the background.
+  // Every message and delivery status arrives here. Messages are saved before Meta gets its 200
+  // (if saving fails, Meta retries), then handled in the background.
   server.post("/webhook/whatsapp", async (req, reply) => {
     const secret = app.config.whatsapp.appSecret;
     if (secret) {
@@ -54,7 +64,12 @@ export function registerRoutes(server: FastifyInstance, app: App): void {
       return reply.code(500).send("WHATSAPP_APP_SECRET is not configured");
     }
     const parsed = parseWebhook(req.body, app.config.whatsapp.phoneNumberIds);
-    for (const message of parsed.messages) void app.engine.enqueue(message);
+    try {
+      for (const message of parsed.messages) await app.engine.receive(message);
+    } catch (err) {
+      req.log.error({ err: String(err) }, "Could not save inbound messages");
+      return reply.code(500).send("Try again");
+    }
     for (const status of parsed.statuses) {
       void updateMessageStatus(app.db, status.waMessageId, status.status).catch((err) =>
         req.log.warn({ err: String(err) }, "Could not record message status"),

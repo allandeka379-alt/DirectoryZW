@@ -1,9 +1,10 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import type { Alerts } from "../alerts.js";
 import type { Logger } from "../logger.js";
 import { normalizeZimPhone } from "../text.js";
+import { alertOnClaudeError, describeError } from "./errors.js";
 import { onlineFinderSystemPrompt, onlineFinderUserMessage } from "./prompts.js";
-import { describeError } from "./vision.js";
 
 export interface OnlineSearch {
   /** What the customer wants, e.g. "wedding cake". */
@@ -78,6 +79,7 @@ export interface ClaudeOnlineFinderOptions {
   model: string;
   brand: string;
   log: Logger;
+  alerts?: Alerts;
 }
 
 /**
@@ -131,6 +133,7 @@ export class ClaudeOnlineFinder implements OnlineFinder {
       return [];
     } catch (err) {
       this.opts.log.error({ err: describeError(err) }, "Online search failed");
+      alertOnClaudeError(err, this.opts.alerts);
       return [];
     }
   }

@@ -36,7 +36,7 @@ With `ANTHROPIC_API_KEY` set you can also:
 9. **Business pane:** switch to Siyaso Hardware, type `menu`, choose **Add price list photo** and send a photo of a price list. Then search as a customer for `cement in Mbare` and open Siyaso to see the matching prices.
 10. **Customer:** ask for something nothing is listed for, such as `I need a wedding venue in Avondale`. Claude searches the web and shows what it finds as "Found online". Those results also appear under **Found online** in the ops console for the field team to invite.
 
-The ops console is at http://localhost:3000/ops. To try the field app, go to **Agents** in the ops console, add an agent and open the setup link it gives you. On a phone on the same network, use `PUBLIC_BASE_URL` with this computer's address, because GPS and offline mode need a secure page, so over a network the app needs HTTPS. Only localhost works without it.
+The ops console is at http://localhost:3000/ops. Locally it's open until the first account exists; after that everyone signs in (see [Ops console accounts](#ops-console-accounts)). To try the field app, go to **Agents** in the ops console, add an agent and open the setup link it gives you. On a phone on the same network, use `PUBLIC_BASE_URL` with this computer's address, because GPS and offline mode need a secure page, so over a network the app needs HTTPS. Only localhost works without it.
 
 ## How it works
 
@@ -47,8 +47,11 @@ The ops console is at http://localhost:3000/ops. To try the field app, go to **A
 | `src/ai` | Request interpreters (Claude with structured output, plus a keyword fallback used offline, in tests and when Claude fails), photo reading, the web search for "found online" results, and speech-to-text |
 | `src/directory` | Category taxonomy, place names, search and ranking, businesses, price-list items, businesses found online, customer recommendations, introductions with reference codes |
 | `src/field` | Field agents (setup links), in-person registration with duplicate checks, call-back audits |
-| `src/jobs` | A job queue stored in Postgres (follow-ups, weekly summaries, deleting expired online finds, reading field price-list photos) |
-| `src/http` | Fastify server: WhatsApp webhook, simulator, ops API, field API, static pages |
+| `src/jobs` | A job queue stored in Postgres: follow-ups, weekly summaries, resending failed replies, the daily clean-ups, reading field price-list photos |
+| `src/http` | Fastify server: WhatsApp webhook, health checks, simulator, ops API (with sign-in), field API, static pages |
+| `src/ops` | Ops console accounts, sessions and the activity log |
+| `src/privacy.ts` | Export and deletion on request, and the retention clean-up |
+| `src/eval` | Measuring how well requests are understood, against labelled examples in `evals/` |
 | `src/db` | Embedded PGlite or Postgres, SQL migrations, seed data (categories, areas, sample businesses) |
 | `public/field` | The field app: works offline, captures GPS and photos, and queues registrations until there's signal |
 | `public/ops` | The ops console |
@@ -62,6 +65,9 @@ Rules the code enforces:
 - **No ID copies.** Field agents tick that they checked the owner's ID or registration; the app never accepts a photo of one. Verified means an agent saw the premises and checked ID.
 - **Found online is unchecked and temporary.** Web results appear only when nothing is listed, never for high-scam categories, and always marked as unchecked. Found businesses aren't messaged. They are kept for `ONLINE_LEAD_DAYS` so the field team can invite them, then deleted. If one declines, a hash of its number keeps it out of future results.
 - **Photos and voice notes only after consent.** A customer's photo or voice note is processed only once they've agreed to the privacy notice, and isn't stored. Only the transcript or a short description is saved with the message. Price-list photos that owners send are kept with their listing.
+- **Nothing is lost.** Every incoming message is saved before WhatsApp is told it arrived. Anything a crash leaves unhandled is picked up again. Replies that fail for a temporary reason are resent.
+- **Limits per number.** Floods of messages, photos, voice notes or reports from one number are cut off politely. A listing is paused automatically only after several customers who contacted it report it.
+- **People can leave.** "delete my data" on either number deletes everything about that person (and an owner's listings) once they confirm. Old chats are cleaned up on a schedule.
 
 ## Claude
 
@@ -80,19 +86,27 @@ The same key switches on:
 
 ## Voice notes
 
-Voice notes need a speech-to-text service. Whisper handles Shona poorly. Google's Chirp 2 and Meta's Omnilingual ASR support Shona, and Ndebele support is thin everywhere, so the engine sits behind a small HTTP contract that an adapter can implement:
+Voice notes need a speech-to-text service. Whisper handles Shona poorly. Two options are built in:
 
-- `POST $SPEECH_TO_TEXT_URL` with the audio as the body, its `Content-Type` (usually `audio/ogg`), `X-Language-Hints: sn,nd,en` and `Authorization: Bearer $SPEECH_TO_TEXT_TOKEN`.
-- Answer `{ "text": "…", "language": "sn" }`, with an empty `text` when nothing intelligible was said.
+- **Google Chirp 2** (set `GOOGLE_STT_PROJECT` and a service-account key).
+  - Chirp 2 transcribes Shona (`sn-ZW`) from the `europe-west4` and `asia-southeast1` regions.
+  - Ndebele isn't supported, so Zulu (`zu-ZA`), a close relative, stands in for it.
+  - Languages are tried in order until one hears something, starting with the language of the person's last request.
+  - Voice notes up to a minute are supported.
+- **Any other engine** (for example Meta's Omnilingual ASR) behind a small HTTP contract:
+  - `POST $SPEECH_TO_TEXT_URL` with the audio as the body, its `Content-Type` (usually `audio/ogg`), `X-Language-Hints: sn,nd,en` (the last request's language first) and `Authorization: Bearer $SPEECH_TO_TEXT_TOKEN`.
+  - The service answers `{ "text": "…", "language": "sn" }`, with an empty `text` when nothing intelligible was said.
 
-The reply starts with "🎙️ I heard: …" so a wrong transcript is easy to spot. That line goes at the top of the answer rather than in a separate message, because WhatsApp starts charging for replies inside the 24-hour window on 1 October 2026. When the service can't make anything out, the customer is asked to type instead. Without `SPEECH_TO_TEXT_URL`, the simulator fakes transcription and the live number asks people to type.
+The reply starts with "🎙️ I heard: …" so a wrong transcript is easy to spot. That line goes at the top of the answer rather than in a separate message, because WhatsApp starts charging for replies inside the 24-hour window on 1 October 2026. When the service can't make anything out, the customer is asked to type instead. With neither option set, the simulator fakes transcription and the live number asks people to type.
 
-## Going live on WhatsApp
+## Going live
+
+Step by step in [docs/LAUNCH.md](docs/LAUNCH.md); hosting, backups and monitoring in [docs/DEPLOY.md](docs/DEPLOY.md); personal data in [docs/DATA_PROTECTION.md](docs/DATA_PROTECTION.md). In short:
 
 1. Create a Meta Business portfolio and complete business verification. Unverified accounts can start only about 250 conversations a day.
 2. Add two numbers to the WhatsApp Cloud API, one for customers and one for businesses. Note both phone number IDs, and create a permanent access token for a system user.
 3. Point the webhook at `https://<your-domain>/webhook/whatsapp` with your verify token, subscribe to `messages`, and set the app secret.
-4. Create and get approval for these utility templates. Button payloads are filled in by the app.
+4. Submit these utility templates with `npm run templates -- --create` (set `WHATSAPP_BUSINESS_ACCOUNT_ID`), then run `npm run templates` until they're approved. Button payloads are filled in by the app. The definitions live in `src/whatsapp/templates.ts`.
 
    | Name | Body | Buttons (quick reply) |
    | --- | --- | --- |
@@ -102,24 +116,43 @@ The reply starts with "🎙️ I heard: …" so a wrong transcript is easy to sp
    | `ask_around_reply` | Good news! {{1}} says they can help with: {{2}}. | Connect me |
    | `weekly_summary` | Your week: {{1}} was shown in {{2}} searches and {{3}} customers connected with you. | none |
 
-5. Set the following, then deploy anywhere that runs Node:
+5. Set the following, then deploy with the `Dockerfile` or anywhere that runs Node:
    - `WHATSAPP_TRANSPORT=cloud`, plus the WhatsApp variables in `.env.example`
-   - `DATABASE_URL` pointing at Postgres
+   - `DATABASE_URL` pointing at Postgres (required in production)
    - `OPS_TOKEN`
    - `PUBLIC_BASE_URL`: your HTTPS address, used in agents' setup links
-   - `UPLOADS_DIR` on persistent storage
-   - `ANTHROPIC_API_KEY` for Claude (request understanding, photos, found online), and `SPEECH_TO_TEXT_URL` for voice notes
+   - `STORAGE=s3` with the `S3_*` settings (or `UPLOADS_DIR` on a disk that survives redeploys)
+   - `ANTHROPIC_API_KEY` for Claude (request understanding, photos, found online), and `GOOGLE_STT_PROJECT` or `SPEECH_TO_TEXT_URL` for voice notes
+   - `ALERT_WEBHOOK_URL` for alerts
    - `SEED_SAMPLE_DATA=false`
    - `NODE_ENV=production`
 
-   Run `npm run build`, then `npm start`.
+   Run `npm run build`, then `npm start`. Health checks: `/health` (the process is up) and `/ready` (it can reach the database).
+6. Create the first admin with `node dist/ops/user-cli.js add --email … --name … --role admin`.
+
+## Ops console accounts
+
+Everyone on the team signs in with their own account, so the **Activity** screen shows who did what.
+
+- **Staff** handle chats, reports, verification, call-backs, listings, tips and vocabulary, and can block a number.
+- **Admins** can also manage field agents, the team, and people's data: export and delete.
+
+Create accounts under **Team**, or with `npm run ops:user -- add --email … --name … --role admin|staff`, which prints a one-time password. Five wrong passwords lock an email for 15 minutes. `OPS_TOKEN` works as an admin for scripts and the first sign-in. In development, with no `OPS_TOKEN` and no accounts yet, the console is open.
 
 ## Ops API
 
-The ops console at `/ops` is built on these JSON endpoints. They live under `/ops/api` and need `Authorization: Bearer $OPS_TOKEN`; in development they are open when no token is set.
+The ops console at `/ops` is built on these JSON endpoints. They live under `/ops/api` and need `Authorization: Bearer <session token or OPS_TOKEN>`. Endpoints marked (admin) refuse staff.
 
 | Endpoint | Purpose |
 | --- | --- |
+| `POST /login`, `POST /logout`, `GET /me`, `POST /me/password` | Sign in (`{ "email", "password" }` gives a session token), sign out, who am I, change my password |
+| `GET /users`, `POST /users`, `POST /users/:id` (admin) | The team; add someone (a password is generated when none is given); change role, switch off or on, new password |
+| `GET /activity` (admin) | Who did what, newest first |
+| `GET /contacts?phone=` | Find people on either number |
+| `POST /contacts/:id/block` | Block or unblock a number (`{ "blocked": true, "reason": "…" }`) |
+| `GET /contacts/:id/export`, `POST /contacts/:id/erase` (admin) | A person's data as JSON; delete it |
+| `POST /businesses/:id/erase` (admin) | Delete a listing completely, with photos and price list |
+| `GET /system` | Queues, failed sends, what's switched on, recent alerts |
 | `GET /summary` | Businesses, requests, introductions, open handoffs, reports, active agents |
 | `GET /requests?status=no_results` | Recent requests, filterable by status |
 | `GET /supply-gaps?days=7` | Unanswered requests grouped by category and area: where field teams go next |
@@ -129,11 +162,11 @@ The ops console at `/ops` is built on these JSON endpoints. They live under `/op
 | `GET /reports`, `POST /reports/:id/status` | Open reports about businesses; mark `reviewed` or `actioned` |
 | `GET /businesses?q=&verification=`, `GET /businesses/:id` | Browse and inspect listings, with photos, checks and call-backs |
 | `GET /photos/:id` | A field photo |
-| `POST /businesses` | Manual registration (`name`, `phone`, `categories`, `area` or `lat`/`lng`, `consent: true`, `verified`, `agent`) |
-| `POST /businesses/:id/verify`, `POST /businesses/:id/status` | Mark verified; set `active`, `paused` or `removed` |
+| `POST /businesses` | Manual registration (`name`, `phone`, `categories`, `area` or `lat`/`lng`, `consent: true`, `verified`) |
+| `POST /businesses/:id/verify`, `POST /businesses/:id/status` | Mark verified (recorded under your name); set `active`, `paused` or (admin) `removed` |
 | `GET /verification-queue` | Self-registered businesses waiting for a field visit |
-| `GET /agents`, `POST /agents` | Agents with quality stats; add one and get its setup link |
-| `POST /agents/:id/token`, `POST /agents/:id/active` | New setup link (the old one stops working); deactivate or reactivate |
+| `GET /agents`, `POST /agents` (admin) | Agents with quality stats; add one and get its setup link |
+| `POST /agents/:id/token`, `POST /agents/:id/active` (admin) | New setup link (the old one stops working); deactivate or reactivate |
 | `GET /audits/queue?percent=10`, `POST /businesses/:id/audit` | Call-back sample per agent; record `confirmed`, `details_wrong`, `wrong_number`, `not_a_business` or `refused` (the last three count as failures; a wrong number or "not a business" also hides the listing) |
 | `GET /online-leads` | Businesses found online that customers were shown, with how often they were shown and chatted to |
 | `POST /online-leads/:id/status`, `POST /online-leads/:id/close` | Mark `invited`. Closing deletes the lead, as `listed`, `declined` (the number is never shown again) or `wrong` |
@@ -156,5 +189,11 @@ The field app talks to `/field/api` with the agent's token:
 | `npm run typecheck` | Type-check everything |
 | `npm run build` / `npm start` | Compile to `dist/` and run it |
 | `npm run db:migrate` / `npm run db:seed` | Apply migrations / load reference data (and sample businesses when enabled) |
+| `npm run ops:user -- add\|reset\|list` | Ops console accounts from the command line |
+| `npm run templates [-- --create]` | Check (or submit) the WhatsApp message templates |
+| `npm run eval [-- --claude --model …]` | Score request understanding on `evals/requests.jsonl` (the keyword interpreter is free; `--claude` calls the API) |
+| `npm run eval:export -- --out evals/real.jsonl` | Export real requests to label for the eval (kept out of git) |
+
+Tests run two at a time because each starts its own embedded Postgres; set `VITEST_MAX_WORKERS` higher on a machine with more than 8 GB of memory.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what comes next.

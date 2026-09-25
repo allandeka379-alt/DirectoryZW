@@ -6,10 +6,20 @@ export interface Transcript {
   language?: string;
 }
 
+/** What we already know about the speaker: the language of their last request ("sn", "nd" or "en"). */
+export interface SpeechHint {
+  language?: string;
+}
+
 /** Turns voice notes into text. Returns null when nothing intelligible was said. */
 export interface SpeechToText {
   readonly name: string;
-  transcribe(audio: Media): Promise<Transcript | null>;
+  transcribe(audio: Media, hint?: SpeechHint): Promise<Transcript | null>;
+}
+
+/** Put the hinted language first: ["sn", "nd", "en"] with hint "en" -> ["en", "sn", "nd"]. */
+export function hintFirst<T>(items: T[], matches: (item: T) => boolean): T[] {
+  return [...items.filter(matches), ...items.filter((i) => !matches(i))];
 }
 
 export interface HttpSpeechToTextOptions {
@@ -36,12 +46,13 @@ export class HttpSpeechToText implements SpeechToText {
     this.fetchFn = opts.fetchFn ?? fetch;
   }
 
-  async transcribe(audio: Media): Promise<Transcript | null> {
+  async transcribe(audio: Media, hint?: SpeechHint): Promise<Transcript | null> {
+    const languages = hint?.language ? hintFirst(this.opts.languages, (l) => l === hint.language) : this.opts.languages;
     const res = await this.fetchFn(this.opts.url, {
       method: "POST",
       headers: {
         "Content-Type": audio.mimeType,
-        "X-Language-Hints": this.opts.languages.join(","),
+        "X-Language-Hints": languages.join(","),
         ...(this.opts.token ? { Authorization: `Bearer ${this.opts.token}` } : {}),
       },
       body: new Uint8Array(audio.data),

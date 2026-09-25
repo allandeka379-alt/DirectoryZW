@@ -16,6 +16,8 @@ import {
   type OnlineLead,
 } from "../directory/online-leads.js";
 import { createRecommendation } from "../directory/recommendations.js";
+import { fileReport, reportsSince } from "../directory/reports.js";
+import { eraseContact } from "../privacy.js";
 import { searchBusinesses } from "../directory/search.js";
 import type { Category } from "../directory/taxonomy.js";
 import { hostOf } from "../ai/online-finder.js";
@@ -27,7 +29,6 @@ import { Ids, parseAction } from "./ids.js";
 import { fetchMedia, hearVoiceNote } from "./media.js";
 import {
   annotateInbound,
-  createReport,
   createRequest,
   getRequest,
   saveResults,
@@ -50,6 +51,8 @@ export interface CustomerState {
   reportBusinessId?: string;
   /** A recommendation being written. */
   rec?: { name?: string; what?: string; areaText?: string | null; areaId?: number | null };
+  /** Language of their last request, a hint for reading their next voice note. */
+  lang?: "sn" | "nd" | "en";
 }
 
 type T = Turn<CustomerState>;
@@ -64,10 +67,27 @@ interface Place {
 /** Requests that came from a photo start with this, so the business can be asked to look at it. */
 const PHOTO_MARK = "📷 ";
 const RECOMMEND_WORDS = ["recommend", "recommend a business", "suggest a business", "recommendation"];
+export const ERASE_WORDS = [
+  "delete my data",
+  "delete my information",
+  "delete my info",
+  "delete my details",
+  "delete my account",
+  "erase my data",
+  "remove my data",
+  "forget me",
+];
 
 export async function handleCustomerTurn(t: T): Promise<void> {
   const { contact, inbound, state } = t;
   if (contact.is_blocked) return;
+
+  // Deleting their data works at any point, even before consent or while a person is handling the chat.
+  const c0 = inbound.content;
+  if (c0.type === "text" && isCommand(c0.text, ERASE_WORDS)) return t.reply(copy.eraseConfirm());
+  if ((c0.type === "button_reply" || c0.type === "list_reply") && (c0.id === Ids.eraseYes || c0.id === Ids.eraseNo)) {
+    return eraseAnswer(t, c0.id === Ids.eraseYes);
+  }
 
   // A person from the team is handling this chat; only "menu" brings the assistant back.
   if (state.stage === "handoff") {
@@ -145,9 +165,13 @@ async function onText(t: T, text: string): Promise<void> {
   }
 
   if (state.stage === "awaiting_report" && state.reportBusinessId) {
-    await createReport(svc.db, contact.id, state.reportBusinessId, raw);
+    const businessId = state.reportBusinessId;
     state.stage = undefined;
     state.reportBusinessId = undefined;
+    const filed = await fileReport(svc.db, { contactId: contact.id, businessId, reason: raw }, svc.config.limits.reportsToPause);
+    if (filed?.paused) {
+      svc.alerts.send(`paused:${businessId}`, `${filed.businessName} was paused after reports from several customers who contacted them. Review it under Reports.`);
+    }
     return t.reply(copy.reportThanks());
   }
 
@@ -177,6 +201,7 @@ async function onText(t: T, text: string): Promise<void> {
 /** What to do with a request once we know what it means, whether it came as text, a voice note or a photo. */
 async function handleInterpretation(t: T, raw: string, interpretation: RequestInterpretation): Promise<void> {
   const { svc, state, contact } = t;
+  if (interpretation.language !== "other") state.lang = interpretation.language;
   switch (interpretation.intent) {
     case "greeting":
       return t.reply(copy.askWhatYouNeed(contact.profile_name));
@@ -238,7 +263,7 @@ async function onPhoto(t: T, mediaId: string, caption?: string): Promise<void> {
 }
 
 async function onVoice(t: T, mediaId: string, waMessageId?: string): Promise<void> {
-  const text = await hearVoiceNote(t, mediaId, waMessageId);
+  const text = await hearVoiceNote(t, mediaId, { waMessageId, language: t.state.lang });
   if (text) return onText(t, text);
 }
 
@@ -363,10 +388,13 @@ async function onAction(t: T, id: string): Promise<void> {
     case "new":
       resetSearch(state);
       return t.reply(copy.askWhatYouNeed(contact.profile_name));
-    case "rep":
+    case "rep": {
+      const dayAgo = new Date(svc.now().getTime() - 24 * 3600_000);
+      if ((await reportsSince(svc.db, contact.id, dayAgo)) >= svc.config.limits.reportsPerDay) return t.reply(copy.reportLimit());
       state.stage = "awaiting_report";
       state.reportBusinessId = args[0];
       return t.reply(copy.askReport());
+    }
     case "fb":
       return feedback(t, args[0] ?? "", args[1] ?? "");
     case "rate":
@@ -550,6 +578,19 @@ async function startHandoff(t: T, requestId: string | null, text: string | null)
   }
   svc.log.info({ contactId: contact.id, requestId }, "Handed over to a person");
   return t.reply(copy.handoff());
+}
+
+// ---------- Deleting their data ----------
+
+async function eraseAnswer(t: T, yes: boolean): Promise<void> {
+  if (!yes) return t.reply(copy.eraseCancelled());
+  const { svc, contact } = t;
+  await t.reply(copy.erased());
+  // After the turn is saved, so the confirmation and this very message are deleted too.
+  t.defer(async () => {
+    const result = await eraseContact(svc.db, contact.id);
+    svc.log.info({ ...result }, "Customer deleted their data");
+  });
 }
 
 // ---------- Recommendations ("know someone good?") ----------

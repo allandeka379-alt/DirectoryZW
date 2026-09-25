@@ -12,11 +12,13 @@ import {
 } from "../directory/businesses.js";
 import type { Area } from "../directory/gazetteer.js";
 import { priceLabel, replaceOfferings, saveBusinessPhoto } from "../directory/offerings.js";
+import { eraseBusiness, eraseContact } from "../privacy.js";
 import type { PriceListItem } from "../ai/vision.js";
 import { normalizeText, normalizeZimPhone } from "../text.js";
 import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
+import { ERASE_WORDS } from "./customer.js";
 import { fetchMedia, hearVoiceNote } from "./media.js";
 import { getContactById, getRequest, setConsent } from "./store.js";
 
@@ -83,6 +85,10 @@ export async function handleBusinessTurn(t: T): Promise<void> {
       state.draft = undefined;
       state.priceDraft = undefined;
       return wasEditing ? showMenu(t) : t.reply(copy.regCancelled());
+    }
+    if (ERASE_WORDS.includes(cmd)) {
+      const owned = await businessesOwnedBy(svc.db, contact.id);
+      return t.reply(copy.bizEraseConfirm(owned.map((b) => b.name)));
     }
     if (state.stage) return continueStage(t, c.text);
     if (REGISTER_WORDS.includes(cmd)) return startRegistration(t);
@@ -154,6 +160,9 @@ async function onAction(t: T, id: string): Promise<void> {
     case "bprice":
       if (args[0] === "save") return savePriceList(t);
       return withBusiness(t, () => askForPriceList(t));
+    case "erase":
+      if (args[0] !== "yes") return showMenu(t);
+      return eraseEverything(t);
     case "bmenu":
       state.stage = undefined;
       state.draft = undefined;
@@ -340,6 +349,20 @@ async function askCurrent(t: T): Promise<void> {
     default:
       return showMenu(t);
   }
+}
+
+// ---------- Deleting their data ----------
+
+/** The owner asked us to forget them: their chats and every listing they manage. */
+async function eraseEverything(t: T): Promise<void> {
+  const { svc, contact } = t;
+  const owned = await businessesOwnedBy(svc.db, contact.id);
+  await t.reply(copy.bizErased());
+  t.defer(async () => {
+    for (const b of owned) await eraseBusiness(svc.db, svc.store, b.id);
+    const result = await eraseContact(svc.db, contact.id);
+    svc.log.info({ ...result, listings: owned.length }, "Business owner deleted their data");
+  });
 }
 
 // ---------- Price lists ----------

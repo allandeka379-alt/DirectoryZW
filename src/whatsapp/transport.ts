@@ -16,6 +16,19 @@ export class WhatsAppApiError extends Error {
   }
 }
 
+/**
+ * Worth trying again later: network trouble, rate limits, Meta's own errors, and a rejected token
+ * (which someone may fix). Other 4xx errors (a closed 24-hour window, a bad number) won't improve.
+ */
+export function isRetryable(err: unknown): boolean {
+  if (!(err instanceof WhatsAppApiError)) return true;
+  return err.status === 429 || err.status >= 500 || isAuthError(err);
+}
+
+export function isAuthError(err: unknown): boolean {
+  return err instanceof WhatsAppApiError && (err.status === 401 || err.status === 403);
+}
+
 export interface CloudApiOptions {
   graphVersion: string;
   accessToken: string;
@@ -38,6 +51,7 @@ export class CloudApiTransport implements Transport {
       method: "POST",
       headers: { Authorization: `Bearer ${this.opts.accessToken}`, "Content-Type": "application/json" },
       body: JSON.stringify(toCloudPayload(to, message)),
+      signal: AbortSignal.timeout(20_000),
     });
     const body = (await res.json().catch(() => ({}))) as { messages?: { id?: string }[] };
     if (!res.ok) throw new WhatsAppApiError(res.status, body);

@@ -1,7 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
+import type { Alerts } from "../alerts.js";
 import type { Logger } from "../logger.js";
+import { alertOnClaudeError, describeError } from "./errors.js";
 import type { Media } from "../whatsapp/media.js";
 import { photoSystemPrompt, photoUserMessage, priceListSystemPrompt } from "./prompts.js";
 import {
@@ -46,6 +48,7 @@ export interface ClaudeVisionOptions {
   model: string;
   brand: string;
   log: Logger;
+  alerts?: Alerts;
 }
 
 /** Claude vision with structured output. Any failure returns null so the chat can ask for words instead. */
@@ -79,6 +82,7 @@ export class ClaudeVision implements Vision {
       return sanitizeInterpretation(response.parsed_output, ctx.taxonomy);
     } catch (err) {
       this.opts.log.error({ err: describeError(err) }, "Photo request failed");
+      alertOnClaudeError(err, this.opts.alerts);
       return null;
     }
   }
@@ -110,6 +114,7 @@ export class ClaudeVision implements Vision {
       return sanitizePriceList(response.parsed_output);
     } catch (err) {
       this.opts.log.error({ err: describeError(err) }, "Price list request failed");
+      alertOnClaudeError(err, this.opts.alerts);
       return null;
     }
   }
@@ -133,11 +138,4 @@ export function sanitizePriceList(list: PriceList): PriceList {
 
 function oneLine(text: string, max: number): string {
   return text.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
-}
-
-export function describeError(err: unknown): string {
-  if (err instanceof Anthropic.RateLimitError) return "rate limited";
-  if (err instanceof Anthropic.AuthenticationError) return "invalid API key";
-  if (err instanceof Anthropic.APIError) return `API error ${err.status}: ${err.message}`;
-  return err instanceof Error ? err.message : String(err);
 }

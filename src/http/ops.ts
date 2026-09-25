@@ -16,7 +16,10 @@ import { closeLead, setLeadStatus } from "../directory/online-leads.js";
 import { RECOMMENDATION_STATUSES, setRecommendationStatus } from "../directory/recommendations.js";
 import { agentStats, createAgent, resetAgentToken, setAgentActive, setupUrl } from "../field/agents.js";
 import { AUDIT_OUTCOMES, auditQueue, recordAudit } from "../field/audits.js";
+import { logAction } from "../ops/accounts.js";
 import { normalizeText, normalizeZimPhone } from "../text.js";
+import { registerAdminRoutes } from "./ops-admin.js";
+import { actorOf, opsAuthHook, refuseUnlessAdmin, registerAccountRoutes } from "./ops-auth.js";
 import { serveFile } from "./static.js";
 
 const FieldRegistration = z.object({
@@ -32,14 +35,15 @@ const FieldRegistration = z.object({
   consent: z.literal(true),
   /** Checked ID or registration and saw the premises. */
   verified: z.boolean().default(false),
-  agent: z.string().min(1).max(60),
+  /** Who checked; defaults to the signed-in person. */
+  agent: z.string().min(1).max(60).optional(),
 });
 
 const Id = z.object({ id: z.string().refine(isUuid, "Not a valid ID") });
 
 /**
- * JSON API for the ops console, protected by OPS_TOKEN (open in development when no
- * token is set). The console page itself is public; it asks for the token.
+ * JSON API for the ops console. People sign in with their own accounts (admin or staff);
+ * scripts can use OPS_TOKEN. The console page itself is public; it asks them to sign in.
  */
 export function registerOps(server: FastifyInstance, app: App): void {
   serveFile(server, "/ops", "ops/index.html");
@@ -48,14 +52,9 @@ export function registerOps(server: FastifyInstance, app: App): void {
 
   server.register(
     async (ops) => {
-      ops.addHook("onRequest", async (req, reply) => {
-        const token = app.config.opsToken;
-        if (!token) {
-          if (app.config.env !== "production") return;
-          return reply.code(503).send({ error: "OPS_TOKEN is not configured" });
-        }
-        if (req.headers.authorization !== `Bearer ${token}`) return reply.code(401).send({ error: "Unauthorized" });
-      });
+      ops.addHook("onRequest", opsAuthHook(app));
+      registerAccountRoutes(ops, app);
+      registerAdminRoutes(ops, app);
 
       // ----- Overview -----
 
@@ -108,7 +107,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
         app.db.query(
           `SELECT c.id AS contact_id, c.wa_id, c.profile_name, s.updated_at,
                   (SELECT json_agg(m ORDER BY m.created_at) FROM (
-                     SELECT direction, body, created_at FROM messages WHERE contact_id = c.id
+                     SELECT direction, body, notes, created_at FROM messages WHERE contact_id = c.id
                       ORDER BY created_at DESC LIMIT 20) m) AS recent_messages
              FROM sessions s JOIN contacts c ON c.id = s.contact_id
             WHERE s.state->>'stage' = 'handoff' ORDER BY s.updated_at DESC`,
@@ -122,6 +121,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
         const contact = await getContactById(app.db, params.data.id);
         if (!contact) return reply.code(404).send({ error: "Contact not found" });
         await app.services.messenger.reply(contact, { kind: "text", text: body.data.text });
+        await logAction(app.db, actorOf(req), "contact.reply", contact.id);
         return { ok: true };
       });
 
@@ -135,6 +135,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
         await saveState(app.db, contact.id, state);
         await app.db.query("UPDATE requests SET status = 'closed' WHERE contact_id = $1 AND status = 'handoff'", [contact.id]);
         await app.services.messenger.reply(contact, copy.welcomeBack());
+        await logAction(app.db, actorOf(req), "contact.release", contact.id);
         return { ok: true };
       });
 
@@ -142,7 +143,8 @@ export function registerOps(server: FastifyInstance, app: App): void {
 
       ops.get("/reports", async () =>
         app.db.query(
-          `SELECT rp.id, rp.created_at, rp.reason, rp.status, b.id AS business_id, b.name AS business, b.verification
+          `SELECT rp.id, rp.created_at, rp.reason, rp.status, rp.had_introduction, b.id AS business_id,
+                  b.name AS business, b.verification, b.status AS business_status
              FROM reports rp JOIN businesses b ON b.id = rp.business_id
             WHERE rp.status = 'open' ORDER BY rp.created_at DESC LIMIT 200`,
         ),
@@ -153,7 +155,9 @@ export function registerOps(server: FastifyInstance, app: App): void {
         const body = z.object({ status: z.enum(["open", "reviewed", "actioned"]) }).safeParse(req.body);
         if (!params.success || !body.success) return reply.code(400).send({ error: "Give a report ID and a status" });
         const rows = await app.db.query("UPDATE reports SET status = $2 WHERE id = $1 RETURNING id", [params.data.id, body.data.status]);
-        return rows.length ? { ok: true } : reply.code(404).send({ error: "Report not found" });
+        if (!rows.length) return reply.code(404).send({ error: "Report not found" });
+        await logAction(app.db, actorOf(req), "report.status", params.data.id, { status: body.data.status });
+        return { ok: true };
       });
 
       // ----- Businesses -----
@@ -226,18 +230,20 @@ export function registerOps(server: FastifyInstance, app: App): void {
           categories: b.categories,
           source: "field",
           verified: b.verified,
-          verifiedBy: b.agent,
+          verifiedBy: b.agent ?? actorOf(req).name,
           optedIn: true,
         });
+        await logAction(app.db, actorOf(req), "business.create", id, { verified: b.verified });
         return reply.code(201).send({ id });
       });
 
       ops.post("/businesses/:id/verify", async (req, reply) => {
         const params = Id.safeParse(req.params);
-        const body = z.object({ agent: z.string().min(1).max(60) }).safeParse(req.body);
-        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a business ID and who verified it" });
+        const body = z.object({ agent: z.string().min(1).max(60).optional() }).safeParse(req.body ?? {});
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a business ID" });
         if (!(await getBusiness(app.db, params.data.id))) return reply.code(404).send({ error: "Business not found" });
-        await verifyBusiness(app.db, params.data.id, body.data.agent);
+        await verifyBusiness(app.db, params.data.id, body.data.agent ?? actorOf(req).name);
+        await logAction(app.db, actorOf(req), "business.verify", params.data.id);
         return { ok: true };
       });
 
@@ -245,8 +251,10 @@ export function registerOps(server: FastifyInstance, app: App): void {
         const params = Id.safeParse(req.params);
         const body = z.object({ status: z.enum(["active", "paused", "removed"]) }).safeParse(req.body);
         if (!params.success || !body.success) return reply.code(400).send({ error: "Give a business ID and a status" });
+        if (body.data.status === "removed" && refuseUnlessAdmin(req, reply)) return;
         if (!(await getBusiness(app.db, params.data.id))) return reply.code(404).send({ error: "Business not found" });
         await setBusinessStatus(app.db, params.data.id, body.data.status);
+        await logAction(app.db, actorOf(req), "business.status", params.data.id, { status: body.data.status });
         return { ok: true };
       });
 
@@ -265,28 +273,35 @@ export function registerOps(server: FastifyInstance, app: App): void {
       ops.get("/agents", async () => agentStats(app.db));
 
       ops.post("/agents", async (req, reply) => {
+        if (refuseUnlessAdmin(req, reply)) return;
         const body = z
           .object({ name: z.string().trim().min(2).max(60), phone: z.string().max(20).optional(), city: z.string().max(40).optional() })
           .safeParse(req.body);
         if (!body.success) return reply.code(400).send({ error: body.error.issues });
         const phone = body.data.phone ? normalizeZimPhone(body.data.phone) : null;
         const { agent, token } = await createAgent(app.db, { name: body.data.name, phone, city: body.data.city ?? null });
+        await logAction(app.db, actorOf(req), "agent.create", agent.id);
         return reply.code(201).send({ agent, setupUrl: setupUrl(app.config.publicBaseUrl, token) });
       });
 
       ops.post("/agents/:id/token", async (req, reply) => {
+        if (refuseUnlessAdmin(req, reply)) return;
         const params = Id.safeParse(req.params);
         if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
         const token = await resetAgentToken(app.db, params.data.id);
         if (!token) return reply.code(404).send({ error: "Agent not found" });
+        await logAction(app.db, actorOf(req), "agent.new_link", params.data.id);
         return { setupUrl: setupUrl(app.config.publicBaseUrl, token) };
       });
 
       ops.post("/agents/:id/active", async (req, reply) => {
+        if (refuseUnlessAdmin(req, reply)) return;
         const params = Id.safeParse(req.params);
         const body = z.object({ active: z.boolean() }).safeParse(req.body);
         if (!params.success || !body.success) return reply.code(400).send({ error: "Give an agent ID and active true/false" });
-        return (await setAgentActive(app.db, params.data.id, body.data.active)) ? { ok: true } : reply.code(404).send({ error: "Agent not found" });
+        if (!(await setAgentActive(app.db, params.data.id, body.data.active))) return reply.code(404).send({ error: "Agent not found" });
+        await logAction(app.db, actorOf(req), body.data.active ? "agent.activate" : "agent.deactivate", params.data.id);
+        return { ok: true };
       });
 
       // ----- Found online -----
@@ -309,7 +324,9 @@ export function registerOps(server: FastifyInstance, app: App): void {
         const params = Id.safeParse(req.params);
         const body = z.object({ status: z.enum(["new", "invited"]) }).safeParse(req.body);
         if (!params.success || !body.success) return reply.code(400).send({ error: "Give a lead ID and a status" });
-        return (await setLeadStatus(app.db, params.data.id, body.data.status)) ? { ok: true } : reply.code(404).send({ error: "Lead not found" });
+        if (!(await setLeadStatus(app.db, params.data.id, body.data.status))) return reply.code(404).send({ error: "Lead not found" });
+        await logAction(app.db, actorOf(req), "lead.status", params.data.id, { status: body.data.status });
+        return { ok: true };
       });
 
       // Done with a lead: it's now listed, it declined (never show it again), or the details were wrong.
@@ -317,7 +334,9 @@ export function registerOps(server: FastifyInstance, app: App): void {
         const params = Id.safeParse(req.params);
         const body = z.object({ reason: z.enum(["listed", "declined", "wrong"]) }).safeParse(req.body);
         if (!params.success || !body.success) return reply.code(400).send({ error: "Give a lead ID and a reason" });
-        return (await closeLead(app.db, params.data.id, body.data.reason)) ? { ok: true } : reply.code(404).send({ error: "Lead not found" });
+        if (!(await closeLead(app.db, params.data.id, body.data.reason))) return reply.code(404).send({ error: "Lead not found" });
+        await logAction(app.db, actorOf(req), "lead.close", params.data.id, { reason: body.data.reason });
+        return { ok: true };
       });
 
       // ----- Customer recommendations -----
@@ -340,9 +359,11 @@ export function registerOps(server: FastifyInstance, app: App): void {
         const params = Id.safeParse(req.params);
         const body = z.object({ status: z.enum(RECOMMENDATION_STATUSES) }).safeParse(req.body);
         if (!params.success || !body.success) return reply.code(400).send({ error: "Give a recommendation ID and a status" });
-        return (await setRecommendationStatus(app.db, params.data.id, body.data.status))
-          ? { ok: true }
-          : reply.code(404).send({ error: "Recommendation not found" });
+        if (!(await setRecommendationStatus(app.db, params.data.id, body.data.status))) {
+          return reply.code(404).send({ error: "Recommendation not found" });
+        }
+        await logAction(app.db, actorOf(req), "tip.status", params.data.id, { status: body.data.status });
+        return { ok: true };
       });
 
       // ----- Vocabulary -----
@@ -388,6 +409,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
         const extra = [...new Set([...row.extra_synonyms, ...clean(body.data.add)])].filter((w) => !remove.has(w) && !seeded.has(w));
         await app.db.query("UPDATE categories SET extra_synonyms = $2 WHERE slug = $1", [slug, extra]);
         await app.reloadTaxonomy();
+        await logAction(app.db, actorOf(req), "category.words", slug, { add: clean(body.data.add), remove: [...remove] });
         return { slug, extra_synonyms: extra };
       });
 
@@ -405,10 +427,13 @@ export function registerOps(server: FastifyInstance, app: App): void {
       ops.post("/businesses/:id/audit", async (req, reply) => {
         const params = Id.safeParse(req.params);
         const body = z
-          .object({ outcome: z.enum(AUDIT_OUTCOMES), note: z.string().max(500).optional(), by: z.string().min(1).max(60) })
+          .object({ outcome: z.enum(AUDIT_OUTCOMES), note: z.string().max(500).optional(), by: z.string().min(1).max(60).optional() })
           .safeParse(req.body);
-        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a business ID, an outcome and who called" });
-        return (await recordAudit(app.db, params.data.id, body.data)) ? { ok: true } : reply.code(404).send({ error: "Business not found" });
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a business ID and an outcome" });
+        const audit = { ...body.data, by: body.data.by ?? actorOf(req).name };
+        if (!(await recordAudit(app.db, params.data.id, audit))) return reply.code(404).send({ error: "Business not found" });
+        await logAction(app.db, actorOf(req), "business.callback", params.data.id, { outcome: audit.outcome });
+        return { ok: true };
       });
     },
     { prefix: "/ops/api" },

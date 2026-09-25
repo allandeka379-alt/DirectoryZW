@@ -1,8 +1,9 @@
-// Ops console: a thin page over /ops/api. The token is kept in this browser only.
+// Ops console: a thin page over /ops/api. The session token is kept in this browser only.
 
 const TOKEN_KEY = "ops.token";
-const NAME_KEY = "ops.name";
 const view = document.getElementById("view");
+/** The signed-in person: { name, role }. */
+let me = null;
 
 function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
@@ -29,21 +30,25 @@ async function api(path, options = {}) {
     ...options,
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.body ? { "Content-Type": "application/json" } : {}) },
   });
-  if (res.status === 401) throw new Unauthorized();
+  if (res.status === 401 && path !== "/login") throw new Unauthorized();
   const body = res.headers.get("content-type")?.includes("json") ? await res.json() : await res.blob();
-  if (!res.ok) throw new Error(body?.error ? JSON.stringify(body.error) : `Request failed (${res.status})`);
+  if (!res.ok) throw new Error(typeof body?.error === "string" ? body.error : body?.error ? JSON.stringify(body.error) : `Request failed (${res.status})`);
   return body;
 }
 const post = (path, body) => api(path, { method: "POST", body: JSON.stringify(body ?? {}) });
 
-function operator() {
-  let name = store.get(NAME_KEY);
-  if (!name) {
-    name = (prompt("Your name (recorded with the changes you make)") || "").trim();
-    if (name) store.set(NAME_KEY, name);
-  }
-  return name;
+/** Save a JSON response as a file (data exports). */
+async function download(path, filename) {
+  const data = await api(path);
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+  const a = h("a", { href: url, download: filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
+
+const isAdmin = () => me?.role === "admin";
 
 const date = (v) => (v ? new Date(v).toLocaleString() : "");
 const day = (v) => (v ? new Date(v).toLocaleDateString() : "");
@@ -118,8 +123,9 @@ const screens = {
       ...header("Reports", "Customers' complaints about businesses."),
       table([
         { label: "When", render: (r) => date(r.created_at) },
-        { label: "Business", render: (r) => h("span", {}, r.business, " ", h("span", { class: "tag" }, r.verification)) },
-        { label: "What happened", key: "reason" },
+        { label: "Business", render: (r) => h("span", {}, r.business, " ", h("span", { class: "tag" }, r.verification),
+          r.business_status !== "active" ? [" ", h("span", { class: "tag warn" }, r.business_status)] : null) },
+        { label: "What happened", render: (r) => h("span", {}, r.reason, r.had_introduction ? [" ", h("span", { class: "tag ok", title: "They connected with this business through us" }, "contacted them via us")] : null) },
         { label: "", render: (r) => h("div", { class: "row" },
           h("button", { onclick: act(r, "reviewed") }, "Reviewed"),
           h("button", { onclick: async () => { await post(`/businesses/${r.business_id}/status`, { status: "paused" }); await act(r, "actioned")(); } }, "Pause business")) },
@@ -138,9 +144,7 @@ const screens = {
         { label: "What they do", key: "description" },
         { label: "Signed up", render: (r) => day(r.created_at) },
         { label: "", render: (r) => h("button", { onclick: async () => {
-          const agent = operator();
-          if (!agent) return;
-          await post(`/businesses/${r.id}/verify`, { agent });
+          await post(`/businesses/${r.id}/verify`);
           render();
         } }, "Mark verified") },
       ], rows),
@@ -168,9 +172,7 @@ const screens = {
           const outcome = h("select", {}, ...outcomes.map(([v, l]) => h("option", { value: v }, l)));
           const note = h("input", { placeholder: "Note (optional)" });
           return h("div", { class: "row" }, outcome, note, h("button", { class: "primary", onclick: async () => {
-            const by = operator();
-            if (!by) return;
-            await post(`/businesses/${r.id}/audit`, { outcome: outcome.value, note: note.value || undefined, by });
+            await post(`/businesses/${r.id}/audit`, { outcome: outcome.value, note: note.value || undefined });
             render();
           } }, "Save"));
         } },
@@ -304,6 +306,122 @@ const screens = {
     ];
   },
 
+  async people() {
+    const q = new URLSearchParams(location.hash.split("?")[1]);
+    const phone = h("input", { type: "search", placeholder: "Phone number, e.g. 0771234567", value: q.get("phone") || "" });
+    const nodes = [
+      ...header("People", "Find anyone who has messaged either number. Block abusive numbers. Admins can export or delete someone's data when they ask."),
+      h("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); location.hash = `people?${new URLSearchParams({ phone: phone.value })}`; } },
+        phone, h("button", { class: "primary" }, "Find")),
+    ];
+    if (!q.get("phone")) return nodes;
+    const rows = await api(`/contacts?${new URLSearchParams({ phone: q.get("phone") })}`);
+    return [...nodes, ...(rows.length ? rows.map(contactCard) : [h("p", { class: "muted" }, "Nobody with that number has messaged us.")])];
+  },
+
+  async team() {
+    const result = h("div");
+    const showPassword = (label, password) => result.replaceChildren(h("div", { class: "notice" },
+      h("strong", {}, label),
+      h("p", { class: "muted" }, "Shown once. Pass it on privately; they can change it under Account."),
+      h("div", { class: "setup" }, password)));
+    const name = h("input", { placeholder: "Full name", required: true });
+    const email = h("input", { type: "email", placeholder: "Email", required: true });
+    const role = h("select", {}, h("option", { value: "staff" }, "Staff"), h("option", { value: "admin" }, "Admin"));
+    const tableBox = h("div");
+    const refresh = async () => tableBox.replaceChildren(table([
+      { label: "Name", render: (u) => h("span", {}, u.name, u.active ? null : [" ", h("span", { class: "tag bad" }, "switched off")]) },
+      { label: "Email", key: "email" },
+      { label: "Role", render: (u) => u.role },
+      { label: "Last sign-in", render: (u) => date(u.last_login_at) || "never" },
+      { label: "", render: (u) => h("div", { class: "row" },
+        h("button", { onclick: async () => {
+          const r = await post(`/users/${u.id}`, { resetPassword: true });
+          showPassword(`New password for ${u.email}`, r.password);
+        } }, "New password"),
+        h("button", { onclick: async () => { await post(`/users/${u.id}`, { role: u.role === "admin" ? "staff" : "admin" }); refresh(); } },
+          u.role === "admin" ? "Make staff" : "Make admin"),
+        h("button", { class: u.active ? "danger" : null, onclick: async () => { await post(`/users/${u.id}`, { active: !u.active }); refresh(); } },
+          u.active ? "Switch off" : "Switch on")) },
+    ], await api("/users")));
+    await refresh();
+    return [
+      ...header("Team", "One account per person, so the activity log shows who did what. Staff handle chats, reports and listings; admins also manage agents, the team and people's data."),
+      h("div", { class: "card" },
+        h("form", { class: "inline", onsubmit: async (e) => {
+          e.preventDefault();
+          const r = await post("/users", { name: name.value, email: email.value, role: role.value });
+          showPassword(`Password for ${r.user.email}`, r.password);
+          name.value = email.value = "";
+          refresh();
+        } }, name, email, role, h("button", { class: "primary" }, "Add person")),
+        result),
+      tableBox,
+    ];
+  },
+
+  async activity() {
+    const rows = await api("/activity?limit=300");
+    return [
+      ...header("Activity", "Who did what in the console, newest first."),
+      table([
+        { label: "When", render: (r) => date(r.created_at) },
+        { label: "Who", key: "actor" },
+        { label: "What", key: "action" },
+        { label: "On", render: (r) => r.target || "" },
+        { label: "Details", render: (r) => Object.entries(r.details || {}).filter(([, v]) => v != null && v !== "").map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join(" · ") },
+      ], rows),
+    ];
+  },
+
+  async system() {
+    const s = await api("/system");
+    const tile = (n, label, bad) => h("div", { class: `tile${bad ? " alert" : ""}` }, h("b", {}, n ?? 0), h("span", {}, label));
+    const f = s.features;
+    return [
+      ...header("System", `Version ${s.version} · ${s.env} · running since ${date(s.startedAt)}`),
+      h("div", { class: "tiles" },
+        tile(s.inbound_unprocessed, "Messages waiting to be handled", s.inbound_unprocessed > 0),
+        tile(s.outbound_retrying, "Replies being retried", s.outbound_retrying > 0),
+        tile(s.outbound_failed_24h, "Replies failed, 24 hours", s.outbound_failed_24h > 0),
+        tile(s.jobs_due, "Background jobs due"),
+        tile(s.jobs_failed_24h, "Background jobs failed, 24 hours", s.jobs_failed_24h > 0),
+      ),
+      h("div", { class: "card" },
+        h("p", {}, `Last message in: ${date(s.last_inbound_at) || "none yet"} · last reply out: ${date(s.last_sent_at) || "none yet"}`),
+        h("p", {}, `Database: ${s.database} · WhatsApp: ${s.whatsapp} · photos stored on: ${s.storage}`),
+        h("p", {}, `Understanding requests: ${f.interpreter} · photos: ${f.photos ? "on" : "off"} · found online: ${f.foundOnline ? "on" : "off"} · voice notes: ${f.voiceNotes || "off"} · alerts: ${f.alertsTo}`),
+        h("p", { class: "muted" }, `Limits per number: ${s.limits.perMinute} a minute, ${s.limits.perDay} a day, ${s.limits.mediaPerDay} photos and voice notes a day. Chats kept ${s.retention.messageDays} days; request wording kept ${s.retention.requestDays} days.`)),
+      h("h2", {}, "Recent alerts"),
+      s.alerts.length
+        ? table([{ label: "When", render: (a) => date(a.at) }, { label: "Alert", key: "text" }], s.alerts)
+        : h("p", { class: "muted" }, "No alerts since the last restart."),
+    ];
+  },
+
+  async account() {
+    const current = h("input", { type: "password", placeholder: "Current password", autocomplete: "current-password", required: true });
+    const next = h("input", { type: "password", placeholder: "New password (10+ characters)", autocomplete: "new-password", minlength: "10", required: true });
+    const message = h("p");
+    return [
+      ...header("Account", `Signed in as ${me.name} (${me.role}).`),
+      me.userId
+        ? h("form", { class: "inline card", onsubmit: async (e) => {
+            e.preventDefault();
+            try {
+              await post("/me/password", { current: current.value, password: next.value });
+              store.set(TOKEN_KEY, "");
+              me = null;
+              render();
+            } catch (err) {
+              message.replaceChildren(h("span", { class: "error" }, err.message));
+            }
+          } }, current, next, h("button", { class: "primary" }, "Change password"), message)
+        : h("p", { class: "muted" }, "You're using the shared ops token or the development login, which have no password to change."),
+      h("p", {}, h("button", { onclick: signOut }, "Sign out")),
+    ];
+  },
+
   async businesses() {
     const q = new URLSearchParams(location.hash.split("?")[1]);
     const search = h("input", { type: "search", placeholder: "Name or phone", value: q.get("q") || "" });
@@ -339,10 +457,11 @@ function handoffCard(chat) {
   const text = h("textarea", { placeholder: "Reply as the team…" });
   const messages = (chat.recent_messages || []).map((m) => {
     const body = m.body || {};
+    const notes = m.notes || {};
     const content = m.direction === "out"
       ? body.text
       : body.text || body.title ||
-        (body.transcript ? `🎙️ ${body.transcript}` : body.type === "image" ? `📷 ${body.caption || body.seen || "photo"}` : body.type ? `[${body.type}]` : "");
+        (notes.transcript ? `🎙️ ${notes.transcript}` : body.type === "image" ? `📷 ${body.caption || notes.seen || "photo"}` : body.type ? `[${body.type}]` : "");
     return h("div", { class: `msg ${m.direction}` }, content || "", h("small", {}, date(m.created_at)));
   });
   return h("div", { class: "card" },
@@ -355,8 +474,49 @@ function handoffCard(chat) {
         await post(`/contacts/${chat.contact_id}/reply`, { text: text.value.trim() });
         render();
       } }, "Send reply"),
-      h("button", { onclick: async () => { await post(`/contacts/${chat.contact_id}/release`); render(); } }, "Hand back to the assistant")),
+      h("button", { onclick: async () => { await post(`/contacts/${chat.contact_id}/release`); render(); } }, "Hand back to the assistant"),
+      h("button", { class: "danger", onclick: async () => {
+        const reason = prompt("Block this number? Say why (kept for the record).");
+        if (reason === null) return;
+        await post(`/contacts/${chat.contact_id}/block`, { blocked: true, reason: reason || undefined });
+        await post(`/contacts/${chat.contact_id}/release`);
+        render();
+      } }, "Block number")),
   );
+}
+
+function contactCard(c) {
+  return h("div", { class: "card" },
+    h("strong", {}, c.profile_name || "(no name)"), " ",
+    h("span", { class: "tag" }, c.channel === "customer" ? "customer number" : "business number"),
+    c.is_blocked ? [" ", h("span", { class: "tag bad" }, "blocked")] : null,
+    h("p", { class: "muted" }, [
+      `+${c.wa_id}`,
+      `first message ${day(c.created_at)}`,
+      c.last_inbound_at ? `last ${date(c.last_inbound_at)}` : null,
+      `${c.messages} messages`,
+      `${c.requests} requests`,
+      c.businesses ? `${c.businesses} listings` : null,
+      c.consent_at ? "agreed to the privacy notice" : "hasn't agreed to the privacy notice",
+    ].filter(Boolean).join(" · ")),
+    c.blocked_reason ? h("p", { class: "muted" }, `Blocked: ${c.blocked_reason}`) : null,
+    h("p", { class: "row" },
+      h("button", { onclick: async () => {
+        let reason;
+        if (!c.is_blocked) {
+          reason = prompt("Why block this number? (kept for the record)");
+          if (reason === null) return;
+        }
+        await post(`/contacts/${c.id}/block`, { blocked: !c.is_blocked, reason: reason || undefined });
+        render();
+      } }, c.is_blocked ? "Unblock" : "Block"),
+      isAdmin() ? h("button", { onclick: () => download(`/contacts/${c.id}/export`, `contact-${c.wa_id}.json`) }, "Export their data") : null,
+      isAdmin() ? h("button", { class: "danger", onclick: async () => {
+        if (!confirm(`Delete everything held about +${c.wa_id}: messages, requests and ratings? Businesses they own stay listed. This can't be undone.`)) return;
+        const r = await post(`/contacts/${c.id}/erase`);
+        alert(`Deleted ${r.messages} messages and ${r.requests} requests.`);
+        render();
+      } }, "Delete their data") : null));
 }
 
 async function businessDetail(id) {
@@ -384,36 +544,74 @@ async function businessDetail(id) {
     h("p", { class: "row" },
       b.status !== "active" ? h("button", { onclick: setStatus("active") }, "Make live") : h("button", { onclick: setStatus("paused") }, "Pause"),
       b.verification !== "verified" ? h("button", { onclick: async () => {
-        const agent = operator();
-        if (!agent) return;
-        await post(`/businesses/${b.id}/verify`, { agent });
+        await post(`/businesses/${b.id}/verify`);
         render();
       } }, "Mark verified") : null,
-      h("button", { class: "danger", onclick: () => confirm(`Remove ${b.name}?`) && setStatus("removed")() }, "Remove")),
+      isAdmin() ? h("button", { class: "danger", onclick: () => confirm(`Remove ${b.name}? Customers won't see it; it stays in the records.`) && setStatus("removed")() }, "Remove") : null,
+      isAdmin() ? h("button", { class: "danger", onclick: async () => {
+        if (!confirm(`Delete ${b.name} completely, with its photos and price list? Only do this when the owner asked us to forget them. It can't be undone.`)) return;
+        await post(`/businesses/${b.id}/erase`);
+        render();
+      } }, "Delete completely") : null),
   );
 }
 
-function tokenForm(message) {
-  const input = h("input", { type: "password", placeholder: "Ops token", autocomplete: "current-password" });
+function loginForm(message) {
+  const email = h("input", { type: "email", placeholder: "Email", autocomplete: "username", required: true });
+  const password = h("input", { type: "password", placeholder: "Password", autocomplete: "current-password", required: true });
+  const token = h("input", { type: "password", placeholder: "Ops token", autocomplete: "off" });
+  const error = h("p", { class: "error" }, message || "");
   return [
-    ...header("Sign in", "Enter the ops token (OPS_TOKEN on the server)."),
-    message ? h("p", { class: "error" }, message) : null,
-    h("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); store.set(TOKEN_KEY, input.value.trim()); render(); } },
-      input, h("button", { class: "primary" }, "Continue")),
+    ...header("Sign in"),
+    error,
+    h("form", { class: "inline", onsubmit: async (e) => {
+      e.preventDefault();
+      try {
+        const r = await post("/login", { email: email.value, password: password.value });
+        store.set(TOKEN_KEY, r.token);
+        me = null;
+        render();
+      } catch (err) {
+        error.textContent = err.message;
+      }
+    } }, email, password, h("button", { class: "primary" }, "Sign in")),
+    h("details", {},
+      h("summary", {}, "Use the ops token instead"),
+      h("p", { class: "muted" }, "For setting up the first accounts, or scripts. Everything is recorded as \"ops token\"."),
+      h("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); store.set(TOKEN_KEY, token.value.trim()); me = null; render(); } },
+        token, h("button", {}, "Continue"))),
   ];
 }
+
+async function signOut() {
+  try { await post("/logout"); } catch { /* already signed out */ }
+  store.set(TOKEN_KEY, "");
+  me = null;
+  render();
+}
+
+const ADMIN_TABS = new Set(["agents", "team", "activity"]);
 
 async function render() {
   const name = (location.hash.slice(1).split("?")[0]) || "overview";
   for (const a of document.querySelectorAll("#tabs a")) a.classList.toggle("active", a.getAttribute("href") === `#${name}`);
-  const screen = screens[name] ?? screens.overview;
+  const who = document.getElementById("who");
   // Screens return arrays that may hold null/false for sections that don't apply.
   const show = (nodes) => view.replaceChildren(...nodes.flat().filter((n) => n != null && n !== false));
   try {
+    me ??= await api("/me");
+    who.replaceChildren(h("a", { href: "#account" }, `${me.name} · ${me.role}`));
+    for (const a of document.querySelectorAll("#tabs a")) a.hidden = ADMIN_TABS.has(a.getAttribute("href").slice(1)) && !isAdmin();
+    const screen = (ADMIN_TABS.has(name) && !isAdmin() ? null : screens[name]) ?? screens.overview;
     show(await screen());
   } catch (err) {
-    if (err instanceof Unauthorized) show(tokenForm(store.get(TOKEN_KEY) ? "That token didn't work." : ""));
-    else show([...header("Something went wrong"), h("p", { class: "error" }, err.message)]);
+    if (err instanceof Unauthorized) {
+      me = null;
+      who.replaceChildren();
+      show(loginForm(store.get(TOKEN_KEY) ? "Your session has ended. Please sign in again." : ""));
+    } else {
+      show([...header("Something went wrong"), h("p", { class: "error" }, err.message)]);
+    }
   }
 }
 

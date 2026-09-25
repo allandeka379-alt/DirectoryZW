@@ -10,9 +10,10 @@ export interface Job {
   attempts: number;
 }
 
-export type JobHandler = (payload: Record<string, unknown>) => Promise<void>;
+export type JobHandler = (payload: Record<string, unknown>, job: Job) => Promise<void>;
 
-const MAX_ATTEMPTS = 3;
+/** A job is tried this many times, a few minutes apart, before it is marked failed. */
+export const MAX_JOB_ATTEMPTS = 3;
 
 /** Durable jobs stored in Postgres (follow-ups, reminders). Works with PGlite and Postgres. */
 export class JobQueue {
@@ -20,6 +21,8 @@ export class JobQueue {
     private readonly db: Db,
     private readonly log: Logger,
     private readonly now: () => Date = () => new Date(),
+    /** Called when a job fails for the last time. */
+    private readonly onFailed?: (job: Job, error: string) => void,
   ) {}
 
   async enqueue(kind: string, payload: Record<string, unknown>, runAt: Date): Promise<string> {
@@ -43,11 +46,11 @@ export class JobQueue {
       const handler = handlers[job.kind];
       try {
         if (!handler) throw new Error(`No handler for job kind ${job.kind}`);
-        await handler(job.payload);
+        await handler(job.payload, job);
         await this.db.query("UPDATE jobs SET status = 'done', last_error = NULL WHERE id = $1", [job.id]);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        const retry = job.attempts < MAX_ATTEMPTS;
+        const retry = job.attempts < MAX_JOB_ATTEMPTS;
         await this.db.query("UPDATE jobs SET status = $2, last_error = $3, run_at = $4 WHERE id = $1", [
           job.id,
           retry ? "queued" : "failed",
@@ -55,6 +58,7 @@ export class JobQueue {
           new Date(this.now().getTime() + job.attempts * 5 * 60_000),
         ]);
         this.log.error({ jobId: job.id, kind: job.kind, err: message, retry }, "Job failed");
+        if (!retry) this.onFailed?.(job, message);
       }
     }
     return jobs.length;

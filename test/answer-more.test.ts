@@ -104,7 +104,7 @@ describe("voice notes", () => {
     expect(textOf(c.last())).toMatch(/^🎙️ I heard: “ndoda plumber ku Mabelreign”\n\nI found \d places for \*plumber\* near Mabelreign/);
     expect(rowsOf(c.last())[0]).toMatch(/^QuickFix/);
     const [logged] = await app.db.query<{ transcript: string }>(
-      "SELECT body->>'transcript' AS transcript FROM messages WHERE body->>'mediaId' = $1",
+      "SELECT notes->>'transcript' AS transcript FROM messages WHERE body->>'mediaId' = $1",
       [id],
     );
     expect(logged?.transcript).toBe("ndoda plumber ku Mabelreign"); // shown to the team in the ops console

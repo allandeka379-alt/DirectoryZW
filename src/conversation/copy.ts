@@ -356,6 +356,14 @@ export function mediaTooLarge(): OutboundMessage {
   return { kind: "text", text: "That file is too large for me. Please send a smaller photo or a shorter voice note." };
 }
 
+export function slowDown(): OutboundMessage {
+  return { kind: "text", text: "You're sending messages faster than I can answer. Please wait a few minutes, then try again." };
+}
+
+export function tooMuchMedia(): OutboundMessage {
+  return { kind: "text", text: "You've sent a lot of photos and voice notes today. Please type what you need, or try again tomorrow." };
+}
+
 export function mediaFailed(): OutboundMessage {
   return { kind: "text", text: "Sorry, I couldn't open that. Please try sending it again." };
 }
@@ -419,6 +427,31 @@ export function askReport(): OutboundMessage {
 
 export function reportThanks(): OutboundMessage {
   return { kind: "text", text: "Thank you. Our team will look into it. What else can I help you find?" };
+}
+
+export function eraseConfirm(): OutboundMessage {
+  return {
+    kind: "buttons",
+    body:
+      "Delete everything we hold about you? This removes your messages, requests and ratings, and can't be undone.\n\n" +
+      "Businesses you contacted keep their own WhatsApp chats with you.",
+    buttons: [
+      { id: Ids.eraseYes, title: "Delete everything" },
+      { id: Ids.eraseNo, title: "Keep my data" },
+    ],
+  };
+}
+
+export function erased(): OutboundMessage {
+  return { kind: "text", text: "Done. We've deleted everything we held about you. If you message us again, we'll start fresh." };
+}
+
+export function eraseCancelled(): OutboundMessage {
+  return { kind: "text", text: "Okay, nothing was deleted. What are you looking for?" };
+}
+
+export function reportLimit(): OutboundMessage {
+  return { kind: "text", text: "Thanks, we've already had several reports from you today. Our team will look into them." };
 }
 
 export function stopped(): OutboundMessage {
@@ -685,6 +718,24 @@ export function bizConfirmRemove(): OutboundMessage {
 
 export function bizRemoved(): OutboundMessage {
   return { kind: "text", text: "Your listing has been removed." };
+}
+
+export function bizEraseConfirm(listings: string[]): OutboundMessage {
+  const what = listings.length
+    ? `your chats with us and your listing${listings.length === 1 ? "" : "s"}: *${listings.join("*, *")}*. Customers won't find you any more`
+    : "your chats with us";
+  return {
+    kind: "buttons",
+    body: `Delete everything we hold about you? This removes ${what}. It can't be undone.`,
+    buttons: [
+      { id: Ids.eraseYes, title: "Delete everything" },
+      { id: Ids.eraseNo, title: "Keep my data" },
+    ],
+  };
+}
+
+export function bizErased(): OutboundMessage {
+  return { kind: "text", text: "Done. Your listings and everything we held about you are deleted. You can register again any time." };
 }
 
 export function bizNoListing(): OutboundMessage {

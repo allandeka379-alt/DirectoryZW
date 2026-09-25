@@ -15,10 +15,15 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "tsx src/db/migrate-cli.ts",
-    "db:seed": "tsx src/db/seed-cli.ts"
+    "db:seed": "tsx src/db/seed-cli.ts",
+    "ops:user": "tsx src/ops/user-cli.ts",
+    "templates": "tsx src/whatsapp/templates-cli.ts",
+    "eval": "tsx src/eval/run.ts",
+    "eval:export": "tsx src/eval/export.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
+    "@aws-sdk/client-s3": "^3.1140.0",
     "@electric-sql/pglite": "^0.5.8",
     "dotenv": "^18.0.3",
     "fastify": "^5.12.5",

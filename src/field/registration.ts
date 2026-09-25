@@ -119,7 +119,7 @@ export async function registerFromField(deps: FieldDeps, agent: Agent, input: Fi
   for (const p of photos) {
     const photoId = crypto.randomUUID();
     const key = `photos/${id}/${photoId}.${p.ext}`;
-    await store.put(key, p.data);
+    await store.put(key, p.data, p.contentType);
     await db.query(
       "INSERT INTO business_photos (id, business_id, kind, storage_key, content_type, bytes) VALUES ($1, $2, $3, $4, $5, $6)",
       [photoId, id, p.kind, key, p.contentType, p.data.length],

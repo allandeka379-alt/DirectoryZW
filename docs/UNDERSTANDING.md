@@ -1,0 +1,259 @@
+# Understanding requests: local first, Claude when stuck, people last
+
+**Goal:** our own engine understands normal requests, for free and instantly. It calls Claude only for messages it genuinely can't read, and hands to a person when Claude can't either. Every hard case it sees once should be easy the next time.
+
+**Status:** design, not built yet. The rollout plan is at the end.
+
+## Summary
+
+- Today every free-text message goes to Claude Opus 5, including "hi", "thanks" and business descriptions at registration. Photos, price lists and "found online" searches call Claude too.
+- A request costs about half a US cent on Opus. The expensive events are web searches (about 15 cents each) and price lists (about 5 cents).
+- The design is a ladder of five steps. Each message stops at the first step that understands it:
+  1. **Structured input** (buttons, lists, commands).
+  2. **Local engine** (vocabulary, rules and a confidence score).
+  3. **Phrasebook** (everything resolved before).
+  4. **Ask the customer** (two or three close options, as buttons).
+  5. **Claude**, then **a person**.
+- Every answer from steps 4 and 5 is saved, so the local engine keeps getting better. Claude calls should fall week by week.
+- Expected effect at 10,000 conversations a month: Claude spend falls from about **$280 to about $50** (−80%). Most of what's left is optional web searches.
+- After that, WhatsApp's own per-message charges (from October 2026) are the bigger bill. So the design avoids adding conversation turns just to save a Claude call.
+
+## 1. Where Claude is used today, and what it costs
+
+Prices are per million tokens as of 25 September 2026 (claude.com/pricing):
+
+| Model | Input | Cached input | Output |
+| --- | --- | --- | --- |
+| Opus 5 | $5 | $0.50 | $25 |
+| Sonnet 5 | $2 | $0.20 | $10 |
+| Haiku 4.5 | $1 | $0.10 | $5 |
+
+The Batch API halves every price, and web search adds $10 per 1,000 searches.
+
+| Event | Today | Cost each on Opus 5 | On Sonnet 5 |
+| --- | --- | --- | --- |
+| Customer text message (anything that isn't a button, command or answer to our question) | Always Claude | ~$0.005 (2,900-token cached prompt, ~100-token answer, plus thinking tokens: thinking isn't switched off) | ~$0.002 |
+| Business description at registration or edit; customer tips | Always Claude | ~$0.005 | ~$0.002 |
+| Customer photo | Always Claude | ~$0.012 (~1,600 image tokens) | ~$0.005 |
+| Price-list photo | Always Claude | ~$0.05 (long output) | ~$0.02; ~$0.01 with the Batch API |
+| "Found online" web search | When nothing is listed (cached, capped per customer) | ~$0.15 (3 searches plus 10–30k tokens of results) | ~$0.08 |
+| For comparison: one WhatsApp reply | | ~$0.004 from 1 Oct 2026 (our September research; re-check) | |
+
+Haiku 4.5 is cheapest per token, but it only caches prompts of 4,096 tokens or more. Our request prompt is about 2,900 tokens, so on Haiku every call pays full price (about $0.0035). Sonnet 5 caches it and costs about $0.0017. Model choice should come from the eval (`npm run eval -- --claude --model …`), not from list prices.
+
+## 2. What the current engine can already do
+
+The keyword interpreter scored 79% on categories across the 56 test requests. As an experiment, a simple confidence gate answered locally only when exactly one category matched and at most one word was unknown:
+
+- It answered **55% locally**, 29 of 31 correctly.
+- It sent 25 to "escalate", but **15 of those were right**. The unknown words were harmless: brands and specs ("samsung", "5kva"), word forms ("installer", "drilling", "electrician") and occasions ("birthday party").
+- It let **2 wrong answers through**:
+  - "paint my house": "paint" is also a hardware product.
+  - "anogadzira fridge": the Shona "repair" verb is unknown, so it chose appliances rather than appliance repair.
+
+So the confidence signal works, but the vocabulary is too thin in both directions. The engine needs to know which words don't matter (brands, units, occasions) and which words change the meaning (repair, hire, move, and the Shona and Ndebele verbs for them). The test set is small and made up; real traffic will be messier. That's why the phrasebook and the review loop matter more than any rule.
+
+## 3. The ladder
+
+```
+message
+ 0 Structured: button, list row, location, command, answer to our own question → handled (no understanding needed)
+ 1 Local engine: normalise → vocabulary → rules → places, budget, time → confidence
+      HIGH  → answer
+ 2 Phrasebook: resolved before? → answer
+      MEDIUM with 2–3 clear options
+ 3 Ask the customer: "Did you mean…?" buttons → answer, and remember
+      LOW, or the customer's reply didn't settle it
+ 4 Claude (small model, budgeted), given the local engine's notes → answer, and remember
+      still unclear, over budget, or a sensitive case
+ 5 A person (handoff) → answer, and remember
+```
+
+Some rules hold at every step:
+
+- **Blocked words stay local and strict.** Illegal goods and restricted services are decided by the lexicon and never sent to Claude or to a guess.
+- **High-scam categories** (rentals, cars, visas) need a HIGH local answer or a Claude or person answer. They never come from a clarifying guess.
+- **Greetings, thanks, "help", "agent", "menu", "stop" and "delete my data" never reach Claude.** Today "hi" and "thanks" do.
+
+## 4. Step 1: the local engine (v2)
+
+Everything the engine knows lives in data (the lexicon), editable from the ops console, not in code.
+
+**Normalising**
+- Lower case, strip punctuation and emoji, and collapse stretched letters ("pleeease").
+- Common texting spellings: pls, plz, 2moro, nyt.
+- Split numbers from units ("55inch", "5kva", "20l").
+- Strip locative and noun prefixes before place and word lookup: "kuMabelreign", "eNkulumane", "kwa", "i-plumber", "ama-", "ma tyres".
+- Fuzzy matching against the lexicon only: one wrong letter for words of 5+ letters, two for 8+ ("plumbar", "Mabelrein", "electritian").
+- English word forms: installer → install, drilling → drill, electrician → electric, accountant → accounting.
+
+**The lexicon: every word has a role**
+
+| Role | Examples | Effect |
+| --- | --- | --- |
+| service | plumber, mechanic, electrician, catering, tutor | Decides the category |
+| product | cement, tyres, fridge, couch, cake | Decides the category |
+| action | repair, fix, *gadzira*, *lungisa*, hire, rent, *roja*, move, deliver, buy, *tenga*, *thenga* | Changes it: "repair" + phone → phone repairs |
+| brand | samsung, toyota, honda fit, hisense | Weak: never decides a category on its own if a service or product word is present |
+| spec or unit | inch, kva, litres, bedroom, tonne | Neutral |
+| occasion | wedding, funeral, birthday, party, church | Neutral when another term is present ("catering for a funeral" means catering) |
+| ambiguous | paint, gas, cake? | Can't decide alone: needs an action or object ("paint my house" means painters), otherwise ask |
+| filler | ndoda, ndinoda, ngifuna, ku, please, how much | Ignored (partly done) |
+
+Shona and Ndebele nouns and verbs belong in the lexicon too:
+
+- Nouns: *keke/ikhekhe* (cake), *muchato/umtshado* (wedding), *matende* (tents), *macheya* (chairs), *mota/imoto* (car), *firiji/ifriji* (fridge), *umakhenikha* (mechanic).
+- Verbs: *gadzira/lungisa* (repair), *tenga/thenga* (buy), *roja/qasha* (hire), *chera/gebha* (dig or drill), *takura/thutha* (carry or move).
+
+The first lists come from native speakers, not from us guessing. The phrasebook then adds what real customers write.
+
+**Rules (few, explicit, each with a test)**
+- An action changes the category family:
+  - repair + phone, laptop or TV → phone and electronics repairs
+  - repair + fridge or stove → appliance repairs
+  - repair + car → mechanics
+  - parts words (tyres, spares, battery) + car brand → car parts
+  - hire + event items → event hire; hire + car → car hire; hire + room or cottage → rentals
+  - move or transport + goods → trucks and moving
+- A longer, more specific term beats a shorter one it contains ("water delivery" beats "delivery").
+- Places, budget, time and quantity are pulled out as today. Landmarks count as places ("Sam Levy's" means Borrowdale), with fuzzy spelling.
+
+**Confidence bands (explainable)**
+- **HIGH:**
+  - one category after the rules
+  - at most one unknown content word, and it doesn't look like a Shona or Ndebele verb or noun (prefixes such as *ano-*, *ku-*, *u-*, *i-*)
+  - area known, or not needed
+- **MEDIUM:** 2–3 candidate categories remain, or one category with two or more unknown words.
+- **LOW:** no category, mostly unknown words, a long message (over about 25 words) or several needs at once ("venue, catering and a DJ").
+
+Each decision logs its reasons ("category=plumbing via 'plumber'; unknown: none; area=Mabelreign"). The handoff card and the review screen show them.
+
+The target is **98% or better precision for HIGH answers**, checked weekly on a random sample (§9). The thresholds are tuned on labelled real requests, not on the made-up test set.
+
+## 5. Step 2: the phrasebook (why it gets cheaper every week)
+
+- Each resolved request is saved as **signature → interpretation**. The signature is the request's content words, normalised and sorted, without places or numbers. For example, "ndoda keke remuchato ku Budiriro" is saved as `keke muchato` → Cakes.
+- Sources, most trusted first: a person in the ops console, the customer's own tap, then Claude.
+- The next customer who writes the same thing gets an answer with no Claude call.
+- **Vocabulary suggestions:** unknown words are counted against the categories they were resolved to. For example: "keke → Cakes, seen 14 times, all agreed. Add it?" One click in the Vocabulary screen makes it part of the lexicon. Nothing enters the lexicon without a person's approval.
+- There are no names or phone numbers in signatures. An entry used only once is dropped after 180 days.
+
+## 6. Step 3: ask the customer
+
+- **When:** MEDIUM confidence with 2–3 clear candidates, for example "tyres for my Honda Fit" (car parts or cars for sale).
+- **How:** "Did you mean…?" with up to three buttons named after the categories, plus "Something else". A tap runs the search and teaches the phrasebook.
+- **Cost:** one extra WhatsApp reply, about the same as a small Claude call. It's worth it because the answer is certain and it trains the engine. When the options aren't clear-cut, go to Claude instead.
+- Ask at most once per request. If the customer writes something new instead of tapping, run the ladder again on the new text.
+
+## 7. Step 4: Claude, only when stuck
+
+**Text requests**
+- **When:** LOW confidence, a MEDIUM case the customer didn't settle, and the message looks like a real request (two or more content words, not gibberish).
+- **Model:** Sonnet 5 or Haiku 4.5, whichever the eval shows is accurate enough on real requests. Start with Sonnet 5, which caches our prompt.
+- **Settings:** thinking switched off (`thinking: {type: "disabled"}`; it's on by default on Opus 5), low effort, `max_tokens` about 300, the same structured output as today.
+- **Context:** the local engine's notes go into the message (candidate categories, unknown words, the detected place), so Claude has less to work out.
+- **Budget guard:**
+  - a daily spend limit (for example `CLAUDE_DAILY_BUDGET_USD=5`), with an alert at 80%
+  - a per-number daily cap (for example 5 escalations)
+  - over either limit, ask the customer or go to a person instead
+- **Metering:** every call's `usage` (input, cached and output tokens) is saved with its feature, so the System screen shows Claude spend per day and per feature.
+
+**Other uses**
+- **Customer photos:** try the caption first. If the local engine understands it with HIGH confidence, skip the photo. Otherwise send a downscaled photo (long side 800px, about 850 tokens instead of about 1,600) to the small model.
+- **Price lists:**
+  - Photos agents take in the field go through the Batch API (half price; results within 24 hours, usually much sooner).
+  - Owners' own photos stay interactive on the small model, capped at 60 items.
+- **Business registration and customer tips:** no Claude.
+  - Use the local engine. If it's unsure, show a category picker: a list of groups, then the categories in the chosen group. Owners confirm their categories anyway.
+  - Tips the engine can't place wait for the team to categorise.
+- **Found online:** ask first. "Nothing is listed yet. Shall I check online? It takes a minute." Only customers who want it trigger a search. Run it on Sonnet 5 unless the eval says Opus finds much better results. Caching and the per-customer caps stay.
+
+## 8. Step 5: people
+
+- **Triggers:**
+  - Claude couldn't make sense of it (unclear twice)
+  - over budget, and the engine didn't understand
+  - the customer repeats themselves or shows frustration ("you don't understand", "useless")
+  - several needs in one message
+  - urgent or sensitive situations (a medical or legal emergency)
+  - the customer asks for a person
+- **Out of hours:** outside Monday–Saturday, 8am–6pm, say when a person will reply, and queue the chat.
+- **The handoff card shows the ladder's notes:** what the engine understood, the candidates and the unknown words. The person picks the category and area when replying, which fills the phrasebook.
+- **Aim:** under 2% of requests reach a person.
+
+## 9. Measuring it
+
+Show these on the System screen and review them every week:
+
+- Share of requests answered at each step
+- Claude calls per 100 requests, and Claude spend per day by feature
+- Clarifying questions: how often asked, and how often tapped
+- Handoffs: share of requests, and time to first answer
+- **Local precision:**
+  - Each week the team reviews 50 random HIGH answers in the ops console: right, wrong, or should have asked.
+  - A wrong answer becomes a lexicon or rule fix plus a test.
+- Top unknown words, and pending vocabulary suggestions
+
+Targets after the first month of real traffic:
+
+- 80% or more answered without Claude (steps 0–3)
+- 10 or fewer Claude calls per 100 requests
+- handoffs under 2%
+- HIGH precision of 98% or better
+- end-to-end accuracy no worse than Claude-only
+
+## 10. Estimated effect (to be replaced by metered numbers)
+
+The scenario:
+
+- 10,000 customer conversations a month
+- 15,000 messages that need understanding
+- 5% of conversations send a photo
+- 20% of requests have no listed results
+- 300 price lists
+
+| | Today | With this design |
+| --- | --- | --- |
+| Text understanding | 15,000 Opus calls, about $75 | About 15% escalated, 2,250 Sonnet calls: about $4 |
+| Photos | 500, about $6 | Caption-first, downscaled, 300 small-model calls: about $1.50 |
+| Found online | About 1,200 searches, about $180 | Ask first (assume 40% say yes), Sonnet: about $40 |
+| Price lists | 300, about $15 | Batch and small model: about $3 |
+| Registration and tips | About 1,000 calls, about $5 | None |
+| **Claude total** | **about $280** | **about $50** |
+
+WhatsApp replies are a separate cost. At about $0.004 each (if the October 2026 change applies as researched), 10,000 conversations × about 6 replies is about $240 a month. Once Claude is optimised, messaging is the bigger variable cost, so every extra question has to earn its place. A side benefit: requests handled locally never leave our servers, which means fewer cross-border transfers to record for POTRAZ.
+
+## 11. Rollout
+
+Each phase ships on its own and must keep the eval at least as accurate as Claude-only.
+
+**Phase 1: stop paying for easy messages (about a week)**
+- A router with confidence bands:
+  - greetings, thanks, help, agent and blocked words are always local
+  - HIGH local answers skip Claude, using today's keyword engine and a strict gate
+- Claude escalations on the small model, with thinking off and the local notes in the message; metering, the budget guard and the System screen figures.
+- A phrasebook filled from Claude's answers.
+- "Ask first" for found online. A category picker instead of Claude at registration and for tips.
+
+**Phase 2: a local engine that reads like a Zimbabwean (1–2 weeks, plus native-speaker review)**
+- The normaliser, word roles, word forms, fuzzy matching and locatives.
+- Core Shona and Ndebele vocabulary, and the action rules.
+- Clarifying questions (step 3). The phrasebook also learns from taps and handoffs. Vocabulary suggestions in the ops console. The weekly precision review screen.
+
+**Phase 3: tune on real traffic (after the first 2–4 weeks)**
+- Label about 300 real requests and set the HIGH and MEDIUM thresholds from them.
+- Pick the escalation model with the eval.
+- Optionally add a small local classifier as a second opinion. Plain TypeScript is enough, for example a naive Bayes model over letter sequences, trained on the phrasebook and the labelled requests. It helps with spelling variants and Shona and Ndebele word forms.
+- Caption-first photos, and the Batch API for field price lists.
+
+## Risks and how the design handles them
+
+- **Confident but wrong local answers** are worse than a Claude call. The design handles them with:
+  - strict HIGH criteria
+  - ambiguous-word handling
+  - the weekly precision review
+  - nothing high-scam decided by a guess
+  - a customer's "not what I asked" button that feeds the review
+- **Vocabulary drift** (a synonym wrongly added) is contained because every lexicon change needs a person's approval and is recorded in Activity. Eval runs before each release.
+- **Shona and Ndebele quality** depends on native speakers reviewing the starting lexicon and the suggestions. We don't generate it.
+- **Cost overruns** are capped by the daily budget and per-number limits, and the service degrades gracefully to clarifying questions and people, never to silence.

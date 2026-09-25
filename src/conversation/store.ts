@@ -60,20 +60,26 @@ export async function saveState(db: Db, contactId: string, state: unknown): Prom
   );
 }
 
-/** Store an inbound message. Returns its row ID, or null if WhatsApp already delivered it. */
+/** Store an inbound message before handling it. Returns its row ID, or null if WhatsApp already delivered it. */
 export async function logInbound(db: Db, m: InboundMessage): Promise<string | null> {
   const row = await one<{ id: string }>(
     db,
-    `INSERT INTO messages (channel, direction, wa_message_id, kind, body) VALUES ($1, 'in', $2, $3, $4)
+    `INSERT INTO messages (channel, direction, wa_message_id, kind, body, sender) VALUES ($1, 'in', $2, $3, $4, $5)
      ON CONFLICT DO NOTHING RETURNING id`,
-    [m.channel, m.waMessageId, m.content.type, JSON.stringify(m.content)],
+    [
+      m.channel,
+      m.waMessageId,
+      m.content.type,
+      JSON.stringify(m.content),
+      JSON.stringify({ from: m.from, phone: m.phone ?? null, profileName: m.profileName ?? null }),
+    ],
   );
   return row?.id ?? null;
 }
 
-/** Add what we understood from a photo or voice note to the logged message, for the ops console. */
+/** Note what we understood from a photo or voice note on the logged message, for the ops console. */
 export async function annotateInbound(db: Db, waMessageId: string, fields: Record<string, string | undefined>): Promise<void> {
-  await db.query("UPDATE messages SET body = body || $2::jsonb WHERE wa_message_id = $1 AND direction = 'in'", [
+  await db.query("UPDATE messages SET notes = notes || $2::jsonb WHERE wa_message_id = $1 AND direction = 'in'", [
     waMessageId,
     JSON.stringify(fields),
   ]);
@@ -83,6 +89,7 @@ export async function attachMessage(db: Db, messageId: string, contactId: string
   await db.query("UPDATE messages SET contact_id = $2 WHERE id = $1", [messageId, contactId]);
 }
 
+/** Store an outbound message. Returns its row ID. */
 export async function logOutbound(
   db: Db,
   contactId: string | null,
@@ -90,12 +97,14 @@ export async function logOutbound(
   waMessageId: string | null,
   msg: OutboundMessage,
   status = "sent",
-): Promise<void> {
-  await db.query(
+): Promise<string | null> {
+  const row = await one<{ id: string }>(
+    db,
     `INSERT INTO messages (contact_id, channel, direction, wa_message_id, kind, body, status)
-     VALUES ($1, $2, 'out', $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
+     VALUES ($1, $2, 'out', $3, $4, $5, $6) ON CONFLICT DO NOTHING RETURNING id`,
     [contactId, channel, waMessageId, msg.kind, JSON.stringify({ text: describe(msg), message: msg }), status],
   );
+  return row?.id ?? null;
 }
 
 export async function updateMessageStatus(db: Db, waMessageId: string, status: string): Promise<void> {
@@ -172,13 +181,4 @@ export async function saveResults(db: Db, requestId: string, businessIds: string
       [requestId, businessId, rank],
     );
   }
-}
-
-export async function createReport(db: Db, contactId: string, businessId: string, reason: string): Promise<void> {
-  if (!isUuid(businessId)) return;
-  await db.query("INSERT INTO reports (contact_id, business_id, reason) VALUES ($1, $2, $3)", [
-    contactId,
-    businessId,
-    reason.slice(0, 1000),
-  ]);
 }

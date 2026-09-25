@@ -9,13 +9,18 @@ const app = await createApp(config, { log: server.log });
 registerRoutes(server, app);
 
 await app.services.jobs.recoverStuck();
+// Background work: due jobs every tick, and messages a crash or restart left unhandled.
+const tick = async () => {
+  await app.runJobs();
+  await app.engine.recover();
+};
 const timer = setInterval(() => {
-  app.runJobs().catch((err) => server.log.error({ err: String(err) }, "Job run failed"));
+  tick().catch((err) => server.log.error({ err: String(err) }, "Background work failed"));
 }, config.jobPollSeconds * 1000);
 
 await server.listen({ port: config.port, host: config.host });
 server.log.info(
-  `Interpreter: ${app.services.interpreter.name}. WhatsApp: ${config.whatsapp.transport}.` +
+  `Interpreter: ${app.services.interpreter.name}. WhatsApp: ${config.whatsapp.transport}. Storage: ${app.store.name}.` +
     (app.simulator ? ` Simulator: http://localhost:${config.port}/simulator` : ""),
 );
 

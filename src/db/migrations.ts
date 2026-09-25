@@ -300,4 +300,64 @@ CREATE TABLE recommendations (
 CREATE INDEX recommendations_status_idx ON recommendations (status, created_at);
 `,
   },
+  {
+    id: "004_launch_readiness",
+    sql: /* sql */ `
+-- Inbound messages are saved before WhatsApp gets its 200, then handled; processed_at marks
+-- them done. Anything left unprocessed by a crash is picked up again.
+ALTER TABLE messages
+  ADD COLUMN processed_at timestamptz,
+  ADD COLUMN attempts integer NOT NULL DEFAULT 0,
+  -- who sent an inbound message, so it can be handled again even if the contact wasn't saved yet
+  ADD COLUMN sender jsonb,
+  -- what we understood from a photo or voice note, kept apart from the message itself
+  ADD COLUMN notes jsonb NOT NULL DEFAULT '{}';
+UPDATE messages SET processed_at = created_at WHERE direction = 'in';
+UPDATE messages
+   SET notes = jsonb_strip_nulls(jsonb_build_object('transcript', body->'transcript', 'language', body->'language', 'seen', body->'seen')),
+       body = body - 'transcript' - 'language' - 'seen'
+ WHERE direction = 'in' AND (body ? 'transcript' OR body ? 'seen');
+CREATE INDEX messages_unprocessed_idx ON messages (created_at) WHERE direction = 'in' AND processed_at IS NULL;
+
+-- Reports from customers who contacted the business through us carry more weight.
+ALTER TABLE reports ADD COLUMN had_introduction boolean NOT NULL DEFAULT false;
+CREATE INDEX reports_business_idx ON reports (business_id, created_at);
+
+ALTER TABLE contacts ADD COLUMN blocked_reason text;
+
+-- One account per person on the ops team.
+CREATE TABLE ops_users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  email text NOT NULL UNIQUE,
+  role text NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'staff')),
+  -- scrypt; the password itself is never stored
+  password_hash text NOT NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_login_at timestamptz
+);
+
+CREATE TABLE ops_sessions (
+  -- sha256 of the session token; the token is only held by the browser
+  token_hash text PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES ops_users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX ops_sessions_user_idx ON ops_sessions (user_id);
+
+-- Who did what in the ops console.
+CREATE TABLE ops_audit (
+  id bigserial PRIMARY KEY,
+  user_id uuid REFERENCES ops_users(id) ON DELETE SET NULL,
+  actor text NOT NULL,
+  action text NOT NULL,
+  target text,
+  details jsonb NOT NULL DEFAULT '{}',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ops_audit_created_idx ON ops_audit (created_at);
+`,
+  },
 ];

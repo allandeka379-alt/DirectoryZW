@@ -1,0 +1,56 @@
+{"id":"en-01","text":"I need a plumber in Mabelreign","language":"en","expect":{"intent":"search","category":"plumbing","area":"Mabelreign"},"source":"synthetic"}
+{"id":"en-02","text":"Looking for a 55 inch Samsung TV under $600 in Avondale","language":"en","expect":{"intent":"search","category":"tv_audio","area":"Avondale"},"source":"synthetic"}
+{"id":"en-03","text":"Who fixes cracked phone screens in Eastlea?","language":"en","expect":{"intent":"search","category":"electronics_repair","area":"Eastlea"},"source":"synthetic"}
+{"id":"en-04","text":"100 chairs and a tent for Saturday in Chitungwiza","language":"en","expect":{"intent":"search","category":"event_hire","area":"Chitungwiza"},"source":"synthetic"}
+{"id":"en-05","text":"solar installer in Bulawayo, 5kva inverter","language":"en","expect":{"intent":"search","category":"solar","area":"Bulawayo"},"source":"synthetic"}
+{"id":"en-06","text":"Where can I buy cement in Mbare","language":"en","expect":{"intent":"search","category":"building_materials","area":"Mbare"},"source":"synthetic"}
+{"id":"en-07","text":"I want a wedding cake for 200 guests","language":"en","expect":{"intent":"search","category":"cakes"},"source":"synthetic"}
+{"id":"en-08","text":"Borehole drilling in Ruwa, how much?","language":"en","expect":{"intent":"search","category":"borehole","area":"Ruwa"},"source":"synthetic"}
+{"id":"en-09","text":"mechanic for honda fit gearbox Arcadia","language":"en","expect":{"intent":"search","category":"car_repairs","area":"Arcadia"},"source":"synthetic"}
+{"id":"en-10","text":"tyres for a Toyota Corolla in Kuwadzana","language":"en","expect":{"intent":"search","category":"car_parts","area":"Kuwadzana"},"source":"synthetic"}
+{"id":"en-11","text":"Need someone to fumigate for cockroaches in Chisipite","language":"en","expect":{"intent":"search","category":"pest_control","area":"Chisipite"},"source":"synthetic"}
+{"id":"en-12","text":"maths tutor for O level in Marlborough","language":"en","expect":{"intent":"search","category":"tutoring","area":"Marlborough"},"source":"synthetic"}
+{"id":"en-13","text":"Truck to move my furniture to Bulawayo next week","language":"en","expect":{"intent":"search","category":"transport_moving"},"source":"synthetic"}
+{"id":"en-14","text":"2 bedroom cottage to rent in Greendale","language":"en","expect":{"intent":"search","category":"rentals","area":"Greendale"},"source":"synthetic"}
+{"id":"en-15","text":"Where can I buy a used car","language":"en","expect":{"intent":"search","category":"car_sales"},"source":"synthetic"}
+{"id":"en-16","text":"Photographer for a wedding in Mount Pleasant","language":"en","expect":{"intent":"search","category":"photography","area":"Mount Pleasant"},"source":"synthetic"}
+{"id":"en-17","text":"gas refill near Mutare","language":"en","expect":{"intent":"search","category":"gas_lpg","area":"Mutare"},"source":"synthetic"}
+{"id":"en-18","text":"Electrician to fix my DB board in Belvedere","language":"en","expect":{"intent":"search","category":"electrical","area":"Belvedere"},"source":"synthetic"}
+{"id":"en-19","text":"Fridge repair in Hatfield","language":"en","expect":{"intent":"search","category":"appliance_repair","area":"Hatfield"},"source":"synthetic"}
+{"id":"en-20","text":"I need a DJ for a birthday party in Borrowdale","language":"en","expect":{"intent":"search","category":"entertainment","area":"Borrowdale"},"source":"synthetic"}
+{"id":"en-21","text":"catering for a funeral in Highfield","language":"en","expect":{"intent":"search","category":"catering","area":"Highfield"},"source":"synthetic"}
+{"id":"en-22","text":"Bus ticket to Johannesburg","language":"en","expect":{"intent":"search","category":"travel"},"source":"synthetic"}
+{"id":"en-23","text":"laptop repair in Harare CBD","language":"en","expect":{"intent":"search","category":"electronics_repair","area":"Harare CBD"},"source":"synthetic"}
+{"id":"en-24","text":"school uniforms in Gweru","language":"en","expect":{"intent":"search","category":"clothing","area":"Gweru"},"source":"synthetic"}
+{"id":"en-25","text":"water delivery Bluff Hill 5000 litres","language":"en","expect":{"intent":"search","category":"water_delivery","area":"Bluff Hill"},"source":"synthetic"}
+{"id":"en-26","text":"cheap couches in Budiriro","language":"en","expect":{"intent":"search","category":"furniture","area":"Budiriro"},"source":"synthetic"}
+{"id":"en-27","text":"someone to paint my house in Westgate","language":"en","expect":{"intent":"search","category":"painting","area":"Westgate"},"source":"synthetic"}
+{"id":"en-28","text":"welder for burglar bars Dzivarasekwa","language":"en","expect":{"intent":"search","category":"welding","area":"Dzivarasekwa"},"source":"synthetic"}
+{"id":"en-29","text":"Printing t-shirts for a church event","language":"en","expect":{"intent":"search","category":"printing"},"source":"synthetic"}
+{"id":"en-30","text":"Accountant to do my ZIMRA tax returns","language":"en","expect":{"intent":"search","category":"accounting"},"source":"synthetic"}
+{"id":"en-31","text":"fertilizer and maize seed in Marondera","language":"en","expect":{"intent":"search","category":"agri_inputs","area":"Marondera"},"source":"synthetic"}
+{"id":"en-32","text":"vet for my dog in Hillside","language":"en","expect":{"intent":"search","category":"vets","area":"Hillside"},"source":"synthetic"}
+{"id":"en-33","text":"I need a pharmacy that has insulin in Avondale","language":"en","expect":{"intent":"search","category":"pharmacy","area":"Avondale"},"source":"synthetic"}
+{"id":"en-34","text":"Hi","language":"en","expect":{"intent":"greeting","category":null},"source":"synthetic"}
+{"id":"en-35","text":"Thank you so much","language":"en","expect":{"intent":"greeting","category":null},"source":"synthetic"}
+{"id":"en-36","text":"How does this work?","language":"en","expect":{"intent":"help","category":null},"source":"synthetic"}
+{"id":"en-37","text":"Can I speak to a real person","language":"en","expect":{"intent":"human","category":null},"source":"synthetic"}
+{"id":"en-38","text":"Who won the football yesterday","language":"en","expect":{"intent":"out_of_scope","category":null},"source":"synthetic"}
+{"id":"en-39","text":"Where can I buy weed","language":"en","expect":{"intent":"blocked","category":"blocked_drugs"},"source":"synthetic"}
+{"id":"en-40","text":"I need a loan today","language":"en","expect":{"intent":"blocked","category":"blocked_lending"},"source":"synthetic"}
+{"id":"sn-01","text":"ndoda plumber ku Mabelreign","language":"sn","expect":{"intent":"search","category":"plumbing","area":"Mabelreign"},"source":"synthetic"}
+{"id":"sn-02","text":"Ndinoda solar installer ku Hillside","language":"sn","expect":{"intent":"search","category":"solar","area":"Hillside"},"source":"synthetic"}
+{"id":"sn-03","text":"ndirikutsvaga munhu anogadzira fridge ku Glen View","language":"sn","expect":{"intent":"search","category":"appliance_repair","area":"Glen View"},"source":"synthetic"}
+{"id":"sn-04","text":"ndoda keke remuchato","language":"sn","expect":{"intent":"search","category":"cakes"},"source":"synthetic"}
+{"id":"sn-05","text":"Ndoda matende nemacheya ekuroja ku Budiriro","language":"sn","expect":{"intent":"search","category":"event_hire","area":"Budiriro"},"source":"synthetic"}
+{"id":"sn-06","text":"ndoda munhu anochera borehole ku Norton","language":"sn","expect":{"intent":"search","category":"borehole","area":"Norton"},"source":"synthetic"}
+{"id":"sn-07","text":"Mhoro","language":"sn","expect":{"intent":"greeting","category":null},"source":"synthetic"}
+{"id":"sn-08","text":"ndirikuda mechanic ku Kuwadzana","language":"sn","expect":{"intent":"search","category":"car_repairs","area":"Kuwadzana"},"source":"synthetic"}
+{"id":"sn-09","text":"ndinoda kutenga cement ku Mbare","language":"sn","expect":{"intent":"search","category":"building_materials","area":"Mbare"},"source":"synthetic"}
+{"id":"sn-10","text":"ndoda ma tyres e Honda Fit","language":"sn","expect":{"intent":"search","category":"car_parts"},"source":"synthetic"}
+{"id":"nd-01","text":"Ngifuna umuntu olungisa ifriji eNkulumane","language":"nd","expect":{"intent":"search","category":"appliance_repair","area":"Nkulumane"},"source":"synthetic"}
+{"id":"nd-02","text":"Ngidinga i-plumber e Famona","language":"nd","expect":{"intent":"search","category":"plumbing","area":"Famona"},"source":"synthetic"}
+{"id":"nd-03","text":"Ngifuna ukuthenga i-solar e Pumula","language":"nd","expect":{"intent":"search","category":"solar","area":"Pumula"},"source":"synthetic"}
+{"id":"nd-04","text":"Salibonani","language":"nd","expect":{"intent":"greeting","category":null},"source":"synthetic"}
+{"id":"nd-05","text":"Ngifuna ikhekhe lomtshado","language":"nd","expect":{"intent":"search","category":"cakes"},"source":"synthetic"}
+{"id":"nd-06","text":"Ngicela umakhenikha e Mpopoma","language":"nd","expect":{"intent":"search","category":"car_repairs","area":"Mpopoma"},"source":"synthetic"}

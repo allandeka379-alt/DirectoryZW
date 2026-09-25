@@ -75,3 +75,10 @@ form.inline, .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: cente
 details { margin: 8px 0; }
 summary { cursor: pointer; }
 .offerings { columns: 2 240px; margin: 8px 0 0; padding-left: 18px; }
+#who { margin-left: auto; font-size: 13px; }
+#who a { color: var(--muted); }
+nav a[hidden] { display: none; }
+h2 { font-size: 16px; margin: 20px 0 8px; }
+.tile.alert { border-color: var(--bad); }
+.tile.alert b { color: var(--bad); }
+form.card { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

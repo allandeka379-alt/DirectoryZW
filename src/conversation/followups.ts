@@ -3,7 +3,9 @@ import { getBusiness } from "../directory/businesses.js";
 import { getIntroduction } from "../directory/introductions.js";
 import { replaceOfferings } from "../directory/offerings.js";
 import { expireLeads } from "../directory/online-leads.js";
-import type { JobHandler } from "../jobs/queue.js";
+import { MAX_JOB_ATTEMPTS, type JobHandler } from "../jobs/queue.js";
+import { applyRetention } from "../privacy.js";
+import type { Channel } from "../whatsapp/types.js";
 import type { Services } from "./context.js";
 import * as copy from "./copy.js";
 import { Ids } from "./ids.js";
@@ -31,6 +33,22 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
         ],
       });
       await svc.db.query("UPDATE introductions SET followed_up_at = now() WHERE id = $1", [intro.id]);
+    },
+
+    /** A WhatsApp send that failed with an error worth retrying. */
+    resend: async (payload, job) => {
+      await svc.messenger.resend(String(payload.rowId), payload.channel as Channel, String(payload.to), job.attempts >= MAX_JOB_ATTEMPTS);
+    },
+
+    /** Once a day: delete old chats and the words in old requests, per the retention settings. */
+    retention: async () => {
+      const now = svc.now();
+      try {
+        const result = await applyRetention(svc.db, now, svc.config.retention);
+        svc.log.info({ ...result }, "Retention clean-up done");
+      } finally {
+        await svc.jobs.enqueue("retention", {}, nextDailyRun(now));
+      }
     },
 
     /** Once a day: delete businesses found online that the field team didn't get to in time. */
@@ -117,6 +135,7 @@ export async function scheduleRecurringJobs(svc: Services): Promise<void> {
   const recurring: [string, Date][] = [
     ["weekly_summaries", nextWeeklyRun(svc.now())],
     ["expire_online_leads", nextDailyRun(svc.now())],
+    ["retention", nextDailyRun(svc.now())],
   ];
   for (const [kind, runAt] of recurring) {
     const queued = await svc.db.query("SELECT 1 FROM jobs WHERE kind = $1 AND status IN ('queued', 'running') LIMIT 1", [kind]);

@@ -1,6 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import type { Alerts } from "../alerts.js";
 import type { Logger } from "../logger.js";
+import { alertOnClaudeError, describeError } from "./errors.js";
 import { businessSystemPrompt, requestSystemPrompt, requestUserMessage } from "./prompts.js";
 import {
   BusinessClassificationSchema,
@@ -20,6 +22,7 @@ export interface ClaudeInterpreterOptions {
   /** Used when Claude errors, refuses, or returns nothing usable. */
   fallback: Interpreter;
   log: Logger;
+  alerts?: Alerts;
 }
 
 /**
@@ -52,6 +55,7 @@ export class ClaudeInterpreter implements Interpreter {
       return sanitizeInterpretation(response.parsed_output, ctx.taxonomy);
     } catch (err) {
       this.opts.log.error({ err: describeError(err) }, "Claude request failed; using keywords");
+      alertOnClaudeError(err, this.opts.alerts);
       return this.opts.fallback.interpretRequest(text, ctx);
     }
   }
@@ -76,14 +80,8 @@ export class ClaudeInterpreter implements Interpreter {
       return result.category_slugs.length ? result : this.opts.fallback.classifyBusiness(text, ctx);
     } catch (err) {
       this.opts.log.error({ err: describeError(err) }, "Claude classification failed; using keywords");
+      alertOnClaudeError(err, this.opts.alerts);
       return this.opts.fallback.classifyBusiness(text, ctx);
     }
   }
-}
-
-function describeError(err: unknown): string {
-  if (err instanceof Anthropic.RateLimitError) return "rate limited";
-  if (err instanceof Anthropic.AuthenticationError) return "invalid API key";
-  if (err instanceof Anthropic.APIError) return `API error ${err.status}: ${err.message}`;
-  return err instanceof Error ? err.message : String(err);
 }

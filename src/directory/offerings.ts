@@ -26,7 +26,7 @@ export async function saveBusinessPhoto(
 ): Promise<string> {
   const id = crypto.randomUUID();
   const key = `photos/${businessId}/${id}.${PHOTO_EXT[image.mimeType] ?? "bin"}`;
-  await store.put(key, image.data);
+  await store.put(key, image.data, image.mimeType);
   await db.query(
     "INSERT INTO business_photos (id, business_id, kind, storage_key, content_type, bytes) VALUES ($1, $2, $3, $4, $5, $6)",
     [id, businessId, kind, key, image.mimeType, image.data.length],

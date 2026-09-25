@@ -31,7 +31,16 @@ export interface TestApp extends App {
  * the database stamps rows with its own now(). `options` swaps in fakes (vision, web search).
  */
 export async function testApp(env: Record<string, string> = {}, options: AppOptions = {}): Promise<TestApp> {
-  const config = loadConfig({ NODE_ENV: "test", SEED_SAMPLE_DATA: "true", BRAND_NAME: "TestDir", ...env });
+  // Tests send many messages a second from one number, so the flood limits start high.
+  const config = loadConfig({
+    NODE_ENV: "test",
+    SEED_SAMPLE_DATA: "true",
+    BRAND_NAME: "TestDir",
+    RATE_LIMIT_PER_MINUTE: "10000",
+    RATE_LIMIT_PER_DAY: "10000",
+    MEDIA_PER_DAY: "10000",
+    ...env,
+  });
   const db = await openDb({});
   const sim = new SimulatorTransport();
   const files = new MemoryStore();

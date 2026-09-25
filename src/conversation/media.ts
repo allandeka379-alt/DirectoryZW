@@ -20,7 +20,11 @@ export async function fetchMedia(t: Turn<unknown>, mediaId: string): Promise<Med
  * transcript is easy to spot. Returns null (after telling the person) when there's no speech
  * service or nothing was heard.
  */
-export async function hearVoiceNote(t: Turn<unknown>, mediaId: string, waMessageId = t.inbound.waMessageId): Promise<string | null> {
+export async function hearVoiceNote(
+  t: Turn<unknown>,
+  mediaId: string,
+  opts: { waMessageId?: string; language?: string } = {},
+): Promise<string | null> {
   const { svc } = t;
   if (!svc.speech) {
     await t.reply(copy.voiceNotYet());
@@ -31,7 +35,7 @@ export async function hearVoiceNote(t: Turn<unknown>, mediaId: string, waMessage
   let text: string | undefined;
   let language: string | undefined;
   try {
-    const transcript = await svc.speech.transcribe(audio);
+    const transcript = await svc.speech.transcribe(audio, { language: opts.language });
     text = transcript?.text;
     language = transcript?.language;
   } catch (err) {
@@ -43,7 +47,7 @@ export async function hearVoiceNote(t: Turn<unknown>, mediaId: string, waMessage
     await t.reply(copy.voiceEmpty());
     return null;
   }
-  await annotateInbound(svc.db, waMessageId, { transcript: text, language });
+  await annotateInbound(svc.db, opts.waMessageId ?? t.inbound.waMessageId, { transcript: text, language });
   t.prefixNext(copy.heard(text));
   return text;
 }

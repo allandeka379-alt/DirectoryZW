@@ -1,3 +1,4 @@
+import type { Alerts } from "../alerts.js";
 import type { OnlineFinder } from "../ai/online-finder.js";
 import type { SpeechToText } from "../ai/speech.js";
 import type { Interpreter } from "../ai/types.js";
@@ -33,6 +34,8 @@ export interface Services {
   speech?: SpeechToText;
   /** Optional: "found online" results need Claude with web search. */
   finder?: OnlineFinder;
+  /** Tells the team when something needs a person. */
+  alerts: Alerts;
   log: Logger;
   now: () => Date;
 }
@@ -46,4 +49,6 @@ export interface Turn<S> {
   reply(msg: OutboundMessage): Promise<void>;
   /** Put a line at the top of the next reply, instead of paying for a separate message. */
   prefixNext(line: string): void;
+  /** Run after the turn is saved, e.g. deleting everything about this person at their request. */
+  defer(fn: () => Promise<void>): void;
 }
