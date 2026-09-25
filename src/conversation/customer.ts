@@ -4,14 +4,29 @@ import { one } from "../db/client.js";
 import { adjustResponseScore, getBusiness, recordRating, type Business } from "../directory/businesses.js";
 import { haversineKm } from "../directory/gazetteer.js";
 import { createIntroduction, getIntroduction, waMeLink } from "../directory/introductions.js";
+import { matchingOfferings, priceLabel } from "../directory/offerings.js";
+import {
+  cachedLeads,
+  getLead,
+  leadsForRequest,
+  linkLeadsToRequest,
+  markLeadConnected,
+  onlineSearchesSince,
+  saveLeads,
+  type OnlineLead,
+} from "../directory/online-leads.js";
+import { createRecommendation } from "../directory/recommendations.js";
 import { searchBusinesses } from "../directory/search.js";
 import type { Category } from "../directory/taxonomy.js";
-import { normalizeText } from "../text.js";
+import { hostOf } from "../ai/online-finder.js";
+import { normalizeText, normalizeZimPhone } from "../text.js";
 import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
-import type { BusinessView } from "./copy.js";
+import type { BusinessView, LeadView, PriceView } from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
+import { fetchMedia, hearVoiceNote } from "./media.js";
 import {
+  annotateInbound,
   createReport,
   createRequest,
   getRequest,
@@ -22,15 +37,19 @@ import {
 } from "./store.js";
 
 export interface CustomerState {
-  stage?: "awaiting_consent" | "awaiting_area" | "awaiting_report" | "handoff";
+  stage?: "awaiting_consent" | "awaiting_area" | "awaiting_report" | "handoff" | "rec_name" | "rec_what" | "rec_area" | "rec_phone";
   /** First message, kept while we ask for consent. */
   pendingText?: string;
+  /** A photo or voice note sent before consent; handled once they agree. */
+  pendingMedia?: { type: "image" | "audio"; mediaId: string; caption?: string; waMessageId: string };
   /** A request waiting for the customer's location. */
   pending?: { raw: string; interpretation: RequestInterpretation };
   lastRequestId?: string;
   lastQuery?: string;
   location?: { lat: number; lng: number; areaId: number | null; label: string };
   reportBusinessId?: string;
+  /** A recommendation being written. */
+  rec?: { name?: string; what?: string; areaText?: string | null; areaId?: number | null };
 }
 
 type T = Turn<CustomerState>;
@@ -41,6 +60,10 @@ interface Place {
   lng: number;
   label: string;
 }
+
+/** Requests that came from a photo start with this, so the business can be asked to look at it. */
+const PHOTO_MARK = "📷 ";
+const RECOMMEND_WORDS = ["recommend", "recommend a business", "suggest a business", "recommendation"];
 
 export async function handleCustomerTurn(t: T): Promise<void> {
   const { contact, inbound, state } = t;
@@ -67,11 +90,11 @@ export async function handleCustomerTurn(t: T): Promise<void> {
     case "location":
       return onLocation(t, c.lat, c.lng);
     case "image":
-      return t.reply(copy.photosNotYet());
+      return onPhoto(t, c.mediaId, c.caption);
     case "audio":
-      return t.reply(copy.voiceNotYet());
+      return onVoice(t, c.mediaId);
     default:
-      return t.reply(copy.help(t.svc.config.brandName));
+      return t.reply(copy.help(t.svc.config.brandName, features(t)));
   }
 }
 
@@ -81,13 +104,21 @@ async function consentGate(t: T): Promise<void> {
   if (c.type === "button_reply" && c.id === Ids.consent) {
     await setConsent(svc.db, contact.id);
     contact.consent_at = svc.now();
-    const pending = state.pendingText;
+    const { pendingText, pendingMedia } = state;
     state.stage = undefined;
     state.pendingText = undefined;
-    if (pending) return onText(t, pending);
+    state.pendingMedia = undefined;
+    // Photos and voice notes are only processed once the customer has agreed.
+    if (pendingMedia?.type === "image") return onPhoto(t, pendingMedia.mediaId, pendingMedia.caption);
+    if (pendingMedia?.type === "audio") return onVoice(t, pendingMedia.mediaId, pendingMedia.waMessageId);
+    if (pendingText) return onText(t, pendingText);
     return t.reply(copy.askWhatYouNeed(contact.profile_name));
   }
-  if (c.type === "text" && !state.pendingText) state.pendingText = c.text.slice(0, 500);
+  if (!state.pendingText && !state.pendingMedia) {
+    if (c.type === "text") state.pendingText = c.text.slice(0, 500);
+    if (c.type === "image") state.pendingMedia = { type: "image", mediaId: c.mediaId, caption: c.caption, waMessageId: inbound.waMessageId };
+    if (c.type === "audio") state.pendingMedia = { type: "audio", mediaId: c.mediaId, waMessageId: inbound.waMessageId };
+  }
   state.stage = "awaiting_consent";
   await t.reply(copy.consent(svc.config.brandName, svc.config.privacyUrl, contact.profile_name));
 }
@@ -97,12 +128,21 @@ async function onText(t: T, text: string): Promise<void> {
   const raw = text.trim();
   if (!raw) return;
 
-  if (isCommand(raw, ["stop", "unsubscribe"])) return t.reply(copy.stopped());
+  if (isCommand(raw, ["stop", "unsubscribe"])) {
+    resetSearch(state);
+    return t.reply(copy.stopped());
+  }
   if (isCommand(raw, ["menu", "start", "restart", "new search"])) {
     resetSearch(state);
     return t.reply(copy.askWhatYouNeed(contact.profile_name));
   }
-  if (isCommand(raw, ["help"])) return t.reply(copy.help(svc.config.brandName));
+  if (isCommand(raw, ["help"])) return t.reply(copy.help(svc.config.brandName, features(t)));
+  if (isCommand(raw, RECOMMEND_WORDS)) {
+    resetSearch(state);
+    state.stage = "rec_name";
+    state.rec = {};
+    return t.reply(copy.recAskName());
+  }
 
   if (state.stage === "awaiting_report" && state.reportBusinessId) {
     await createReport(svc.db, contact.id, state.reportBusinessId, raw);
@@ -110,6 +150,8 @@ async function onText(t: T, text: string): Promise<void> {
     state.reportBusinessId = undefined;
     return t.reply(copy.reportThanks());
   }
+
+  if (state.stage?.startsWith("rec_")) return continueRecommendation(t, raw);
 
   if (state.stage === "awaiting_area" && state.pending) {
     const area = svc.gazetteer.match(raw);
@@ -129,12 +171,17 @@ async function onText(t: T, text: string): Promise<void> {
     gazetteer: svc.gazetteer,
     previousRequest: state.lastQuery,
   });
+  return handleInterpretation(t, raw, interpretation);
+}
 
+/** What to do with a request once we know what it means, whether it came as text, a voice note or a photo. */
+async function handleInterpretation(t: T, raw: string, interpretation: RequestInterpretation): Promise<void> {
+  const { svc, state, contact } = t;
   switch (interpretation.intent) {
     case "greeting":
       return t.reply(copy.askWhatYouNeed(contact.profile_name));
     case "help":
-      return t.reply(copy.help(svc.config.brandName));
+      return t.reply(copy.help(svc.config.brandName, features(t)));
     case "human":
       return startHandoff(t, null, raw);
     case "blocked":
@@ -173,9 +220,32 @@ async function onText(t: T, text: string): Promise<void> {
   return runSearch(t, raw, interpretation, category?.needsLocation === false && !area ? undefined : place);
 }
 
+async function onPhoto(t: T, mediaId: string, caption?: string): Promise<void> {
+  const { svc, state } = t;
+  if (!svc.vision) return t.reply(copy.photosNotYet());
+  const image = await fetchMedia(t, mediaId);
+  if (!image) return;
+  const interpretation = await svc.vision.interpretPhoto(image, caption, {
+    taxonomy: svc.taxonomy,
+    gazetteer: svc.gazetteer,
+    previousRequest: state.lastQuery,
+  });
+  if (!interpretation) return t.reply(copy.photoUnreadable());
+  await annotateInbound(svc.db, t.inbound.waMessageId, { seen: interpretation.query });
+  resetSearch(state);
+  const raw = `${PHOTO_MARK}${caption?.trim() ? `${caption.trim()} (${interpretation.query})` : interpretation.query}`;
+  return handleInterpretation(t, raw, interpretation);
+}
+
+async function onVoice(t: T, mediaId: string, waMessageId?: string): Promise<void> {
+  const text = await hearVoiceNote(t, mediaId, waMessageId);
+  if (text) return onText(t, text);
+}
+
 async function onLocation(t: T, lat: number, lng: number): Promise<void> {
   const { svc, state } = t;
   const area = svc.gazetteer.nearest(lat, lng);
+  if (state.stage === "rec_area") return setRecommendationArea(t, area?.name ?? null, area?.id ?? null);
   const place = { areaId: area?.id ?? null, lat, lng, label: area?.name ?? "your location" };
   state.location = place;
   if (state.stage === "awaiting_area" && state.pending) {
@@ -212,8 +282,62 @@ async function runSearch(t: T, raw: string, interpretation: RequestInterpretatio
   await setRequestStatus(svc.db, request.id, hits.length ? "answered" : "no_results", hits.length);
   state.lastRequestId = request.id;
   state.lastQuery = raw;
-  if (!hits.length) return t.reply(copy.noResults(request.id, need(interpretation, category), place?.label));
-  return t.reply(copy.results(request.id, hits, need(interpretation, category), place?.label));
+  const what = need(interpretation, category);
+  if (hits.length) return t.reply(copy.results(request.id, hits, what, place?.label));
+
+  // Nothing listed: look online, labelled as unchecked. The request stays a supply gap for the field team.
+  const leads = await findOnline(t, request, interpretation, category, place);
+  if (leads.length) return t.reply(copy.onlineResults(request.id, leads.map((l) => leadView(l, request)), what, place?.label));
+  return t.reply(copy.noResults(request.id, what, place?.label));
+}
+
+/**
+ * Businesses found on the web for a request with no listed results. Reuses recent finds for the
+ * same category nearby before searching again, never runs for high-scam categories, and caps how
+ * many web searches one customer can trigger per day.
+ */
+async function findOnline(
+  t: T,
+  request: RequestRow,
+  interpretation: RequestInterpretation,
+  category: Category | undefined,
+  place?: Place,
+): Promise<OnlineLead[]> {
+  const { svc, contact } = t;
+  if (!svc.finder || category?.risk === "high_scam" || category?.risk === "blocked" || category?.risk === "restricted") return [];
+  const query = interpretation.query || category?.name.toLowerCase() || "";
+  if (!query) return [];
+  let leads = await cachedLeads(svc.db, {
+    categorySlug: category?.slug ?? null,
+    query,
+    lat: place?.lat,
+    lng: place?.lng,
+    maxKm: 40,
+    limit: 5,
+    now: svc.now(),
+  });
+  if (!leads.length) {
+    const dayAgo = new Date(svc.now().getTime() - 24 * 3600_000);
+    if ((await onlineSearchesSince(svc.db, contact.id, dayAgo)) >= svc.config.onlineSearch.perCustomerPerDay) return [];
+    await t.reply(copy.searchingOnline(need(interpretation, category), place?.label));
+    const area = place?.areaId != null ? svc.gazetteer.get(place.areaId) : undefined;
+    const found = await svc.finder.find({
+      query,
+      categoryName: category?.name ?? null,
+      place: area ? (area.name === area.city ? area.name : `${area.name}, ${area.city}`) : null,
+      city: area?.city ?? null,
+    });
+    leads = await saveLeads(svc.db, svc.gazetteer, found, {
+      categorySlug: category?.slug ?? null,
+      query,
+      place,
+      expiresAt: new Date(svc.now().getTime() + svc.config.onlineSearch.leadDays * 24 * 3600_000),
+    });
+    await svc.db.query("UPDATE requests SET online_searched_at = $2 WHERE id = $1", [request.id, svc.now()]);
+  }
+  await linkLeadsToRequest(svc.db, request.id, leads.map((l) => l.id));
+  await svc.db.query("UPDATE requests SET online_results = $2 WHERE id = $1", [request.id, leads.length]);
+  return leads;
 }
 
 async function onAction(t: T, id: string): Promise<void> {
@@ -226,6 +350,10 @@ async function onAction(t: T, id: string): Promise<void> {
       return showBusiness(t, args[0] ?? "", args[1] ?? "");
     case "con":
       return connect(t, args[0] ?? "", args[1] ?? "");
+    case "obiz":
+      return showLead(t, args[0] ?? "", args[1] ?? "");
+    case "ocon":
+      return connectLead(t, args[0] ?? "", args[1] ?? "");
     case "list":
       return reshowResults(t, args[0] ?? "");
     case "ask":
@@ -244,7 +372,7 @@ async function onAction(t: T, id: string): Promise<void> {
     case "rate":
       return rate(t, args[0] ?? "", Number(args[1]));
     default:
-      return t.reply(copy.help(svc.config.brandName));
+      return t.reply(copy.help(svc.config.brandName, features(t)));
   }
 }
 
@@ -253,7 +381,19 @@ async function showBusiness(t: T, requestId: string, businessId: string): Promis
   const business = await getBusiness(svc.db, businessId);
   if (!business || business.status !== "active") return t.reply(copy.noLongerAvailable());
   const request = await ownRequest(t, requestId);
-  return t.reply(copy.businessCard(request?.id ?? "", viewOf(t, business, request)));
+  const prices = request ? await pricesFor(t, business.id, request) : undefined;
+  return t.reply(copy.businessCard(request?.id ?? "", viewOf(t, business, request), prices));
+}
+
+/** Price-list items matching what the customer asked for. */
+async function pricesFor(t: T, businessId: string, request: RequestRow): Promise<PriceView | undefined> {
+  const text = [request.query, request.raw_text.replace(PHOTO_MARK, "")].filter(Boolean).join(" ");
+  const matches = await matchingOfferings(t.svc.db, businessId, text, 3);
+  if (!matches.length) return undefined;
+  return {
+    items: matches.map((o) => ({ name: o.name, price: priceLabel(o) })),
+    updatedAt: new Date(Math.max(...matches.map((o) => new Date(o.created_at).getTime()))),
+  };
 }
 
 async function connect(t: T, requestId: string, businessId: string): Promise<void> {
@@ -268,7 +408,7 @@ async function connect(t: T, requestId: string, businessId: string): Promise<voi
   const brand = svc.config.brandName;
   const view = viewOf(t, business, request);
   const link = waMeLink(business.phone, copy.prefilledMessage(brand, business.name, intro.ref_code, summary));
-  await t.reply(copy.connectLink(view, link, intro.ref_code));
+  await t.reply(copy.connectLink(view, link, intro.ref_code, fromPhoto(request)));
 
   const place = request?.area_id != null ? svc.gazetteer.get(request.area_id)?.name : null;
   const neededBy = request?.interpretation?.needed_by ?? null;
@@ -278,6 +418,28 @@ async function connect(t: T, requestId: string, businessId: string): Promise<voi
   });
   const runAt = new Date(svc.now().getTime() + svc.config.followUpDelayHours * 3600_000);
   await svc.jobs.enqueue("follow_up", { introductionId: intro.id }, runAt);
+}
+
+async function showLead(t: T, requestId: string, leadId: string): Promise<void> {
+  const lead = await getLead(t.svc.db, leadId);
+  const request = await ownRequest(t, requestId);
+  if (!lead || !request) return t.reply(copy.noLongerAvailable());
+  return t.reply(copy.onlineCard(request.id, leadView(lead, request)));
+}
+
+/**
+ * Open a chat with a business found online. They never signed up, so we don't message them
+ * and don't follow up; the customer gets a link with their request typed in.
+ */
+async function connectLead(t: T, requestId: string, leadId: string): Promise<void> {
+  const { svc } = t;
+  const lead = await getLead(svc.db, leadId);
+  const request = await ownRequest(t, requestId);
+  if (!lead || !request) return t.reply(copy.noLongerAvailable());
+  await markLeadConnected(svc.db, lead.id);
+  const summary = truncate(request.raw_text, 160);
+  const link = waMeLink(lead.phone, copy.onlinePrefilledMessage(svc.config.brandName, lead.name, summary));
+  return t.reply(copy.onlineConnectLink(leadView(lead, request), link, fromPhoto(request)));
 }
 
 async function reshowResults(t: T, requestId: string): Promise<void> {
@@ -291,8 +453,11 @@ async function reshowResults(t: T, requestId: string): Promise<void> {
   );
   const category = svc.taxonomy.get(request.category_slug);
   const place = request.area_id != null ? svc.gazetteer.get(request.area_id)?.name : undefined;
-  if (!rows.length) return t.reply(copy.noResults(request.id, need(request.interpretation, category), place));
-  return t.reply(copy.results(request.id, rows.map((b) => viewOf(t, b, request)), need(request.interpretation, category), place));
+  const what = need(request.interpretation, category);
+  if (rows.length) return t.reply(copy.results(request.id, rows.map((b) => viewOf(t, b, request)), what, place));
+  const leads = await leadsForRequest(svc.db, request.id);
+  if (leads.length) return t.reply(copy.onlineResults(request.id, leads.map((l) => leadView(l, request)), what, place));
+  return t.reply(copy.noResults(request.id, what, place));
 }
 
 /** Send the request to businesses that might help and aren't in the results yet. */
@@ -387,6 +552,76 @@ async function startHandoff(t: T, requestId: string | null, text: string | null)
   return t.reply(copy.handoff());
 }
 
+// ---------- Recommendations ("know someone good?") ----------
+
+async function continueRecommendation(t: T, text: string): Promise<void> {
+  const { svc, state } = t;
+  const rec = (state.rec ??= {});
+  if (isCommand(text, ["cancel", "stop", "no"])) {
+    state.stage = undefined;
+    state.rec = undefined;
+    return t.reply(copy.recCancelled());
+  }
+  switch (state.stage) {
+    case "rec_name":
+      if (text.length < 2) return t.reply(copy.recAskName());
+      rec.name = text.slice(0, 80);
+      state.stage = "rec_what";
+      return t.reply(copy.recAskWhat(rec.name));
+    case "rec_what":
+      rec.what = text.slice(0, 300);
+      state.stage = "rec_area";
+      return t.reply(copy.recAskArea(rec.name ?? "them"));
+    case "rec_area": {
+      const area = svc.gazetteer.match(text);
+      return setRecommendationArea(t, area?.name ?? text.slice(0, 80), area?.id ?? null);
+    }
+    case "rec_phone": {
+      if (isCommand(text, ["skip", "dont know", "i dont know", "no idea"])) return saveRecommendation(t, null);
+      const phone = normalizeZimPhone(text);
+      if (!phone) return t.reply(copy.recBadPhone());
+      return saveRecommendation(t, phone);
+    }
+    default:
+      state.stage = undefined;
+      return t.reply(copy.askWhatYouNeed(t.contact.profile_name));
+  }
+}
+
+async function setRecommendationArea(t: T, areaText: string | null, areaId: number | null): Promise<void> {
+  const rec = (t.state.rec ??= {});
+  rec.areaText = areaText;
+  rec.areaId = areaId;
+  t.state.stage = "rec_phone";
+  return t.reply(copy.recAskPhone(rec.name ?? "them"));
+}
+
+async function saveRecommendation(t: T, phone: string | null): Promise<void> {
+  const { svc, state, contact } = t;
+  const rec = state.rec;
+  state.stage = undefined;
+  state.rec = undefined;
+  if (!rec?.name || !rec.what) return t.reply(copy.recCancelled());
+  if (phone) {
+    const listed = await one<{ name: string }>(svc.db, "SELECT name FROM businesses WHERE phone = $1 AND status = 'active' LIMIT 1", [phone]);
+    if (listed) return t.reply(copy.recAlreadyListed(listed.name));
+  }
+  const classified = await svc.interpreter.classifyBusiness(rec.what, { taxonomy: svc.taxonomy });
+  await createRecommendation(svc.db, {
+    contactId: contact.id,
+    name: rec.name,
+    what: rec.what,
+    categorySlug: classified.category_slugs[0] ?? null,
+    areaText: rec.areaText ?? null,
+    areaId: rec.areaId ?? null,
+    phone,
+  });
+  svc.log.info({ contactId: contact.id }, "Customer recommended a business");
+  return t.reply(copy.recThanks(rec.name));
+}
+
+// ---------- Follow-up answers ----------
+
 async function feedback(t: T, introId: string, outcome: string): Promise<void> {
   const { svc, contact } = t;
   const intro = await getIntroduction(svc.db, introId);
@@ -413,6 +648,8 @@ async function rate(t: T, introId: string, stars: number): Promise<void> {
   return t.reply(copy.ratingThanks());
 }
 
+// ---------- Helpers ----------
+
 async function ownRequest(t: T, requestId: string): Promise<RequestRow | undefined> {
   if (!requestId) return undefined;
   const request = await getRequest(t.svc.db, requestId);
@@ -437,6 +674,30 @@ function viewOf(t: T, b: Business, request?: RequestRow): BusinessView {
   };
 }
 
+function leadView(l: OnlineLead, request?: RequestRow): LeadView {
+  // A lead placed at the searched area (its page didn't say where it is) has no real distance.
+  const distanceKm =
+    l.area_id != null && request?.lat != null && request.lng != null && l.lat != null && l.lng != null
+      ? haversineKm(request.lat, request.lng, l.lat, l.lng)
+      : null;
+  return {
+    id: l.id,
+    name: l.name,
+    description: l.description,
+    areaName: l.area_text,
+    distanceKm,
+    source: hostOf(l.source_url),
+  };
+}
+
+function fromPhoto(request?: RequestRow): boolean {
+  return request?.raw_text.startsWith(PHOTO_MARK) ?? false;
+}
+
+function features(t: T): { photos: boolean; voice: boolean } {
+  return { photos: !!t.svc.vision, voice: !!t.svc.speech };
+}
+
 function need(i: RequestInterpretation | undefined, category: Category | undefined): string {
   return i?.query || category?.name.toLowerCase() || "that";
 }
@@ -445,7 +706,9 @@ function resetSearch(state: CustomerState): void {
   state.stage = undefined;
   state.pending = undefined;
   state.pendingText = undefined;
+  state.pendingMedia = undefined;
   state.reportBusinessId = undefined;
+  state.rec = undefined;
 }
 
 function isCommand(text: string, words: string[]): boolean {

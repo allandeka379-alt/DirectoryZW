@@ -215,4 +215,89 @@ CREATE INDEX audits_agent_idx ON audits (agent_id, created_at);
 CREATE INDEX audits_business_idx ON audits (business_id);
 `,
   },
+  {
+    id: "003_answer_more_requests",
+    sql: /* sql */ `
+-- Synonyms added from the ops console. Kept apart from the seeded ones so reseeding never wipes them.
+ALTER TABLE categories ADD COLUMN extra_synonyms text[] NOT NULL DEFAULT '{}';
+
+-- Items read from price-list photos (sent by owners or taken by field agents).
+CREATE TABLE offerings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  price_usd numeric(12, 2),
+  -- the price as written, e.g. "$5/kg" or "ZiG 120"
+  price_text text,
+  photo_id uuid REFERENCES business_photos(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX offerings_business_idx ON offerings (business_id);
+
+-- Search also covers price-list items. A generated column can't be altered, so rebuild it.
+ALTER TABLE businesses ADD COLUMN offerings_text text NOT NULL DEFAULT '';
+ALTER TABLE businesses DROP COLUMN search_tsv;
+ALTER TABLE businesses ADD COLUMN search_tsv tsvector GENERATED ALWAYS AS (
+  to_tsvector('simple', name || ' ' || description || ' ' || keywords || ' ' || offerings_text)
+) STORED;
+CREATE INDEX businesses_search_idx ON businesses USING gin (search_tsv);
+
+-- Businesses found on the web when nothing is listed. Unverified, and kept only until
+-- expires_at so the field team can invite them.
+CREATE TABLE online_leads (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  phone text NOT NULL UNIQUE,
+  description text NOT NULL DEFAULT '',
+  area_text text,
+  area_id integer REFERENCES areas(id),
+  lat double precision,
+  lng double precision,
+  category_slug text REFERENCES categories(slug),
+  query text NOT NULL DEFAULT '',
+  source_url text NOT NULL,
+  source_title text,
+  status text NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'invited')),
+  times_shown integer NOT NULL DEFAULT 0,
+  times_connected integer NOT NULL DEFAULT 0,
+  found_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX online_leads_category_idx ON online_leads (category_slug, expires_at);
+
+CREATE TABLE request_online_results (
+  request_id uuid NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+  lead_id uuid NOT NULL REFERENCES online_leads(id) ON DELETE CASCADE,
+  rank integer NOT NULL,
+  PRIMARY KEY (request_id, lead_id)
+);
+
+-- Businesses that asked never to be shown from web results. Only a hash of the number is kept.
+CREATE TABLE online_optouts (
+  phone_hash text PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- When a request triggered a web search, for the per-customer daily limit.
+ALTER TABLE requests
+  ADD COLUMN online_searched_at timestamptz,
+  ADD COLUMN online_results integer NOT NULL DEFAULT 0;
+CREATE INDEX requests_online_idx ON requests (contact_id, online_searched_at);
+
+-- Customers' tips about good businesses we don't list yet.
+CREATE TABLE recommendations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  contact_id uuid REFERENCES contacts(id) ON DELETE SET NULL,
+  name text NOT NULL,
+  what text NOT NULL,
+  category_slug text REFERENCES categories(slug),
+  area_text text,
+  area_id integer REFERENCES areas(id),
+  phone text,
+  status text NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'listed', 'rejected')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX recommendations_status_idx ON recommendations (status, created_at);
+`,
+  },
 ];

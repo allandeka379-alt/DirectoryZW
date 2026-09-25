@@ -48,7 +48,8 @@ describe("KeywordInterpreter.interpretRequest", () => {
 
   it("picks up Shona and the most specific place", async () => {
     const i = await k.interpretRequest("ndinoda solar installer ku Hillside Bulawayo", ctx);
-    expect(i).toMatchObject({ category_slug: "solar", area: "Hillside", language: "sn" });
+    expect(i).toMatchObject({ category_slug: "solar", area: "Hillside", language: "sn", query: "solar installer" });
+    expect((await k.interpretRequest("ngifuna umuntu wokulungisa phone", ctx)).query).not.toContain("ngifuna");
   });
 
   it("classifies a business description", async () => {

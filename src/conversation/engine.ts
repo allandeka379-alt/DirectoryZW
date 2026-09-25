@@ -1,3 +1,4 @@
+import type { OutboundMessage } from "../whatsapp/outbound.js";
 import type { InboundMessage } from "../whatsapp/types.js";
 import { handleBusinessTurn, type BusinessState } from "./business.js";
 import type { Services, Turn } from "./context.js";
@@ -40,20 +41,44 @@ export class ConversationEngine {
     });
     await attachMessage(db, messageId, contact.id);
     const state = await loadState<Record<string, unknown>>(db, contact.id);
+    let prefix: string | undefined;
     const turn: Turn<Record<string, unknown>> = {
       svc: this.svc,
       contact,
       inbound: msg,
       state,
-      reply: (m) => this.svc.messenger.reply(contact, m),
+      reply: (m) => {
+        const merged = prefix ? withPrefix(m, prefix) : undefined;
+        if (merged) prefix = undefined;
+        return this.svc.messenger.reply(contact, merged ?? m);
+      },
+      prefixNext: (line) => {
+        prefix = prefix ? `${prefix}\n${line}` : line;
+      },
     };
     if (msg.channel === "customer") await handleCustomerTurn(turn as Turn<CustomerState>);
     else await handleBusinessTurn(turn as Turn<BusinessState>);
+    if (prefix) await this.svc.messenger.reply(contact, { kind: "text", text: prefix });
     await saveState(db, contact.id, turn.state);
   }
 
   /** Resolves once every queued message has been handled. */
   async idle(): Promise<void> {
     while (this.chains.size) await Promise.all([...this.chains.values()]);
+  }
+}
+
+/** The message with a line added at the top of its text, or undefined when it has no text to add to. */
+function withPrefix(m: OutboundMessage, line: string): OutboundMessage | undefined {
+  switch (m.kind) {
+    case "text":
+      return { ...m, text: `${line}\n\n${m.text}` };
+    case "buttons":
+    case "list":
+    case "cta_url":
+    case "location_request":
+      return { ...m, body: `${line}\n\n${m.body}` };
+    default:
+      return undefined;
   }
 }

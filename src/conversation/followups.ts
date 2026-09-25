@@ -1,5 +1,8 @@
+import { one } from "../db/client.js";
 import { getBusiness } from "../directory/businesses.js";
 import { getIntroduction } from "../directory/introductions.js";
+import { replaceOfferings } from "../directory/offerings.js";
+import { expireLeads } from "../directory/online-leads.js";
 import type { JobHandler } from "../jobs/queue.js";
 import type { Services } from "./context.js";
 import * as copy from "./copy.js";
@@ -28,6 +31,34 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
         ],
       });
       await svc.db.query("UPDATE introductions SET followed_up_at = now() WHERE id = $1", [intro.id]);
+    },
+
+    /** Once a day: delete businesses found online that the field team didn't get to in time. */
+    expire_online_leads: async () => {
+      const now = svc.now();
+      try {
+        const n = await expireLeads(svc.db, now);
+        if (n) svc.log.info({ expired: n }, "Deleted expired online leads");
+      } finally {
+        await svc.jobs.enqueue("expire_online_leads", {}, nextDailyRun(now));
+      }
+    },
+
+    /** A field agent photographed a price list: read it into the listing. */
+    read_price_list: async (payload) => {
+      if (!svc.vision) return;
+      const photo = await one<{ id: string; business_id: string; storage_key: string; content_type: string }>(
+        svc.db,
+        "SELECT id, business_id, storage_key, content_type FROM business_photos WHERE id = $1 AND kind = 'price_list'",
+        [String(payload.photoId ?? "")],
+      );
+      if (!photo) return;
+      const data = await svc.store.get(photo.storage_key);
+      if (!data) return;
+      const list = await svc.vision.readPriceList({ data, mimeType: photo.content_type });
+      // Throwing lets the queue retry a failed read; a photo that simply isn't a price list is left alone.
+      if (!list) throw new Error("Price list could not be read");
+      if (list.is_price_list && list.items.length) await replaceOfferings(svc.db, photo.business_id, list.items, photo.id);
     },
 
     /** Every Monday: tell each listed business how many searches it appeared in and how many customers it got. */
@@ -74,8 +105,21 @@ export function nextWeeklyRun(now: Date): Date {
   return d;
 }
 
+/** Next 01:00 UTC (03:00 in Harare), strictly after `now`. */
+export function nextDailyRun(now: Date): Date {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 1, 0, 0));
+  if (d.getTime() <= now.getTime()) d.setUTCDate(d.getUTCDate() + 1);
+  return d;
+}
+
 /** Make sure recurring jobs are queued (called at startup). */
 export async function scheduleRecurringJobs(svc: Services): Promise<void> {
-  const queued = await svc.db.query("SELECT 1 FROM jobs WHERE kind = 'weekly_summaries' AND status IN ('queued', 'running') LIMIT 1");
-  if (!queued.length) await svc.jobs.enqueue("weekly_summaries", {}, nextWeeklyRun(svc.now()));
+  const recurring: [string, Date][] = [
+    ["weekly_summaries", nextWeeklyRun(svc.now())],
+    ["expire_online_leads", nextDailyRun(svc.now())],
+  ];
+  for (const [kind, runAt] of recurring) {
+    const queued = await svc.db.query("SELECT 1 FROM jobs WHERE kind = $1 AND status IN ('queued', 'running') LIMIT 1", [kind]);
+    if (!queued.length) await svc.jobs.enqueue(kind, {}, runAt);
+  }
 }

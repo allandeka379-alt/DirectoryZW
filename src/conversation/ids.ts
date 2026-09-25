@@ -11,6 +11,8 @@ export const Ids = {
   report: (businessId: string) => `rep:${businessId}`,
   feedback: (introId: string, outcome: "sorted" | "not_yet" | "no_reply") => `fb:${introId}:${outcome}`,
   rate: (introId: string, stars: number) => `rate:${introId}:${stars}`,
+  onlineBusiness: (requestId: string, leadId: string) => `obiz:${requestId}:${leadId}`,
+  onlineConnect: (requestId: string, leadId: string) => `ocon:${requestId}:${leadId}`,
   // Business number
   register: "breg:start",
   categoriesOk: "breg:catok",
@@ -32,6 +34,9 @@ export const Ids = {
   editWhat: "bedit:what",
   editArea: "bedit:area",
   editSave: "bedit:save",
+  priceList: "bprice:start",
+  priceSave: "bprice:save",
+  priceRetry: "bprice:retry",
 } as const;
 
 export function parseAction(id: string): { action: string; args: string[] } {

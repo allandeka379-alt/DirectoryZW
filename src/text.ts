@@ -23,7 +23,11 @@ const STOPWORDS = new Set(
     "can could would will where which what any some sell sells selling seller have has near nearby around about " +
     "cheap cheapest best good nice new under below less than max maximum budget price prices cost usd dollars " +
     "today tomorrow now urgently urgent asap this next week weekend saturday sunday monday tuesday wednesday thursday friday " +
-    "hi hello hey there thanks thank"
+    "hi hello hey there thanks thank " +
+    // Shona and Ndebele words people mix into requests ("ndoda plumber ku Mabelreign")
+    "ndoda ndinoda ndirikuda ndiri ndinotsvaga ndirikutsvaga ndichada ndapota ndibatsirei ndibatsire ndiudzei " +
+    "ku kwa mu pa ne na uye here kupi ndekupi ari ane anogona munhu mumwe akanaka wakanaka iripi riripi mhoro mhoroi " +
+    "ngifuna ngiyafuna ngidinga ngicela ngiyacela kuphi lapho umuntu omunye sawubona salibonani"
   ).split(" "),
 );
 

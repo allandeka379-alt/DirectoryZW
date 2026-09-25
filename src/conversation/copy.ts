@@ -13,7 +13,25 @@ export interface BusinessView {
   ratingCount: number;
 }
 
+/** A business found on the web, as customers see it. */
+export interface LeadView {
+  id: string;
+  name: string;
+  description: string;
+  areaName: string | null;
+  distanceKm: number | null;
+  /** Website the details came from, e.g. "facebook.com". */
+  source: string | null;
+}
+
+/** Price-list items that match the request, shown on a business card. */
+export interface PriceView {
+  items: { name: string; price: string | null }[];
+  updatedAt: Date;
+}
+
 const UNVERIFIED_WARNING = "⚠️ Not yet checked by our team. Don't pay a deposit before you see the item or the work.";
+const ONLINE_WARNING = "⚠️ Found online. Our team hasn't checked this business. Don't pay a deposit before you see the item or the work.";
 
 function firstName(name?: string | null): string {
   return name?.trim().split(/\s+/)[0] ?? "";
@@ -60,15 +78,16 @@ export function askWhatYouNeed(name?: string | null): OutboundMessage {
   };
 }
 
-export function help(brand: string): OutboundMessage {
+export function help(brand: string, can: { photos?: boolean; voice?: boolean } = {}): OutboundMessage {
+  const ways = [can.voice ? "send a voice note" : null, can.photos ? "send a photo of what you want" : null].filter(Boolean);
   return {
     kind: "text",
     text:
       `*How ${brand} works*\n` +
-      "1. Tell me what you need and where.\n" +
+      `1. Tell me what you need and where.${ways.length ? ` You can also ${ways.join(" or ")}.` : ""}\n` +
       "2. I show businesses that can help. ✅ means our team checked them in person.\n" +
       "3. Pick one and tap *Connect me* to chat with them directly on WhatsApp.\n\n" +
-      "Type *agent* to talk to a person, or *menu* to start again.",
+      "Type *recommend* to tell us about a good business we should list, *agent* to talk to a person, or *menu* to start again.",
   };
 }
 
@@ -103,14 +122,19 @@ export function results(requestId: string, hits: BusinessView[], need: string, p
   };
 }
 
-export function businessCard(requestId: string, b: BusinessView): OutboundMessage {
+export function businessCard(requestId: string, b: BusinessView, prices?: PriceView): OutboundMessage {
   const details = [badge(b), b.areaName, distance(b) ? `${distance(b)} away` : null, rating(b)].filter(Boolean).join(" · ");
   const buttons = [{ id: Ids.connect(requestId, b.id), title: "Connect me" }];
   if (requestId) buttons.push({ id: Ids.list(requestId), title: "Other options" });
   buttons.push({ id: Ids.report(b.id), title: "Report" });
+  const priceLines = prices?.items.length
+    ? `\n\n🏷️ From their price list (${prices.updatedAt.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Harare" })}):\n` +
+      prices.items.map((i) => `• ${i.name}${i.price ? `: ${i.price}` : ""}`).join("\n") +
+      "\nPrices may have changed, so confirm with them."
+    : "";
   return {
     kind: "buttons",
-    body: `*${b.name}*\n${details}${b.description ? `\n\n${b.description}` : ""}${b.verification === "verified" ? "" : `\n\n${UNVERIFIED_WARNING}`}`,
+    body: `*${b.name}*\n${details}${b.description ? `\n\n${b.description}` : ""}${priceLines}${b.verification === "verified" ? "" : `\n\n${UNVERIFIED_WARNING}`}`,
     buttons,
   };
 }
@@ -119,11 +143,13 @@ export function prefilledMessage(brand: string, businessName: string, refCode: s
   return `Hi ${businessName}, I found you on ${brand} (ref ${refCode}). I'm looking for: ${summary}`;
 }
 
-export function connectLink(b: BusinessView, url: string, refCode: string): OutboundMessage {
+export function connectLink(b: BusinessView, url: string, refCode: string, fromPhoto = false): OutboundMessage {
   return {
     kind: "cta_url",
     body:
-      `Tap below to chat with *${b.name}* on WhatsApp. Your message is ready, so just press send.\n\nReference: *${refCode}*` +
+      `Tap below to chat with *${b.name}* on WhatsApp. Your message is ready, so just press send.` +
+      (fromPhoto ? " Then send them your photo too." : "") +
+      `\n\nReference: *${refCode}*` +
       (b.verification === "verified" ? "" : `\n\n${UNVERIFIED_WARNING}`),
     displayText: "Chat with them",
     url,
@@ -135,13 +161,117 @@ export function noResults(requestId: string, need: string, place?: string): Outb
     kind: "buttons",
     body:
       `I couldn't find a listed business for *${need}*${place ? ` near ${place}` : ""} yet. ` +
-      "I can ask businesses nearby and message you when one can help, or a person from our team can take over.",
+      "I can ask businesses nearby and message you when one can help, or a person from our team can take over.\n\n" +
+      "Know a good business that does this? Type *recommend* and we'll invite them.",
     buttons: [
       { id: Ids.askAround(requestId), title: "Ask around" },
       { id: Ids.human(requestId), title: "Talk to a person" },
       { id: Ids.newSearch, title: "New search" },
     ],
   };
+}
+
+// ---------- Found online ----------
+
+function leadLine(l: LeadView): string {
+  const where = l.distanceKm != null ? `${l.areaName ?? "nearby"} · ${l.distanceKm < 1 ? "under 1 km" : `${l.distanceKm.toFixed(0)} km`}` : l.areaName;
+  return ["🌐 Found online", where, l.source].filter(Boolean).join(" · ");
+}
+
+export function searchingOnline(need: string, place?: string): OutboundMessage {
+  return {
+    kind: "text",
+    text: `Nothing is listed with us for *${need}*${place ? ` near ${place}` : ""} yet. 🌐 I'm checking online. This can take up to a minute…`,
+  };
+}
+
+export function onlineResults(requestId: string, leads: LeadView[], need: string, place?: string): OutboundMessage {
+  const count = leads.length === 1 ? "1 business" : `${leads.length} businesses`;
+  return {
+    kind: "list",
+    body:
+      `Nothing is listed with us for *${need}*${place ? ` near ${place}` : ""} yet, but I found ${count} online. Tap *See options*.\n\n${ONLINE_WARNING}`,
+    button: "See options",
+    sections: [
+      {
+        title: "Found online",
+        rows: leads.map((l) => ({ id: Ids.onlineBusiness(requestId, l.id), title: l.name, description: leadLine(l) })),
+      },
+      {
+        title: "More options",
+        rows: [
+          { id: Ids.askAround(requestId), title: "Ask around", description: "Ask businesses we know if they can help" },
+          { id: Ids.human(requestId), title: "Talk to a person", description: "Someone from our team takes over" },
+        ],
+      },
+    ],
+    footer: "Type menu to start a new search",
+  };
+}
+
+export function onlineCard(requestId: string, l: LeadView): OutboundMessage {
+  return {
+    kind: "buttons",
+    body: `*${l.name}*\n${leadLine(l)}${l.description ? `\n\n${l.description}` : ""}\n\n${ONLINE_WARNING}`,
+    buttons: [
+      { id: Ids.onlineConnect(requestId, l.id), title: "Connect me" },
+      { id: Ids.list(requestId), title: "Other options" },
+      { id: Ids.askAround(requestId), title: "Ask around" },
+    ],
+  };
+}
+
+export function onlinePrefilledMessage(brand: string, businessName: string, summary: string): string {
+  return `Hi ${businessName}, I found your business online through ${brand}. I'm looking for: ${summary}`;
+}
+
+export function onlineConnectLink(l: LeadView, url: string, fromPhoto = false): OutboundMessage {
+  return {
+    kind: "cta_url",
+    body:
+      `Tap below to chat with *${l.name}* on WhatsApp. Your message is ready, so just press send.` +
+      (fromPhoto ? " Then send them your photo too." : "") +
+      `\n\n${ONLINE_WARNING}`,
+    displayText: "Chat with them",
+    url,
+  };
+}
+
+// ---------- Recommendations ----------
+
+export function recAskName(): OutboundMessage {
+  return { kind: "text", text: "Thanks for helping! What's the business called? (Type *cancel* to stop.)" };
+}
+
+export function recAskWhat(name: string): OutboundMessage {
+  return { kind: "text", text: `What does *${name}* sell or do?` };
+}
+
+export function recAskArea(name: string): OutboundMessage {
+  return { kind: "location_request", body: `Where is *${name}*? Share the location, or type the suburb or town.` };
+}
+
+export function recAskPhone(name: string): OutboundMessage {
+  return { kind: "text", text: `What's *${name}*'s WhatsApp number? Type *skip* if you don't know it.` };
+}
+
+export function recBadPhone(): OutboundMessage {
+  return { kind: "text", text: "That doesn't look like a phone number. Try again (for example 0771234567), or type *skip*." };
+}
+
+export function recThanks(name: string): OutboundMessage {
+  return {
+    kind: "text",
+    text: `Thank you! Our team will contact *${name}* and list them for free if they agree. We won't tell them who recommended them.\n\nWhat are you looking for?`,
+  };
+}
+
+export function recAlreadyListed(name: string): OutboundMessage {
+  return { kind: "text", text: `Thanks! *${name}* is already listed with us. What are you looking for?` };
+}
+
+export function recCancelled(): OutboundMessage {
+  return { kind: "text", text: "No problem. What are you looking for?" };
 }
 
 export function askAroundStarted(count: number): OutboundMessage {
@@ -198,8 +328,36 @@ export function photosNotYet(): OutboundMessage {
   return { kind: "text", text: "I can't read photos yet. Please describe what you're looking for in words." };
 }
 
+export function photoUnreadable(): OutboundMessage {
+  return {
+    kind: "text",
+    text: "I couldn't tell what you're looking for from that photo. Please describe it in words, or send a clearer photo with a caption.",
+  };
+}
+
 export function voiceNotYet(): OutboundMessage {
   return { kind: "text", text: "I can't listen to voice notes yet. Please type what you're looking for." };
+}
+
+export function voiceFailed(): OutboundMessage {
+  return { kind: "text", text: "Sorry, I couldn't listen to that voice note just now. Please type your message instead." };
+}
+
+export function voiceEmpty(): OutboundMessage {
+  return { kind: "text", text: "I couldn't make out what you said. Please try again somewhere quieter, or type it." };
+}
+
+/** Shown above the reply to a voice note, so a wrong transcript is easy to spot. */
+export function heard(text: string): string {
+  return `🎙️ I heard: “${text.length > 200 ? `${text.slice(0, 199)}…` : text}”`;
+}
+
+export function mediaTooLarge(): OutboundMessage {
+  return { kind: "text", text: "That file is too large for me. Please send a smaller photo or a shorter voice note." };
+}
+
+export function mediaFailed(): OutboundMessage {
+  return { kind: "text", text: "Sorry, I couldn't open that. Please try sending it again." };
 }
 
 export function noLongerAvailable(): OutboundMessage {
@@ -231,7 +389,10 @@ export function askRating(introId: string, businessName: string): OutboundMessag
 }
 
 export function ratingThanks(): OutboundMessage {
-  return { kind: "text", text: "Thanks! Your rating helps other customers choose." };
+  return {
+    kind: "text",
+    text: "Thanks! Your rating helps other customers choose.\n\nKnow another good business that isn't listed with us? Type *recommend*.",
+  };
 }
 
 export function notYet(requestId: string | null): OutboundMessage {
@@ -394,6 +555,7 @@ export function bizMenu(b: { name: string; status: string; verification: string 
   const rows: { id: string; title: string; description?: string }[] = [
     { id: Ids.summary, title: "My summary", description: "Searches and customers this week" },
     { id: Ids.editWhat, title: "Update what I sell", description: "Description and categories" },
+    { id: Ids.priceList, title: "Add price list photo", description: "Customers see your items and prices" },
     { id: Ids.editArea, title: "Update location", description: "Where customers find you" },
     b.status === "paused"
       ? { id: Ids.resume, title: "Resume listing", description: "Show me to customers again" }
@@ -437,6 +599,47 @@ export function editConfirmCategories(names: string[]): OutboundMessage {
 
 export function listingUpdated(name: string): OutboundMessage {
   return { kind: "text", text: `Done, *${name}* is updated. Type *menu* for your options.` };
+}
+
+export function askPriceListPhoto(): OutboundMessage {
+  return {
+    kind: "text",
+    text: "Send a photo of your price list, menu or price board. Take it straight on, in good light, so every price is readable. (Type *cancel* to stop.)",
+  };
+}
+
+export function priceListUnreadable(): OutboundMessage {
+  return {
+    kind: "text",
+    text: "I couldn't read items and prices from that photo. Please send a clearer photo, taken straight on in good light, or type *cancel*.",
+  };
+}
+
+export function priceListRead(businessName: string, items: { name: string; price: string | null }[]): OutboundMessage {
+  const shown = items.slice(0, 10).map((i) => `• ${i.name}${i.price ? `: ${i.price}` : ""}`);
+  const more = items.length > shown.length ? `\n…and ${items.length - shown.length} more` : "";
+  return {
+    kind: "buttons",
+    body:
+      `I read ${items.length} item${items.length === 1 ? "" : "s"} from your price list:\n${shown.join("\n")}${more}\n\n` +
+      `Save them to *${businessName}*? Customers searching for these items will find you.`,
+    buttons: [
+      { id: Ids.priceSave, title: "Save prices" },
+      { id: Ids.priceRetry, title: "Try another photo" },
+      { id: Ids.menu, title: "Cancel" },
+    ],
+  };
+}
+
+export function priceListSaved(businessName: string, count: number): OutboundMessage {
+  return {
+    kind: "text",
+    text: `Saved! ${count} item${count === 1 ? "" : "s"} from your price list are now on *${businessName}*. Send a new photo whenever your prices change.`,
+  };
+}
+
+export function bizPhotosUnavailable(): OutboundMessage {
+  return { kind: "text", text: "I can't read photos right now. Please try again later, or type *menu* for your options." };
 }
 
 export function weeklySummary(brand: string, name: string, shown: number, intros: number): OutboundMessage {

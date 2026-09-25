@@ -12,9 +12,11 @@ import {
   setBusinessStatus,
   verifyBusiness,
 } from "../directory/businesses.js";
+import { closeLead, setLeadStatus } from "../directory/online-leads.js";
+import { RECOMMENDATION_STATUSES, setRecommendationStatus } from "../directory/recommendations.js";
 import { agentStats, createAgent, resetAgentToken, setAgentActive, setupUrl } from "../field/agents.js";
 import { AUDIT_OUTCOMES, auditQueue, recordAudit } from "../field/audits.js";
-import { normalizeZimPhone } from "../text.js";
+import { normalizeText, normalizeZimPhone } from "../text.js";
 import { serveFile } from "./static.js";
 
 const FieldRegistration = z.object({
@@ -68,7 +70,9 @@ export function registerOps(server: FastifyInstance, app: App): void {
              (SELECT count(*)::int FROM introductions WHERE created_at > now() - interval '7 days') AS introductions_7d,
              (SELECT count(*)::int FROM sessions WHERE state->>'stage' = 'handoff') AS open_handoffs,
              (SELECT count(*)::int FROM reports WHERE status = 'open') AS open_reports,
-             (SELECT count(*)::int FROM agents WHERE active) AS active_agents`,
+             (SELECT count(*)::int FROM agents WHERE active) AS active_agents,
+             (SELECT count(*)::int FROM online_leads WHERE expires_at > now()) AS online_leads,
+             (SELECT count(*)::int FROM recommendations WHERE status = 'new') AS new_recommendations`,
         ),
       );
 
@@ -174,12 +178,13 @@ export function registerOps(server: FastifyInstance, app: App): void {
         if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
         const b = await getBusiness(app.db, params.data.id);
         if (!b) return reply.code(404).send({ error: "Business not found" });
-        const [photos, audits, categories] = await Promise.all([
+        const [photos, audits, categories, offerings] = await Promise.all([
           app.db.query("SELECT id, kind, content_type, bytes, created_at FROM business_photos WHERE business_id = $1 ORDER BY created_at", [b.id]),
           app.db.query("SELECT outcome, note, audited_by, created_at FROM audits WHERE business_id = $1 ORDER BY created_at DESC", [b.id]),
           categoriesOf(app.db, b.id),
+          app.db.query("SELECT name, price_usd, price_text, created_at FROM offerings WHERE business_id = $1 ORDER BY name LIMIT 200", [b.id]),
         ]);
-        return { ...b, area: app.services.gazetteer.get(b.area_id)?.name ?? null, categories, photos, audits };
+        return { ...b, area: app.services.gazetteer.get(b.area_id)?.name ?? null, categories, photos, audits, offerings };
       });
 
       ops.get("/photos/:id", async (req, reply) => {
@@ -282,6 +287,108 @@ export function registerOps(server: FastifyInstance, app: App): void {
         const body = z.object({ active: z.boolean() }).safeParse(req.body);
         if (!params.success || !body.success) return reply.code(400).send({ error: "Give an agent ID and active true/false" });
         return (await setAgentActive(app.db, params.data.id, body.data.active)) ? { ok: true } : reply.code(404).send({ error: "Agent not found" });
+      });
+
+      // ----- Found online -----
+
+      // Businesses found on the web for requests we couldn't answer: the field team's invitation list.
+      ops.get("/online-leads", async (req) => {
+        const q = req.query as { status?: string };
+        return app.db.query(
+          `SELECT l.id, l.name, l.phone, l.description, l.area_text, a.name AS area, a.city, l.category_slug,
+                  c.name AS category, l.query, l.source_url, l.source_title, l.status, l.times_shown,
+                  l.times_connected, l.found_at, l.expires_at
+             FROM online_leads l LEFT JOIN areas a ON a.id = l.area_id LEFT JOIN categories c ON c.slug = l.category_slug
+            WHERE l.expires_at > $2 AND ($1::text IS NULL OR l.status = $1)
+            ORDER BY l.times_connected DESC, l.times_shown DESC, l.found_at DESC LIMIT 300`,
+          [q.status || null, app.services.now()],
+        );
+      });
+
+      ops.post("/online-leads/:id/status", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        const body = z.object({ status: z.enum(["new", "invited"]) }).safeParse(req.body);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a lead ID and a status" });
+        return (await setLeadStatus(app.db, params.data.id, body.data.status)) ? { ok: true } : reply.code(404).send({ error: "Lead not found" });
+      });
+
+      // Done with a lead: it's now listed, it declined (never show it again), or the details were wrong.
+      ops.post("/online-leads/:id/close", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        const body = z.object({ reason: z.enum(["listed", "declined", "wrong"]) }).safeParse(req.body);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a lead ID and a reason" });
+        return (await closeLead(app.db, params.data.id, body.data.reason)) ? { ok: true } : reply.code(404).send({ error: "Lead not found" });
+      });
+
+      // ----- Customer recommendations -----
+
+      ops.get("/recommendations", async (req) => {
+        const q = req.query as { status?: string };
+        return app.db.query(
+          `SELECT r.id, r.name, r.what, r.category_slug, c.name AS category, COALESCE(a.name, r.area_text) AS area, a.city,
+                  r.phone, r.status, r.created_at,
+                  (SELECT count(*)::int FROM recommendations r2 WHERE r2.phone = r.phone) AS times_recommended,
+                  EXISTS (SELECT 1 FROM businesses b WHERE b.phone = r.phone AND b.status <> 'removed') AS already_listed
+             FROM recommendations r LEFT JOIN areas a ON a.id = r.area_id LEFT JOIN categories c ON c.slug = r.category_slug
+            WHERE ($1::text IS NULL OR r.status = $1)
+            ORDER BY r.created_at DESC LIMIT 300`,
+          [q.status || null],
+        );
+      });
+
+      ops.post("/recommendations/:id/status", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        const body = z.object({ status: z.enum(RECOMMENDATION_STATUSES) }).safeParse(req.body);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a recommendation ID and a status" });
+        return (await setRecommendationStatus(app.db, params.data.id, body.data.status))
+          ? { ok: true }
+          : reply.code(404).send({ error: "Recommendation not found" });
+      });
+
+      // ----- Vocabulary -----
+
+      // Searches we couldn't put in a category: words to add as synonyms, or categories we're missing.
+      ops.get("/unmatched", async (req) => {
+        const days = Math.min(Number((req.query as { days?: string }).days) || 30, 180);
+        const rows = await app.db.query<{ query: string }>(
+          `SELECT lower(r.query) AS query, count(*)::int AS requests,
+                  count(*) FILTER (WHERE r.status = 'no_results')::int AS no_results,
+                  max(r.created_at) AS last_seen,
+                  (array_agg(r.raw_text ORDER BY r.created_at DESC))[1:3] AS examples
+             FROM requests r
+            WHERE r.category_slug IS NULL AND r.interpretation->>'intent' = 'search' AND r.query <> ''
+              AND r.created_at > now() - make_interval(days => $1)
+            GROUP BY lower(r.query) ORDER BY requests DESC, last_seen DESC LIMIT 200`,
+          [days],
+        );
+        // Words the categories now understand drop off the list.
+        return rows.filter((r) => !app.services.taxonomy.match(r.query).length);
+      });
+
+      ops.get("/categories", async () =>
+        app.db.query("SELECT slug, name, group_name, risk, synonyms, extra_synonyms FROM categories ORDER BY group_name, name"),
+      );
+
+      // Teach the keyword matcher (and Claude's category list) new words for a category. Takes effect immediately.
+      ops.post("/categories/:slug/synonyms", async (req, reply) => {
+        const slug = String((req.params as { slug?: string }).slug ?? "");
+        const body = z
+          .object({ add: z.array(z.string().max(60)).max(50).default([]), remove: z.array(z.string().max(60)).max(50).default([]) })
+          .safeParse(req.body);
+        if (!body.success) return reply.code(400).send({ error: "Give words to add or remove" });
+        const row = await one<{ synonyms: string[]; extra_synonyms: string[] }>(
+          app.db,
+          "SELECT synonyms, extra_synonyms FROM categories WHERE slug = $1",
+          [slug],
+        );
+        if (!row) return reply.code(404).send({ error: "Category not found" });
+        const clean = (words: string[]) => words.map(normalizeText).filter((w) => w.length >= 2);
+        const remove = new Set(clean(body.data.remove));
+        const seeded = new Set(row.synonyms.map(normalizeText));
+        const extra = [...new Set([...row.extra_synonyms, ...clean(body.data.add)])].filter((w) => !remove.has(w) && !seeded.has(w));
+        await app.db.query("UPDATE categories SET extra_synonyms = $2 WHERE slug = $1", [slug, extra]);
+        await app.reloadTaxonomy();
+        return { slug, extra_synonyms: extra };
       });
 
       // ----- Call-back audits -----

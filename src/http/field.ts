@@ -61,6 +61,14 @@ export function registerField(server: FastifyInstance, app: App): void {
           req.agent!,
           parsed.data,
         );
+        if (result.status === "created" && app.services.vision) {
+          // Read price-list photos into the listing in the background, so the upload returns quickly.
+          const photos = await app.db.query<{ id: string }>(
+            "SELECT id FROM business_photos WHERE business_id = $1 AND kind = 'price_list'",
+            [result.id],
+          );
+          for (const p of photos) await app.services.jobs.enqueue("read_price_list", { photoId: p.id }, app.services.now());
+        }
         const code = { created: 201, exists: 200, duplicate: 409, invalid: 400 }[result.status];
         return reply.code(code).send(result);
       });

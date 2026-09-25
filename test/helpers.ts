@@ -1,5 +1,5 @@
 import { KeywordInterpreter } from "../src/ai/keyword-interpreter.js";
-import { createApp, type App } from "../src/app.js";
+import { createApp, type App, type AppOptions } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { openDb } from "../src/db/client.js";
 import { silentLogger } from "../src/logger.js";
@@ -28,9 +28,9 @@ export interface TestApp extends App {
 /**
  * A full app on an in-memory database, the simulator transport, the keyword interpreter,
  * in-memory file storage and a controllable clock. The clock starts at the real time because
- * the database stamps rows with its own now().
+ * the database stamps rows with its own now(). `options` swaps in fakes (vision, web search).
  */
-export async function testApp(env: Record<string, string> = {}): Promise<TestApp> {
+export async function testApp(env: Record<string, string> = {}, options: AppOptions = {}): Promise<TestApp> {
   const config = loadConfig({ NODE_ENV: "test", SEED_SAMPLE_DATA: "true", BRAND_NAME: "TestDir", ...env });
   const db = await openDb({});
   const sim = new SimulatorTransport();
@@ -43,6 +43,7 @@ export async function testApp(env: Record<string, string> = {}): Promise<TestApp
     interpreter: new KeywordInterpreter(),
     log: silentLogger,
     now: () => clock.now,
+    ...options,
   });
   let seq = 0;
 

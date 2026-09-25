@@ -29,6 +29,7 @@ export class Taxonomy {
     );
   }
 
+  /** Seeded synonyms plus the ones added from the ops console. */
   static async load(db: Db): Promise<Taxonomy> {
     const rows = await db.query<{
       slug: string;
@@ -37,7 +38,10 @@ export class Taxonomy {
       synonyms: string[];
       risk: CategoryRisk;
       needs_location: boolean;
-    }>("SELECT slug, name, group_name, synonyms, risk, needs_location FROM categories ORDER BY slug");
+    }>(
+      `SELECT slug, name, group_name, synonyms || extra_synonyms AS synonyms, risk, needs_location
+         FROM categories ORDER BY slug`,
+    );
     return new Taxonomy(
       rows.map((r) => ({
         slug: r.slug,

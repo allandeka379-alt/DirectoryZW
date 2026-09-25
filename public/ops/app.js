@@ -80,6 +80,8 @@ const screens = {
         tile(s.open_handoffs, "Chats waiting for a person"),
         tile(s.open_reports, "Open reports"),
         tile(s.active_agents, "Active field agents"),
+        tile(s.online_leads, "Found online, to invite"),
+        tile(s.new_recommendations, "New customer tips"),
       ),
     ];
   },
@@ -219,6 +221,89 @@ const screens = {
     return [...header("Field agents", "Add agents, send them their setup link, and watch quality."), h("div", { class: "card" }, form, result), tableBox];
   },
 
+  async online() {
+    const rows = await api("/online-leads");
+    const close = (r, reason, question) => async () => {
+      if (question && !confirm(question)) return;
+      await post(`/online-leads/${r.id}/close`, { reason });
+      render();
+    };
+    return [
+      ...header("Found online", "Businesses the web search found when nothing was listed. Customers saw them marked as unchecked. Invite them to list for free; each one is deleted when it expires."),
+      table([
+        { label: "Business", render: (r) => h("span", {}, h("strong", {}, r.name), r.status === "invited" ? [" ", h("span", { class: "tag" }, "invited")] : null, h("br"), h("span", { class: "muted" }, r.description)) },
+        { label: "Phone", render: (r) => h("a", { href: `tel:+${r.phone}` }, `+${r.phone}`) },
+        { label: "Area", render: (r) => [r.area || r.area_text, r.city].filter(Boolean).join(", ") },
+        { label: "Category", render: (r) => r.category || r.query },
+        { label: "Source", render: (r) => h("a", { href: r.source_url, target: "_blank", rel: "noopener noreferrer" }, r.source_title || new URL(r.source_url).hostname) },
+        { label: "Shown", key: "times_shown", num: true },
+        { label: "Chats", key: "times_connected", num: true },
+        { label: "Expires", render: (r) => day(r.expires_at) },
+        { label: "", render: (r) => h("div", { class: "row" },
+          r.status !== "invited" ? h("button", { onclick: async () => { await post(`/online-leads/${r.id}/status`, { status: "invited" }); render(); } }, "Invited") : null,
+          h("button", { class: "primary", onclick: close(r, "listed") }, "Now listed"),
+          h("button", { onclick: close(r, "declined", `${r.name} will never be shown from web results again. Continue?`) }, "Declined"),
+          h("button", { class: "danger", onclick: close(r, "wrong") }, "Wrong details")) },
+      ], rows),
+    ];
+  },
+
+  async tips() {
+    const rows = await api("/recommendations?status=new");
+    const act = (r, status) => async () => { await post(`/recommendations/${r.id}/status`, { status }); render(); };
+    return [
+      ...header("Customer tips", "Businesses customers recommended. Visit or call them, then register them in the field app."),
+      table([
+        { label: "When", render: (r) => day(r.created_at) },
+        { label: "Business", render: (r) => h("span", {}, h("strong", {}, r.name), r.already_listed ? [" ", h("span", { class: "tag ok" }, "already listed")] : null, r.times_recommended > 1 ? [" ", h("span", { class: "tag" }, `${r.times_recommended} tips`)] : null) },
+        { label: "What they do", key: "what" },
+        { label: "Category", key: "category" },
+        { label: "Area", render: (r) => [r.area, r.city].filter(Boolean).join(", ") },
+        { label: "Phone", render: (r) => (r.phone ? h("a", { href: `tel:+${r.phone}` }, `+${r.phone}`) : h("span", { class: "muted" }, "not given")) },
+        { label: "", render: (r) => h("div", { class: "row" },
+          h("button", { onclick: act(r, "contacted") }, "Contacted"),
+          h("button", { class: "primary", onclick: act(r, "listed") }, "Listed"),
+          h("button", { class: "danger", onclick: act(r, "rejected") }, "Not suitable")) },
+      ], rows),
+    ];
+  },
+
+  async vocabulary() {
+    const [rows, categories] = await Promise.all([api("/unmatched?days=30"), api("/categories")]);
+    const options = categories.map((c) => h("option", { value: c.slug }, `${c.group_name} › ${c.name}${c.risk === "normal" ? "" : ` (${c.risk})`}`));
+    const status = h("p", { class: "muted" });
+    const addWord = async (slug, word) => {
+      const res = await post(`/categories/${encodeURIComponent(slug)}/synonyms`, { add: [word] });
+      status.textContent = `Added "${word}". Words added so far for this category: ${res.extra_synonyms.join(", ")}`;
+    };
+    const word = h("input", { placeholder: "Word or phrase customers use", required: true });
+    const pick = h("select", {}, ...options.map((o) => o.cloneNode(true)));
+    const form = h("form", { class: "inline", onsubmit: async (e) => {
+      e.preventDefault();
+      if (!word.value.trim()) return;
+      await addWord(pick.value, word.value.trim());
+      word.value = "";
+    } }, word, pick, h("button", { class: "primary" }, "Add word"));
+    return [
+      ...header("Vocabulary", "Searches from the last 30 days that didn't match any category. Add the words people use to the right category so their next search finds businesses."),
+      h("div", { class: "card" }, form, status),
+      table([
+        { label: "Customers typed", key: "query" },
+        { label: "Requests", key: "requests", num: true },
+        { label: "No results", key: "no_results", num: true },
+        { label: "Examples", render: (r) => (r.examples || []).join(" · ") },
+        { label: "Add to category", render: (r) => {
+          const select = h("select", {}, h("option", { value: "" }, "Choose…"), ...options.map((o) => o.cloneNode(true)));
+          return h("div", { class: "row" }, select, h("button", { onclick: async () => {
+            if (!select.value) return;
+            await addWord(select.value, r.query);
+            render();
+          } }, "Add"));
+        } },
+      ], rows),
+    ];
+  },
+
   async businesses() {
     const q = new URLSearchParams(location.hash.split("?")[1]);
     const search = h("input", { type: "search", placeholder: "Name or phone", value: q.get("q") || "" });
@@ -254,7 +339,10 @@ function handoffCard(chat) {
   const text = h("textarea", { placeholder: "Reply as the team…" });
   const messages = (chat.recent_messages || []).map((m) => {
     const body = m.body || {};
-    const content = m.direction === "out" ? body.text : body.text || body.title || (body.type ? `[${body.type}]` : "");
+    const content = m.direction === "out"
+      ? body.text
+      : body.text || body.title ||
+        (body.transcript ? `🎙️ ${body.transcript}` : body.type === "image" ? `📷 ${body.caption || body.seen || "photo"}` : body.type ? `[${body.type}]` : "");
     return h("div", { class: `msg ${m.direction}` }, content || "", h("small", {}, date(m.created_at)));
   });
   return h("div", { class: "card" },
@@ -290,6 +378,9 @@ async function businessDetail(id) {
       checks.length ? h("span", { class: "muted" }, checks.join(" · ")) : null),
     b.audits.length ? h("p", { class: "muted" }, "Call-backs: ", b.audits.map((a) => `${a.outcome} by ${a.audited_by} on ${day(a.created_at)}${a.note ? ` (${a.note})` : ""}`).join("; ")) : null,
     photos,
+    b.offerings.length ? h("details", {},
+      h("summary", {}, `Price list: ${b.offerings.length} items (read ${day(b.offerings[0].created_at)})`),
+      h("ul", { class: "offerings" }, ...b.offerings.map((o) => h("li", {}, o.name, o.price_usd != null ? ` · $${Number(o.price_usd).toFixed(2)}` : o.price_text ? ` · ${o.price_text}` : "")))) : null,
     h("p", { class: "row" },
       b.status !== "active" ? h("button", { onclick: setStatus("active") }, "Make live") : h("button", { onclick: setStatus("paused") }, "Pause"),
       b.verification !== "verified" ? h("button", { onclick: async () => {

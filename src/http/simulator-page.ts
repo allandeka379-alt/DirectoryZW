@@ -45,6 +45,8 @@ main { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));
 form.composer { display:flex; gap:8px; padding:10px; border-top:1px solid var(--border); }
 form.composer input { flex:1; min-width:0; padding:8px 12px; border-radius:20px; border:1px solid var(--border); background:var(--panel); color:var(--text); font:inherit; }
 form.composer button { border:0; border-radius:20px; padding:8px 14px; background:var(--accent); color:#fff; cursor:pointer; font:inherit; }
+form.composer button[type=button] { padding:8px 9px; }
+.shot { display:block; max-width:220px; max-height:260px; border-radius:6px; margin-bottom:4px; }
 dialog { border:1px solid var(--border); border-radius:12px; background:var(--panel); color:var(--text); }
 dialog select { max-width:280px; }
 </style>
@@ -62,7 +64,8 @@ dialog select { max-width:280px; }
       <label>Name <input class="name" value="Tendai" size="8"></label>
     </div>
     <div class="chat"></div>
-    <form class="composer"><button type="button" class="loc" title="Share location">📍</button><input class="text" placeholder="e.g. I need a plumber in Mabelreign" autocomplete="off"><button>Send</button></form>
+    <form class="composer"><button type="button" class="loc" title="Share location">📍</button><button type="button" class="photo" title="Send a photo (type a caption first if you like)">📷</button><button type="button" class="voice" title="Send a voice note">🎙️</button><input class="text" placeholder="e.g. I need a plumber in Mabelreign" autocomplete="off"><button>Send</button></form>
+    <input type="file" class="file" accept="image/*" hidden>
   </section>
   <section class="phone" data-channel="business">
     <div class="bar">
@@ -71,7 +74,8 @@ dialog select { max-width:280px; }
       <select class="pick"><option value="">Switch to a listed business…</option></select>
     </div>
     <div class="chat"></div>
-    <form class="composer"><button type="button" class="loc" title="Share location">📍</button><input class="text" placeholder="e.g. register" autocomplete="off"><button>Send</button></form>
+    <form class="composer"><button type="button" class="loc" title="Share location">📍</button><button type="button" class="photo" title="Send a photo (type a caption first if you like)">📷</button><button type="button" class="voice" title="Send a voice note">🎙️</button><input class="text" placeholder="e.g. register" autocomplete="off"><button>Send</button></form>
+    <input type="file" class="file" accept="image/*" hidden>
   </section>
 </main>
 <dialog id="where">
@@ -123,11 +127,72 @@ dialog select { max-width:280px; }
 
   function send(p, content, echo) {
     bubble(p, "me", fmt(echo));
+    return post(p, content);
+  }
+  function post(p, content) {
     var body = { channel: p.channel, from: number(p), content: content };
     if (p.name && p.name.value.trim()) body.name = p.name.value.trim();
     return fetch("/simulator/api/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then(function (r) { if (!r.ok) return r.text().then(function (t) { bubble(p, "bot", "<i>Error: " + esc(t) + "</i>"); }); })
       .then(pollAll);
+  }
+  function failed(p) {
+    return function (e) { bubble(p, "bot", "<i>Error: " + esc(e.message || e) + "</i>"); };
+  }
+
+  // Photos and voice notes are uploaded first, then sent by media ID, as WhatsApp does.
+  function upload(body) {
+    return fetch("/simulator/api/media", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok) throw new Error(JSON.stringify(j.error || j));
+          return j.mediaId;
+        });
+      });
+  }
+  // Phones send photos as JPEGs of a few hundred KB; shrink big files the same way.
+  function shrink(file) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+        var c = document.createElement("canvas");
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(img.src);
+        resolve(c.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = function () { reject(new Error("That file isn't an image.")); };
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  function sendPhoto(p, file) {
+    var input = p.section.querySelector(".text");
+    var caption = input.value.trim();
+    input.value = "";
+    return shrink(file).then(function (dataUrl) {
+      var d = bubble(p, "me", caption ? fmt(caption) : "");
+      var img = document.createElement("img");
+      img.className = "shot";
+      img.alt = "Photo";
+      img.src = dataUrl;
+      d.insertBefore(img, d.firstChild);
+      return upload({ mimeType: "image/jpeg", dataBase64: dataUrl.split(",")[1] }).then(function (id) {
+        var content = { type: "image", mediaId: id, mimeType: "image/jpeg" };
+        if (caption) content.caption = caption;
+        return post(p, content);
+      });
+    }).catch(failed(p));
+  }
+  function sendVoice(p) {
+    var words = prompt("What does the voice note say? The simulator stands in for speech-to-text.");
+    if (!words || !words.trim()) return;
+    words = words.trim();
+    bubble(p, "me", "🎙️ <i>Voice note:</i> " + esc(words));
+    return upload({ mimeType: "audio/ogg", dataBase64: btoa("simulated voice note"), transcript: words })
+      .then(function (id) { return post(p, { type: "audio", mediaId: id, voice: true, mimeType: "audio/ogg" }); })
+      .catch(failed(p));
   }
 
   function render(p, item) {
@@ -190,16 +255,17 @@ dialog select { max-width:280px; }
   function poll(p) {
     var n = number(p);
     if (!n) return Promise.resolve();
-    return fetch("/simulator/api/messages?channel=" + p.channel + "&to=" + n + "&after=" + p.after)
+    return fetch("/simulator/api/messages?channel=" + p.channel + "&to=" + n + "&after=" + p.after + "&run=" + p.run)
       .then(function (r) { return r.json(); })
-      .then(function (items) {
-        items.forEach(function (it) { if (it.seq > p.after) { p.after = it.seq; render(p, it); } });
+      .then(function (res) {
+        if (res.run !== p.run) { p.run = res.run; p.after = 0; } // the server restarted
+        res.items.forEach(function (it) { if (it.seq > p.after) { p.after = it.seq; render(p, it); } });
       })
       .catch(function () {});
   }
   function pollAll() { return Promise.all(Object.keys(panes).map(function (k) { return poll(panes[k]); })); }
 
-  function reset(p) { p.after = 0; p.chat.innerHTML = ""; poll(p); }
+  function reset(p) { p.after = 0; p.run = ""; p.chat.innerHTML = ""; poll(p); }
 
   function askLocation(p) { locPane = p; document.getElementById("where").showModal(); }
   document.getElementById("where").addEventListener("close", function () {
@@ -211,11 +277,13 @@ dialog select { max-width:280px; }
 
   Array.prototype.forEach.call(document.querySelectorAll(".phone"), function (section) {
     var p = {
+      section: section,
       channel: section.getAttribute("data-channel"),
       chat: section.querySelector(".chat"),
       from: section.querySelector(".from"),
       name: section.querySelector(".name"),
-      after: 0
+      after: 0,
+      run: ""
     };
     panes[p.channel] = p;
     section.querySelector("form").addEventListener("submit", function (e) {
@@ -227,6 +295,13 @@ dialog select { max-width:280px; }
       send(p, { type: "text", text: text }, text);
     });
     section.querySelector(".loc").addEventListener("click", function () { askLocation(p); });
+    var file = section.querySelector(".file");
+    section.querySelector(".photo").addEventListener("click", function () { if (number(p)) file.click(); });
+    file.addEventListener("change", function () {
+      if (file.files && file.files[0]) sendPhoto(p, file.files[0]);
+      file.value = "";
+    });
+    section.querySelector(".voice").addEventListener("click", function () { if (number(p)) sendVoice(p); });
     p.from.addEventListener("change", function () { reset(p); });
     var pick = section.querySelector(".pick");
     if (pick) pick.addEventListener("change", function () { if (pick.value) { p.from.value = pick.value; reset(p); } });

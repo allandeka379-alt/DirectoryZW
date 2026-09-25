@@ -120,10 +120,34 @@ describe("simulator API", () => {
       payload: { channel: "customer", from: "263774444444", name: "Chipo", content: { type: "text", text: "hello" } },
     });
     expect(sent.statusCode).toBe(200);
-    const replies = await server.inject({ url: "/simulator/api/messages?channel=customer&to=263774444444&after=0" });
-    expect(replies.json()).toHaveLength(1);
+    const replies = (await server.inject({ url: "/simulator/api/messages?channel=customer&to=263774444444&after=0" })).json();
+    expect(replies.items).toHaveLength(1);
+    // A page that last polled before a restart gets everything again.
+    const stale = await server.inject({ url: `/simulator/api/messages?channel=customer&to=263774444444&after=99&run=old` });
+    expect(stale.json()).toMatchObject({ run: replies.run, items: [{ seq: replies.items[0].seq }] });
+    // Otherwise only newer messages come back.
+    const same = await server.inject({ url: `/simulator/api/messages?channel=customer&to=263774444444&after=99&run=${replies.run}` });
+    expect(same.json().items).toHaveLength(0);
     const page = await server.inject({ url: "/simulator" });
     expect(page.headers["content-type"]).toContain("text/html");
     expect(page.body).toContain("TestDir");
+  });
+
+  it("accepts photo and voice-note uploads", async () => {
+    const upload = await server.inject({
+      method: "POST",
+      url: "/simulator/api/media",
+      payload: { mimeType: "audio/ogg", dataBase64: Buffer.from("voice").toString("base64"), transcript: "I need a plumber in Mabelreign" },
+    });
+    expect(upload.statusCode).toBe(200);
+    const { mediaId } = upload.json();
+    const sent = await server.inject({
+      method: "POST",
+      url: "/simulator/api/send",
+      payload: { channel: "customer", from: "263774444445", content: { type: "audio", mediaId, voice: true, mimeType: "audio/ogg" } },
+    });
+    expect(sent.statusCode).toBe(200);
+    const bad = await server.inject({ method: "POST", url: "/simulator/api/media", payload: { mimeType: "text/html", dataBase64: "PGgxPg==" } });
+    expect(bad.statusCode).toBe(400);
   });
 });

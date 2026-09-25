@@ -60,7 +60,7 @@ export interface SimulatedMessage {
 export class SimulatorTransport implements Transport {
   private seq = 0;
   /** Keeps message IDs unique across restarts, since the database outlives this process. */
-  private readonly runId = Math.random().toString(36).slice(2, 8);
+  readonly runId = Math.random().toString(36).slice(2, 8);
   readonly outbox: SimulatedMessage[] = [];
 
   async send(channel: Channel, to: string, message: OutboundMessage): Promise<string> {

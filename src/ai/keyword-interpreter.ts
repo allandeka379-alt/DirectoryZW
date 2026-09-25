@@ -46,7 +46,7 @@ export class KeywordInterpreter implements Interpreter {
     }
     if (!top && HELP.some((h) => containsPhrase(norm, h))) return { ...base, intent: "help" };
 
-    const areaWords = new Set(area ? normalizeText([area.name, ...area.aliases].join(" ")).split(" ") : []);
+    const areaWords = new Set(area ? normalizeText([area.name, area.city, ...area.aliases].join(" ")).split(" ") : []);
     const tokens = searchTokens(text).filter((t) => !areaWords.has(t));
     const query = tokens.join(" ");
     if (top) return { ...base, category_slug: top.category.slug, query: query || top.term };

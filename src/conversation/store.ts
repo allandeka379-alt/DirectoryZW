@@ -71,6 +71,14 @@ export async function logInbound(db: Db, m: InboundMessage): Promise<string | nu
   return row?.id ?? null;
 }
 
+/** Add what we understood from a photo or voice note to the logged message, for the ops console. */
+export async function annotateInbound(db: Db, waMessageId: string, fields: Record<string, string | undefined>): Promise<void> {
+  await db.query("UPDATE messages SET body = body || $2::jsonb WHERE wa_message_id = $1 AND direction = 'in'", [
+    waMessageId,
+    JSON.stringify(fields),
+  ]);
+}
+
 export async function attachMessage(db: Db, messageId: string, contactId: string): Promise<void> {
   await db.query("UPDATE messages SET contact_id = $2 WHERE id = $1", [messageId, contactId]);
 }

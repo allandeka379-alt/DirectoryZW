@@ -25,6 +25,13 @@ const EnvSchema = z.object({
   SEED_SAMPLE_DATA: flag(false),
   ANTHROPIC_API_KEY: optionalString,
   CLAUDE_MODEL: z.string().default("claude-opus-5"),
+  ONLINE_SEARCH: flag(true),
+  ONLINE_LEAD_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+  ONLINE_SEARCHES_PER_DAY: z.coerce.number().int().min(0).default(5),
+  SPEECH_TO_TEXT_URL: optionalString,
+  SPEECH_TO_TEXT_TOKEN: optionalString,
+  SPEECH_LANGUAGES: z.string().default("sn,nd,en"),
+  MAX_MEDIA_MB: z.coerce.number().positive().max(100).default(16),
   WHATSAPP_TRANSPORT: z.enum(["simulator", "cloud"]).default("simulator"),
   WHATSAPP_GRAPH_VERSION: z.string().default("v24.0"),
   WHATSAPP_ACCESS_TOKEN: optionalString,
@@ -63,6 +70,18 @@ export interface Config {
   seedSampleData: boolean;
   anthropicApiKey?: string;
   claudeModel: string;
+  /** "Found online" results from a web search when nothing is listed. Needs ANTHROPIC_API_KEY. */
+  onlineSearch: {
+    enabled: boolean;
+    /** How long a found business is kept for the field team before it is deleted. */
+    leadDays: number;
+    /** Web searches one customer can trigger per day (cached results don't count). */
+    perCustomerPerDay: number;
+  };
+  /** Speech-to-text service for voice notes (see src/ai/speech.ts for the contract). */
+  speech: { url?: string; token?: string; languages: string[] };
+  /** Largest photo or voice note we download. */
+  maxMediaBytes: number;
   whatsapp: {
     transport: "simulator" | "cloud";
     graphVersion: string;
@@ -103,6 +122,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     seedSampleData: e.SEED_SAMPLE_DATA,
     anthropicApiKey: e.ANTHROPIC_API_KEY,
     claudeModel: e.CLAUDE_MODEL,
+    onlineSearch: {
+      enabled: e.ONLINE_SEARCH,
+      leadDays: e.ONLINE_LEAD_DAYS,
+      perCustomerPerDay: e.ONLINE_SEARCHES_PER_DAY,
+    },
+    speech: {
+      url: e.SPEECH_TO_TEXT_URL,
+      token: e.SPEECH_TO_TEXT_TOKEN,
+      languages: e.SPEECH_LANGUAGES.split(",").map((l) => l.trim()).filter(Boolean),
+    },
+    maxMediaBytes: Math.round(e.MAX_MEDIA_MB * 1024 * 1024),
     whatsapp: {
       transport: e.WHATSAPP_TRANSPORT,
       graphVersion: e.WHATSAPP_GRAPH_VERSION,
