@@ -13,14 +13,91 @@ export interface CategorySeed {
 
 /**
  * Categories whose businesses sell things rather than do a job: results call them stores that
- * "have" what the customer asked for. The rest are services ("businesses for plumbing").
+ * "have" what the customer asked for. The rest are services, whose businesses "offer" something
+ * (see categoryPhrases).
  */
 export const goodsCategories = new Set([
-  "tv_audio", "phones", "computers", "appliances", "solar", "generators", "gas_lpg", "water_delivery",
-  "building_materials", "hardware", "furniture", "home_decor", "car_parts", "car_sales", "event_hire", "cakes",
-  "groceries", "butchery", "restaurants", "fresh_produce", "clothing", "stationery", "agri_inputs", "livestock",
-  "pharmacy",
+  "tv_audio", "phones", "computers", "appliances", "generators", "gas_lpg", "building_materials", "hardware",
+  "furniture", "home_decor", "car_parts", "car_sales", "event_hire", "cakes", "groceries", "butchery",
+  "fresh_produce", "clothing", "stationery", "agri_inputs", "livestock", "pharmacy",
 ]);
+
+/**
+ * How replies name each category. For services, what the businesses offer: "We have two
+ * businesses near Mabelreign that offer *plumbing services*". For goods, what the stores have,
+ * used when the customer's own words can't be: "…and they have *meat*". Categories left out use
+ * their name.
+ */
+export const categoryPhrases: Record<string, string> = {
+  // Goods: what the stores have
+  tv_audio: "TVs and sound systems",
+  phones: "phones and tablets",
+  computers: "laptops and computers",
+  appliances: "home appliances",
+  generators: "generators",
+  gas_lpg: "gas (LPG) refills",
+  building_materials: "building materials",
+  hardware: "hardware",
+  furniture: "furniture",
+  home_decor: "curtains and home décor",
+  car_parts: "car parts and tyres",
+  car_sales: "cars for sale",
+  event_hire: "tents, chairs and décor for hire",
+  cakes: "cakes",
+  groceries: "groceries",
+  butchery: "meat",
+  fresh_produce: "fresh produce",
+  clothing: "clothing and shoes",
+  stationery: "books and stationery",
+  agri_inputs: "farm inputs",
+  livestock: "livestock",
+  pharmacy: "medicines",
+  // Services: what the businesses offer
+  electronics_repair: "phone and electronics repairs",
+  appliance_repair: "appliance repairs",
+  solar: "solar systems and installation",
+  water_delivery: "water delivery and tanks",
+  plumbing: "plumbing services",
+  electrical: "electrical services",
+  building: "building and construction",
+  painting: "painting services",
+  carpentry: "carpentry",
+  welding: "welding and steel work",
+  cleaning: "cleaning services",
+  pest_control: "pest control",
+  gardening: "gardening and landscaping",
+  borehole: "borehole drilling and pumps",
+  security: "security services",
+  laundry: "laundry and dry cleaning",
+  car_repairs: "car repairs",
+  car_hire: "car hire",
+  transport_moving: "trucks, moving and transport",
+  courier: "courier and delivery services",
+  driving_school: "driving lessons",
+  catering: "catering",
+  photography: "photography and video",
+  venues: "venues for events",
+  entertainment: "DJs, MCs and entertainment",
+  restaurants: "meals and takeaways",
+  salons: "hair, beauty and barber services",
+  tailoring: "tailoring and dressmaking",
+  rentals: "houses and rooms to rent",
+  property_sales: "property for sale",
+  estate_agents: "estate agent services",
+  legal: "legal services",
+  accounting: "accounting and tax services",
+  printing: "printing and branding",
+  it_services: "IT and web services",
+  insurance: "insurance",
+  funeral: "funeral services",
+  travel: "travel bookings and bus tickets",
+  visa_agents: "visa and work-abroad services",
+  tutoring: "tutoring and lessons",
+  schools: "schooling and childcare",
+  gyms: "gym and fitness classes",
+  vets: "vet care and pet supplies",
+  clinics: "medical care",
+};
 
 /**
  * Taxonomy v1. Synonyms drive the offline keyword interpreter and are shown to Claude.

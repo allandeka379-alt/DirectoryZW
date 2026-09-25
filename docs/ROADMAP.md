@@ -203,11 +203,13 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
   - Claude's clarifying questions and "needed by" are in English.
   - Replies repeat the customer's words only when they wrote in English. A Shona or Ndebele request is named by its English category ("ndoda keke remuchato" → *cakes and baking*).
 - [x] **Results say which businesses our team verified**, so customers can trust them:
-  - Goods: "We have 3 stores near Avondale that our team has verified, and they have *iphone 18 pro max*. Tap one to connect with them."
-  - Services: "We have 2 businesses for *plumber* near Mabelreign, and our team has verified them."
-  - Businesses that listed themselves still fill gaps. They're counted apart ("2 more listed themselves and haven't been checked by our team yet"), in their own "Not checked yet" section, with the deposit warning.
-  - Which categories sell goods is a list in `src/db/seed-data/categories.ts` (`goodsCategories`).
-- [x] Migration 009; tests (163)
+  - Goods: "We have three stores near Avondale that our team has verified, and they have *iphone 18 pro max*. Tap one to connect with them."
+  - Services say what the businesses offer: "We have two businesses near Mabelreign that offer *plumbing services*, and our team has verified them."
+  - Businesses that listed themselves still fill gaps. They're counted apart ("Two more listed themselves and haven't been checked by our team yet"), in their own "Not checked yet" section, with the deposit warning.
+  - "Where should I look for…", the related-categories message and the handoff when nobody is listed use the same words.
+  - `src/db/seed-data/categories.ts` lists which categories sell goods (`goodsCategories`) and how replies name each category (`categoryPhrases`). A request for goods is named in the customer's words, or by the category's phrase when their words only name a kind of shop ("butcher" → *meat*) or aren't in English.
+- [x] **The welcome message says why verified businesses can be trusted:** "✅ Every business we verify is visited in person by our team, and we check who runs it, so you know it's genuine and reliable. Customers rate the businesses they contact, and we look into every report."
+- [x] Migrations 009 and 010; tests (165)
 
 ## Later: monetization (only after traction)
 

@@ -69,7 +69,7 @@ describe("messages survive a crash", () => {
     app.advanceHours(0.1); // six minutes later
     expect(await app.engine.recover()).toBe(1);
     await app.engine.idle();
-    expect(sent(customer).at(-1)).toMatch(/^We have (a business|\d businesses) for \*plumber\*/);
+    expect(sent(customer).at(-1)).toMatch(/^We have (a business|\w+ businesses) near Mabelreign that offers? \*plumbing services\*/);
     const [row] = await app.db.query<{ processed_at: Date | null }>("SELECT processed_at FROM messages WHERE wa_message_id = 'crash-1'");
     expect(row?.processed_at).not.toBeNull();
     expect(await app.engine.recover()).toBe(0); // done once

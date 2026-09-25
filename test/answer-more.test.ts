@@ -101,7 +101,7 @@ describe("voice notes", () => {
 
     // What we heard tops the results, rather than costing a message of its own.
     // Replies are in English: the category's name, not the customer's Shona words.
-    expect(textOf(c.last())).toMatch(/^🎙️ I heard: “ndoda plumber ku Mabelreign”\n\nWe have (a business|\d businesses) for \*plumbers\* near Mabelreign/);
+    expect(textOf(c.last())).toMatch(/^🎙️ I heard: “ndoda plumber ku Mabelreign”\n\nWe have (a business|\w+ businesses) near Mabelreign that offers? \*plumbing services\*/);
     expect(rowsOf(c.last())[0]).toMatch(/^QuickFix/);
     const [logged] = await app.db.query<{ transcript: string }>(
       "SELECT notes->>'transcript' AS transcript FROM messages WHERE body->>'mediaId' = $1",

@@ -67,7 +67,7 @@ describe("Did you mean…?", () => {
     await c.tap("Yes");
     expect(rows(c.last())[0]).toMatch(/^Sweet Layers/);
     // Replies are in English: the category's name, not the customer's Shona words.
-    expect(textOf(c.last())).toMatch(/^We have (a store|\d stores) near Avondale that our team has verified, and (it has|they have) \*cakes and baking\*/);
+    expect(textOf(c.last())).toMatch(/^We have (a store|\w+ stores) near Avondale that our team has verified, and (it has|they have) \*cakes\*/);
     expect(await requestFor("ndoda keke remuchato ku Avondale")).toMatchObject({ understood_by: "customer", category_slug: "cakes" });
     const [question] = await app.db.query("SELECT options, chosen FROM clarifications ORDER BY created_at DESC LIMIT 1");
     expect(question).toMatchObject({ options: ["cakes"], chosen: "cakes" });

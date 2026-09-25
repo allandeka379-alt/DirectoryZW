@@ -21,6 +21,44 @@ export interface PriceView {
 
 const UNVERIFIED_WARNING = "⚠️ Not yet checked by our team. Don't pay a deposit before you see the item or the work.";
 
+/**
+ * What the customer asked for, as replies name it (see need() in customer.ts):
+ * - goods: what the stores have, in the customer's words when they fit ("samsung tv")
+ * - service: what the businesses offer ("plumbing services"), never "businesses for plumber"
+ * - other: no category; their words, as something businesses "can help with"
+ */
+export interface Need {
+  kind: "goods" | "service" | "other";
+  text: string;
+}
+
+const NUMBERS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+/** "two", "ten": small numbers in words, as in a sentence. */
+function inWords(n: number): string {
+  return NUMBERS[n] ?? String(n);
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * "near Avondale that offer *plumbing services*": what the businesses have or do, after their
+ * noun. `n` makes the verb agree ("a store … has", "two stores … have").
+ */
+function whatTheyDo(need: Need, n: number, near: string): string {
+  const one = n === 1;
+  switch (need.kind) {
+    case "goods":
+      return `${near} with *${need.text}*`;
+    case "service":
+      return `${near} that ${one ? "offers" : "offer"} *${need.text}*`;
+    case "other":
+      return `${near} that can help with *${need.text}*`;
+  }
+}
+
 function firstName(name?: string | null): string {
   return name?.trim().split(/\s+/)[0] ?? "";
 }
@@ -47,6 +85,8 @@ export function consent(brand: string, privacyUrl: string | undefined, name: str
     kind: "buttons",
     body:
       `${hi} I'm *${brand}*. Tell me what you need, whether it's a product, a service or anything else, and I'll find businesses near you. It's free.\n\n` +
+      "✅ Every business we verify is visited in person by our team, and we check who runs it, so you know it's genuine and reliable. " +
+      "Customers rate the businesses they contact, and we look into every report.\n\n" +
       `We keep your messages to help you, and only share your request with businesses you choose to contact.${privacy}\n\n` +
       "Tap *I agree* to start.",
     buttons: [{ id: Ids.consent, title: "I agree" }],
@@ -79,8 +119,8 @@ export function help(brand: string, can: { photos?: boolean; voice?: boolean } =
   };
 }
 
-export function askLocation(need: string): OutboundMessage {
-  return { kind: "location_request", body: `Where should I look for *${need}*? Share your location, or type your suburb or town.` };
+export function askLocation(need: Need): OutboundMessage {
+  return { kind: "location_request", body: `Where should I look for *${need.text}*? Share your location, or type your suburb or town.` };
 }
 
 export function locationSaved(place: string): OutboundMessage {
@@ -107,33 +147,36 @@ function unverifiedNote(hits: BusinessView[]): string {
 }
 
 /**
- * Results, said with confidence: the businesses our team verified, which have what the customer
- * asked for (stores, for categories that sell goods) or do it (services). Businesses that listed
- * themselves only fill gaps (see searchBusinesses); they're counted apart, with a warning.
+ * Results, said with confidence: the businesses our team verified, and what they have (stores,
+ * for categories that sell goods) or offer (services). "We have two stores near Avondale that our
+ * team has verified, and they have *samsung tv*"; "We have two businesses near Mabelreign that
+ * offer *plumbing services*, and our team has verified them". Businesses that listed themselves
+ * only fill gaps (see searchBusinesses); they're counted apart, with a warning.
  */
-export function results(requestId: string, hits: BusinessView[], need: string, place?: string, goods = false): OutboundMessage {
+export function results(requestId: string, hits: BusinessView[], need: Need, place?: string): OutboundMessage {
   const shown = hits.slice(0, 9);
   const verified = shown.filter((h) => h.verification === "verified");
   const unchecked = shown.filter((h) => h.verification !== "verified");
   const near = place ? ` near ${place}` : "";
+  const goods = need.kind === "goods";
   const noun = (n: number) => (goods ? (n === 1 ? "store" : "stores") : n === 1 ? "business" : "businesses");
-  const some = (n: number) => (n === 1 ? `a ${noun(1)}` : `${n} ${noun(n)}`);
+  const some = (n: number) => (n === 1 ? `a ${noun(1)}` : `${inWords(n)} ${noun(n)}`);
   const them = (n: number) => (n === 1 ? "it" : "them");
 
   let body: string;
   if (verified.length) {
     const v = verified.length;
     body = goods
-      ? `We have ${some(v)}${near} that our team has verified, and ${v === 1 ? "it has" : "they have"} *${need}*.`
-      : `We have ${some(v)} for *${need}*${near}, and our team has verified ${them(v)}.`;
+      ? `We have ${some(v)}${near} that our team has verified, and ${v === 1 ? "it has" : "they have"} *${need.text}*.`
+      : `We have ${some(v)}${whatTheyDo(need, v, near)}, and our team has verified ${them(v)}.`;
     if (unchecked.length) {
       const u = unchecked.length;
-      body += ` ${u} more listed ${u === 1 ? "itself" : "themselves"} and ${u === 1 ? "hasn't" : "haven't"} been checked by our team yet.`;
+      body += ` ${capitalize(inWords(u))} more listed ${u === 1 ? "itself" : "themselves"} and ${u === 1 ? "hasn't" : "haven't"} been checked by our team yet.`;
     }
   } else {
     const u = unchecked.length;
     body =
-      `We don't have a verified ${noun(1)} for *${need}*${near} yet. ${u === 1 ? "This one" : `These ${u}`} listed ` +
+      `We don't have a verified ${noun(1)}${whatTheyDo(need, 1, near)} yet. ${u === 1 ? "This one" : `These ${inWords(u)}`} listed ` +
       `${u === 1 ? "itself" : "themselves"} and ${u === 1 ? "hasn't" : "haven't"} been checked by our team.`;
   }
   body += ` Tap ${shown.length === 1 ? "it" : "one"} to connect with them.`;
@@ -156,11 +199,14 @@ export function results(requestId: string, hits: BusinessView[], need: string, p
  * Nobody lists what they asked for, but suppliers in related categories might have it or know
  * where to get it: "these electronics and appliances businesses".
  */
-export function relatedResults(requestId: string, hits: BusinessView[], need: string, label: string, place?: string): OutboundMessage {
+export function relatedResults(requestId: string, hits: BusinessView[], need: Need, label: string, place?: string): OutboundMessage {
+  const near = place ? ` near ${place}` : "";
+  const missing = need.kind === "goods" ? `a store${whatTheyDo(need, 1, near)}` : `a business${whatTheyDo(need, 1, near)}`;
+  const maybe = need.kind === "goods" ? "may have it or know where to get it" : "may be able to help";
   return {
     kind: "list",
     body:
-      `I couldn't find a business listing *${need}*${place ? ` near ${place}` : ""} yet, but these ${label} may have it or know where to get it. ` +
+      `We don't have ${missing} yet, but these ${label} ${maybe}. ` +
       `Tap *See options*.\n\n✅ = checked in person by our team.${unverifiedNote(hits)}`,
     button: "See options",
     sections: [
@@ -212,11 +258,13 @@ export function connectLink(b: BusinessView, url: string, refCode: string, fromP
  * Nothing on our list: a person takes over straight away, in the same reply. `when` says when a
  * person will reply (see whenTeamReplies).
  */
-export function noSupplierHandoff(need: string, place: string | undefined, when: string): OutboundMessage {
+export function noSupplierHandoff(need: Need, place: string | undefined, when: string): OutboundMessage {
+  const near = place ? ` near ${place}` : "";
+  const missing = need.kind === "goods" ? `a store${whatTheyDo(need, 1, near)}` : `a business${whatTheyDo(need, 1, near)}`;
   return {
     kind: "text",
     text:
-      `I couldn't find a business for *${need}*${place ? ` near ${place}` : ""} on our list yet, so I've passed your request to our team ` +
+      `We don't have ${missing} on our list yet, so I've passed your request to our team ` +
       `to help you find it. ${when}\n\n` +
       "Know a good business that does this? Tell the team, and we'll invite them. Type *menu* to go back to the assistant.",
   };

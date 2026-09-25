@@ -129,7 +129,9 @@ describe("when nothing matches", () => {
     await c.consented();
     await c.say("Fridge repair in Avondale");
     const list = c.last();
-    expect(textOf(list)).toContain("couldn't find a business listing *fridge repair* near Avondale yet, but these electronics and appliances businesses may have it");
+    expect(textOf(list)).toContain(
+      "We don't have a business near Avondale that offers *appliance repairs* yet, but these electronics and appliances businesses may be able to help",
+    );
     expect(rows(list)).toEqual(expect.arrayContaining([expect.stringMatching(/^Borrowdale Home/)]));
     expect(rows(list, 1)).toEqual(["Talk to a person", "Not what I asked for"]);
     expect(await requestFor("Fridge repair in Avondale")).toMatchObject({ match: "related", status: "answered" });
@@ -146,7 +148,7 @@ describe("when nothing matches", () => {
     const c = as(newCustomer());
     await c.consented();
     await c.say("I need a wedding venue in Avondale");
-    expect(textOf(c.last())).toContain("these events businesses may have it");
+    expect(textOf(c.last())).toContain("that offers *venues for events* yet, but these events businesses may be able to help");
     expect(rows(c.last())).toEqual(expect.arrayContaining([expect.stringMatching(/^Msasa Event Hire/)]));
   });
 
@@ -154,7 +156,7 @@ describe("when nothing matches", () => {
     const c = as(newCustomer());
     await c.consented();
     await c.say("I need a lawyer in Avondale");
-    expect(textOf(c.last())).toContain("couldn't find a business for *lawyer* near Avondale on our list yet, so I've passed your request to our team");
+    expect(textOf(c.last())).toContain("We don't have a business near Avondale that offers *legal services* on our list yet, so I've passed your request to our team");
     expect(await requestFor("I need a lawyer in Avondale")).toMatchObject({ match: "none", status: "handoff" });
     const before = c.texts().length;
     await c.say("hello?");

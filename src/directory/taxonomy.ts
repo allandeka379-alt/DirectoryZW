@@ -15,6 +15,8 @@ export interface Category {
   short: string;
   /** Its businesses sell things (stores) rather than do a job. */
   goods: boolean;
+  /** How replies name what its businesses offer or have: "plumbing services", "meat". */
+  phrase: string;
 }
 
 export interface CategoryMatch {
@@ -47,8 +49,10 @@ export class Taxonomy {
       related: string[];
       short_name: string | null;
       sells_goods: boolean;
+      phrase: string | null;
     }>(
-      `SELECT slug, name, group_name, synonyms || extra_synonyms AS synonyms, risk, needs_location, related, short_name, sells_goods
+      `SELECT slug, name, group_name, synonyms || extra_synonyms AS synonyms, risk, needs_location, related, short_name,
+              sells_goods, phrase
          FROM categories ORDER BY slug`,
     );
     return new Taxonomy(
@@ -62,6 +66,7 @@ export class Taxonomy {
         related: r.related,
         short: r.short_name ?? r.name,
         goods: r.sells_goods,
+        phrase: r.phrase ?? r.name.toLowerCase(),
       })),
     );
   }

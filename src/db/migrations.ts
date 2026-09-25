@@ -506,4 +506,12 @@ CREATE INDEX price_list_reads_status_idx ON price_list_reads (status);
 ALTER TABLE categories ADD COLUMN sells_goods boolean NOT NULL DEFAULT false;
 `,
   },
+  {
+    id: "010_category_phrases",
+    sql: /* sql */ `
+-- How replies name what a category's businesses offer ("plumbing services") or have ("meat"),
+-- so they never say "businesses for plumber".
+ALTER TABLE categories ADD COLUMN phrase text;
+`,
+  },
 ];

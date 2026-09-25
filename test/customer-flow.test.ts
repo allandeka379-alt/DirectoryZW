@@ -94,7 +94,7 @@ describe("customer journey", () => {
     const c = as(newCustomer());
     await c.consented();
     await c.say("I need a wedding venue in Avondale");
-    expect(textOf(c.last())).toContain("couldn't find a business listing *wedding venue* near Avondale yet, but these events businesses");
+    expect(textOf(c.last())).toContain("We don't have a business near Avondale that offers *venues for events* yet, but these events businesses may be able to help");
     await c.tap("Msasa Event Hire");
     await c.tap("Connect me");
     expect(c.last().kind).toBe("cta_url");

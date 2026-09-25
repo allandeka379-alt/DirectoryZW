@@ -16,7 +16,7 @@ import { whenTeamReplies } from "../time.js";
 import type { OutboundMessage } from "../whatsapp/outbound.js";
 import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
-import type { BusinessView, PriceView } from "./copy.js";
+import type { BusinessView, Need, PriceView } from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
 import { fetchMedia, hearVoiceNote } from "./media.js";
 import {
@@ -507,7 +507,7 @@ async function runSearch(
   if (hits.length) {
     await saveResults(svc.db, request.id, hits.map((h) => h.id));
     await setRequestStatus(svc.db, request.id, "answered", hits.length, "exact");
-    return t.reply(copy.results(request.id, hits, what, place?.label, category?.goods));
+    return t.reply(copy.results(request.id, hits, what, place?.label));
   }
 
   const related = category ? await searchRelated(svc.db, svc.taxonomy, { ...search, categorySlug: category.slug }) : [];
@@ -619,7 +619,7 @@ async function reshowResults(t: T, requestId: string): Promise<void> {
   if (!rows.length) return t.reply(copy.askWhatYouNeed(contact.profile_name));
   const views = rows.map((b) => viewOf(t, b, request));
   if (request.match === "related" && category) return t.reply(copy.relatedResults(request.id, views, what, relatedLabel(t, category), place));
-  return t.reply(copy.results(request.id, views, what, place, category?.goods));
+  return t.reply(copy.results(request.id, views, what, place));
 }
 
 /**
@@ -816,14 +816,29 @@ function features(t: T): { photos: boolean; voice: boolean } {
   return { photos: !!t.svc.vision, voice: !!t.svc.speech };
 }
 
+/** Words that name a kind of shop rather than an item: "a phone shop" has phones. */
+const SHOP_WORDS = new Set(
+  (
+    "shop shops store stores supermarket supermarkets dealer dealers supplier suppliers seller sellers vendor vendors " +
+    "outlet outlets boutique boutiques wholesaler wholesalers retailer retailers butcher butchers butchery baker bakers " +
+    "bakery pharmacy pharmacies chemist chemists company companies business businesses place places"
+  ).split(" "),
+);
+
 /**
- * What they asked for, as replies name it. Replies are always in English: the customer's own
- * words are repeated only when they wrote in English (Claude's query is English), otherwise the
- * category's name is used.
+ * What they asked for, as replies name it. Replies are always in English.
+ * - A service is named by what its businesses offer ("plumbing services"): "businesses that
+ *   offer plumbing services", never "businesses for plumber".
+ * - Goods are the item in the customer's words when they wrote in English (Claude's query is
+ *   English): "they have *samsung tv*". Words that only name a kind of shop ("butcher", "phone
+ *   shop") or a request in Shona or Ndebele use what the category's stores have ("meat").
  */
-function need(i: RequestInterpretation | undefined, category: Category | undefined, by: string | null | undefined): string {
+function need(i: RequestInterpretation | undefined, category: Category | undefined, by: string | null | undefined): Need {
   const english = i?.language === "en" || by === "claude" || by === "photo";
-  return (english && i?.query) || category?.name.toLowerCase() || "that";
+  const words = english && i?.query ? normalizeText(i.query).split(" ").filter((w) => w && !SHOP_WORDS.has(w)) : [];
+  if (!category) return { kind: "other", text: words.length ? i!.query : "what you asked for" };
+  if (!category.goods) return { kind: "service", text: category.phrase };
+  return { kind: "goods", text: words.length ? words.join(" ") : category.phrase };
 }
 
 function resetSearch(state: CustomerState): void {
