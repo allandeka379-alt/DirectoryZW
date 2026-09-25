@@ -22,7 +22,7 @@ const USAGE = `Measure how well requests are understood, against labelled exampl
   npm run eval -- --claude                       also Claude (CLAUDE_MODEL); costs a little per example
   npm run eval -- --claude --model claude-haiku-4-5    try a cheaper model
   npm run eval -- --file evals/real.jsonl        your labelled real requests (see npm run eval:export)
-  npm run eval -- --trust-drafts                 as if a native speaker had approved the draft Shona words
+  npm run eval -- --trust-drafts                 as if native speakers had approved the draft Shona and Ndebele words
   npm run eval -- --verbose                      list every miss, not just the first 25`;
 
 const { values } = parseArgs({
@@ -128,7 +128,7 @@ for (const reader of readers) {
         `to Claude or a person ${low.length} (${pct(low.length)})`
       );
     };
-    console.log(`\n  How the ladder handles them${values["trust-drafts"] ? " (draft Shona words treated as approved)" : " (draft Shona words not yet approved)"}:`);
+    console.log(`\n  How the ladder handles them${values["trust-drafts"] ? " (draft Shona and Ndebele words treated as approved)" : " (draft Shona and Ndebele words not yet approved)"}:`);
     console.log(`  ${"all".padEnd(4)} ${summary(outcomes)}`);
     for (const lang of [...new Set(outcomes.map((o) => o.example.language))].sort()) {
       console.log(`  ${lang.padEnd(4)} ${summary(outcomes.filter((o) => o.example.language === lang))}`);

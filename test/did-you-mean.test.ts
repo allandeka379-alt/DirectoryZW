@@ -168,6 +168,56 @@ describe("the word list", () => {
   });
 });
 
+describe("Ndebele, and telling us we got it wrong", () => {
+  it("checks a request that rests on draft Ndebele words", async () => {
+    const c = as(newCustomer());
+    await c.consented();
+    await c.say("Ngifuna ikhekhe lomtshado e Avondale");
+    expect(textOf(c.last())).toContain("do you mean *Cakes and baking*?");
+    await c.tap("Yes");
+    expect(rows(c.last())[0]).toMatch(/^Sweet Layers/);
+    const [row] = await app.db.query<{ interpretation: { language: string } }>(
+      "SELECT interpretation FROM requests WHERE raw_text = $1",
+      ["Ngifuna ikhekhe lomtshado e Avondale"],
+    );
+    expect(row?.interpretation.language).toBe("nd");
+  });
+
+  it("lets the customer say the results aren't what they asked for", async () => {
+    const c = as(newCustomer());
+    await c.consented();
+    await c.say("I need a plumber in Hatfield");
+    const list = c.last();
+    expect(list.kind === "list" && list.sections[1]?.rows.map((r) => r.title)).toEqual(["Not what I asked for"]);
+    await c.tap("Not what I asked for");
+    expect(textOf(c.last())).toContain("Tell me again in other words");
+    expect(choices(c.last())).toEqual(["Talk to a person"]);
+    expect(await requestFor("I need a plumber in Hatfield")).toMatchObject({ category_slug: "plumbing" });
+    const [flagged] = await app.db.query<{ flagged_at: Date | null }>(
+      "SELECT flagged_at FROM requests WHERE raw_text = $1 ORDER BY created_at DESC LIMIT 1",
+      ["I need a plumber in Hatfield"],
+    );
+    expect(flagged?.flagged_at).toBeTruthy();
+    // Still not understood: a person takes over.
+    await c.say("the heel came off");
+    expect(textOf(c.last())).toContain("passed your message to our team");
+  });
+
+  it("hands over at once when the customer says the assistant doesn't understand", async () => {
+    const c = as(newCustomer());
+    await c.consented();
+    await c.say("geyser in Waterfalls");
+    await c.say("You don't understand!");
+    expect(textOf(c.last())).toContain("I'm not getting this right");
+    expect(textOf(c.last())).toMatch(/A person will reply here soon|Our team (starts|is back) at 8am/);
+    const sample = (await ops("GET", "/review/sample")).json() as { raw_text: string; flagged_at: string | null }[];
+    expect(sample[0]?.flagged_at).toBeTruthy(); // what customers said was wrong comes first
+    expect(sample.some((r) => r.raw_text === "geyser in Waterfalls" && r.flagged_at)).toBe(true);
+    const system = (await ops("GET", "/system")).json();
+    expect(system.questions7d.flagged).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe("teaching and checking the engine", () => {
   it("learns from the team's answer in a handoff", async () => {
     claude.answer = () => null;

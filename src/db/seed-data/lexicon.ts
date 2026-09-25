@@ -11,9 +11,9 @@ import type { Action, Family, Role } from "../../ai/lexicon.js";
  * - filler: ignored ("please", "ndoda" = I want)
  *
  * The English words were written and checked by the development team, and start approved.
- * The Shona words are the development team's first draft. They start as drafts: until a native
- * speaker approves them in the ops console (Word list), a request that depends on one gets a
- * "Did you mean…?" question instead of a straight answer.
+ * The Shona and Ndebele words are the development team's first drafts. They start as drafts: until
+ * a native speaker approves them in the ops console (Word list), a request that depends on one gets
+ * a "Did you mean…?" question instead of a straight answer.
  */
 export interface LexiconSeed {
   /** A word or phrase; for verb roots, the root ("gadzir" matches anogadzira, kugadzirisa…). */
@@ -306,4 +306,165 @@ export const shonaWords: LexiconSeed[] = [
     "zvese", "vese", "ese", "dzese", "yese", "kwese", "anogona",
   ),
   ...filler("joining words written apart: of, the plural ma-", "ma", "ye", "re", "che", "dze", "zve", "rwe", "kwe", "ya", "wa", "ra", "cha", "dza", "za", "rwa"),
+];
+
+/**
+ * Ndebele words: the development team's first draft, like the Shona list. Nouns are listed with
+ * their prefix ("ifriji", "amathende"); the reader handles "of" and "and" forms ("lomtshado"),
+ * e- for places and borrowed words with a prefix ("ifridge"). Verbs are listed by root.
+ */
+export const ndebeleWords: LexiconSeed[] = [
+  // ----- Verbs, by root: ukulungisa, olungisa, umlungisi… -----
+  verb("make", "lungis", "repair, fix or prepare (ukulungisa, olungisa, umlungisi)"),
+  verb("buy", "theng", "buy or sell (ukuthenga, ukuthengisa, umthengisi)"),
+  verb("hire", "qash", "hire or rent (ukuqasha, yokuqasha)"),
+  verb("move", "thuth", "transport, move things (ukuthutha)"),
+  verb("move", "thwal", "carry (ukuthwala)"),
+  verb("dig", "gebh", "dig (ukugebha)"),
+  ...action("dig")("dig (ukumba)", "ukumba", "omba"),
+  verb("build", "akh", "build (ukwakha, owakha, umakhi)"),
+  verb("paint", "pend", "paint (ukupenda, openda)"),
+  verb("sew", "thung", "sew (ukuthunga, umthungi)"),
+  verb("cook", "phek", "cook (ukupheka, umpheki)"),
+  verb("clean", "hlanz", "clean (ukuhlanza)"),
+  verb("clean", "shanel", "sweep (ukushanela)"),
+  verb("wash", "wash", "wash clothes (ukuwasha)"),
+  verb("teach", "fundis", "teach (ukufundisa, umfundisi)"),
+  verb("learn", "fund", "learn, study (ukufunda)"),
+  verb("drive", "shayel", "drive (ukushayela, umshayeli)"),
+  verb("hair", "gund", "cut hair, shave (ukugunda)"),
+  verb("hair", "luk", "braid, plait (ukuluka)"),
+  verb("send", "thumel", "send (ukuthumela)"),
+  verb("repair", "phuk", "break (kuphukile: it is broken)"),
+  ...action("repair")("it has broken down or stopped working", "kuphukile", "iphukile", "ifile", "kayisebenzi", "akusebenzi"),
+
+  // ----- Electronics and appliances -----
+  ...product(["phones"], "phone")("phone", "ifoni", "amafoni", "iselula", "amaselula", "ishaja"),
+  ...product(["computers"], "computer")("computer", "ikhompyutha", "ikhomputha", "amakhompyutha"),
+  ...product(["tv_audio"], "electronics")("TV, radio or speaker", "ithelevishini", "ithivi", "irediyo", "isipikha"),
+  ...product(["appliances"], "appliance")(
+    "fridge, stove or other appliance",
+    "ifriji", "amafriji", "isitofu", "izitofu", "iketela", "iayini", "umatshini wokuwasha",
+  ),
+  // ----- Energy -----
+  ...product(["generators"])("generator", "ijeneretha"),
+  ...product(["gas_lpg"])("gas (LPG)", "igesi"),
+  ...product(["electrical"])("electricity or wiring", "ugesi", "amawaya"),
+  // ----- Home services -----
+  ...product(["plumbing"])("pipe, tap or toilet", "ipayipi", "amapayipi", "ithephu", "umpompi", "ithoyilethi", "indlu yangasese"),
+  ...product(["pest_control"])(
+    "pests: cockroaches, rats, bedbugs, termites, mosquitoes, insects",
+    "amaphela", "amagundwane", "izimbungulu", "umuhlwa", "omiyane", "izinambuzane",
+  ),
+  ...product(["gardening"])("garden, grass or trees", "isivande", "utshani", "izihlahla"),
+  ...product(["borehole"], "water")("well or borehole", "umthombo", "imithombo"),
+  ...product(["water_delivery"], "water")("water tank", "ithange", "amathange"),
+  ...object(["water_delivery", "borehole"], "water")("water", "amanzi"),
+  ...service(["security"])("guard", "umlindi", "abalindi"),
+  // ----- Building and hardware -----
+  ...product(["building_materials"])(
+    "cement, bricks, sand, stones or timber",
+    "usimende", "isitina", "izitina", "isihlabathi", "amatshe", "amapulanka", "izingodo",
+  ),
+  ...product(["hardware"])("paint, nails or tools", "upende", "ipende", "izipikili", "amathuluzi"),
+  // ----- Home and furniture -----
+  ...product(["event_hire", "furniture"], "chairs")("chair, which could be to hire or to buy", "isitulo", "izitulo"),
+  ...product(["furniture"], "furniture")(
+    "furniture: table, bed, mattress or cupboard",
+    "ifenitsha", "itafula", "amatafula", "umbhede", "imibhede", "umatilasi", "ikhabethe",
+  ),
+  ...object(["rentals", "property_sales"], "house")("house", "indlu", "izindlu"),
+  ...object(["rentals"], "house")("room", "ikamelo", "amakamelo"),
+  ...object(["property_sales"], "land")("stand, plot", "isiza", "iziza"),
+  // ----- Vehicles and transport -----
+  ...object(["car_sales", "car_hire", "car_repairs"], "car")("car", "imoto", "izimoto"),
+  ...product(["transport_moving"], "truck")("lorry, truck", "ilori", "amalori"),
+  ...product(["car_hire", "transport_moving"], "car")("minibus (kombi)", "ikhombi", "amakhombi"),
+  ...product(["car_hire"], "car")("taxi", "ithekisi"),
+  ...product(["travel"])("bus, ticket or flight", "ibhasi", "amabhasi", "ithikithi", "indiza"),
+  ...product(["car_parts"], "car_part")("tyre", "ithayi", "amathayi"),
+  ...product(["car_parts", "solar", "phones"], "battery")("battery", "ibhethri", "amabhethri"),
+  ...product(["car_repairs"], "car_part")("engine", "injini"),
+  ...service(["car_repairs"])("mechanic", "umakhenikha", "omakhenikha"),
+  ...object([], "goods")("things, goods, luggage", "izinto", "impahla"),
+  // ----- Events -----
+  ...product(["event_hire"], "event_item")("tent", "ithende", "amathende"),
+  ...product(["cakes"])("cake", "ikhekhe", "amakhekhe"),
+  ...occasion()("an event: wedding, party", "umtshado", "imitshado", "idili"),
+  ...occasion(["funeral"])("funeral", "umngcwabo"),
+  ...service(["entertainment"])("music or singer", "umculo", "umculi"),
+  ...service(["venues"])("hall", "ihholo"),
+  ...object(["venues", "rentals"], "house")("a place (for an event, or to stay)", "indawo"),
+  ...service(["photography"])("photos", "isithombe", "izithombe"),
+  // ----- Food -----
+  ...object(["restaurants", "catering", "groceries"], "food")("food", "ukudla"),
+  ...product(["groceries"], "food")(
+    "maize meal, rice, sugar, bread, milk, eggs or salt",
+    "impuphu", "irayisi", "ushukela", "isinkwa", "ubisi", "amaqanda", "usawoti",
+  ),
+  ...product(["butchery"], "food")("meat", "inyama"),
+  ...product(["butchery", "livestock"], "food")("chicken", "inkukhu", "izinkukhu"),
+  ...product(["butchery", "groceries"], "food")("fish", "inhlanzi"),
+  ...product(["fresh_produce"], "food")("vegetables or fruit", "imibhida", "utamatisi", "amatamatisi", "amazambane", "izithelo"),
+  ...product(["restaurants"], "food")("sadza", "isitshwala"),
+  ...product(["agri_inputs"])("chicken feed", "ukudla kwezinkukhu"),
+  // ----- Agriculture -----
+  ...product(["agri_inputs"])("seed or fertiliser", "imbewu", "umanyolo"),
+  ...product(["livestock"])("cattle, goats, pigs or sheep", "inkomo", "izinkomo", "imbuzi", "izimbuzi", "ingulube", "izingulube", "imvu", "izimvu"),
+  ...service(["vets"])("vet (doctor for animals)", "udokotela wezifuyo", "udokotela wezinja"),
+  // ----- Fashion and beauty -----
+  ...product(["clothing"], "clothes")(
+    "clothes, shirt, trousers, dress, socks, jersey, hat or uniform",
+    "izembatho", "ihembe", "amahembe", "ibhulukwe", "irokho", "amasokisi", "ijezi", "isigqoko", "izigqoko", "iyunifomu",
+  ),
+  ...product(["clothing"], "shoes")("shoes", "isicathulo", "izicathulo"),
+  ...product(["salons"], "hair")("hair, salon or wig", "inwele", "izinwele", "isaluni", "iwigi"),
+  // ----- Education -----
+  ...service(["schools"])("school", "isikolo", "izikolo"),
+  ...service(["driving_school"])("driving school", "isikolo sokushayela"),
+  ...service(["tutoring"])("lessons, maths or a teacher", "izifundo", "izibalo", "utitshala", "otitshala"),
+  ...product(["stationery"])("books", "ibhuku", "amabhuku", "ingwalo", "izingwalo"),
+  // ----- Professional services -----
+  ...service(["legal"])("lawyer", "ummeli", "abameli"),
+  ...service(["accounting"])("tax", "intela"),
+  ...service(["visa_agents"])("visa", "ivisa"),
+  // ----- Health: understood, though not searchable yet -----
+  ...service(["clinics"])("doctor, hospital, clinic or nurse", "udokotela", "isibhedlela", "ikliniki", "umongikazi"),
+  ...product(["pharmacy"])("pills, medicine", "amaphilisi"),
+  // ----- Never searchable -----
+  ...product(["blocked_alcohol"])("beer, alcohol", "utshwala", "ugologo"),
+  ...product(["blocked_tobacco"])("tobacco", "igwayi"),
+  ...product(["blocked_lending"])("loan, debt", "isikweletu", "izikweletu"),
+  productVerb(["blocked_lending"], "bolek", "borrow or lend (ukuboleka imali)"),
+  ...product(["blocked_weapons"])("gun", "isibhamu"),
+
+  // ----- Details -----
+  ...spec("size, colour or amount", "encane", "enkulu", "entsha", "emhlophe", "ebomvu", "emnyama", "isaka", "amasaka", "ithani", "ilitha", "isayizi"),
+
+  // ----- Fillers -----
+  ...filler("greeting", "salibonani", "sawubona", "livukile", "uvukile", "lotshonile", "linjani", "unjani"),
+  ...filler("thanks", "ngiyabonga", "siyabonga", "ngiyathokoza", "sibonga"),
+  ...filler("please, help", "ngicela", "ngiyacela", "sicela", "siza", "lingisize"),
+  ...filler("I want, I need", "ngifuna", "ngiyafuna", "sifuna", "siyafuna", "ngidinga", "sidinga"),
+  fillerVerb("fun", "want (ngifuna)"),
+  fillerVerb("khangel", "look for (ngikhangela)"),
+  fillerVerb("thol", "find, get (ngingathola)"),
+  fillerVerb("siz", "help (ukusiza)"),
+  // Listed one by one, not as a root: "umsebenzi" (a job) is a request, not a filler.
+  ...filler("works, working (osebenza)", "osebenza", "esebenza", "ukusebenza", "basebenza"),
+  fillerVerb("bhadal", "pay (ukubhadala)"),
+  fillerVerb("hlal", "live, stay (ngihlala)"),
+  fillerVerb("thath", "take (othatha)"),
+  fillerVerb("bulal", "kill (obulala), as in pests"),
+  ...filler("person, people", "umuntu", "abantu", "omunye", "abanye", "indoda", "umfazi", "umntwana", "abantwana"),
+  ...filler("my, our", "yami", "wami", "lami", "sami", "zami", "bami", "kwami", "yethu", "wethu", "lethu", "zethu"),
+  ...filler("when", "lamuhla", "kusasa", "khathesi", "izolo", "iviki", "ngokuphangisa"),
+  ...filler("where, here, near", "kuphi", "ngaphi", "lapho", "lapha", "eduze"),
+  ...filler("price, cheap", "intengo", "yimalini", "malini", "kutshiphile", "kuyadula"),
+  ...filler("shop, market", "isitolo", "izitolo", "imakethe"),
+  ...filler(
+    "small words: this, what, how, but, also, only, there is, yes, no, good",
+    "lokhu", "yini", "njani", "nini", "ngubani", "kodwa", "loba", "ngoba", "futhi", "kuphela", "ukuthi", "kukhona", "akukho",
+    "yebo", "hatshi", "kuhle", "ama", "khona",
+  ),
 ];

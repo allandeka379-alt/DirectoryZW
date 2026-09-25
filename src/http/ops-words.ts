@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { ACTIONS, FAMILIES, LANGUAGES, ROLES, STATUSES, type Lang, type LexiconStatus } from "../ai/lexicon.js";
 import { remember, signatureOf } from "../ai/phrasebook.js";
+import { ndebeleForms } from "../ai/ndebele.js";
 import { exampleForms } from "../ai/shona.js";
 import type { RequestInterpretation } from "../ai/types.js";
 import type { App } from "../app.js";
@@ -68,7 +69,7 @@ export function registerWordRoutes(ops: FastifyInstance, app: App): void {
     return rows.map((r) => ({
       ...r,
       category_names: r.categories.map((c) => app.services.taxonomy.get(c)?.name ?? c),
-      forms: r.is_root ? exampleForms(r.term) : [],
+      forms: r.is_root ? (r.language === "nd" ? ndebeleForms(r.term) : exampleForms(r.term)) : [],
     }));
   };
 
@@ -186,20 +187,23 @@ export function registerWordRoutes(ops: FastifyInstance, app: App): void {
     return { ok: true, signature: taught.signature };
   });
 
-  // The weekly check: a random sample of answers the local engine gave on its own.
+  // The weekly check: answers customers said were wrong, then a random sample of answers the
+  // local engine gave on its own.
   ops.get("/review/sample", async (req) => {
     const q = req.query as { days?: string; limit?: string };
     const days = Math.min(Math.max(Number(q.days) || 7, 1), 90);
     const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
     return app.db.query(
-      `SELECT r.id, r.raw_text, r.category_slug, c.name AS category_name, a.name AS area, r.reading, r.created_at
+      `SELECT r.id, r.raw_text, r.category_slug, c.name AS category_name, a.name AS area, r.reading, r.understood_by,
+              r.flagged_at, r.created_at
          FROM requests r
-         JOIN categories c ON c.slug = r.category_slug
+         LEFT JOIN categories c ON c.slug = r.category_slug
          LEFT JOIN areas a ON a.id = r.area_id
-        WHERE r.understood_by = 'local' AND r.reading->>'band' = 'high'
+        WHERE ((r.understood_by = 'local' AND r.reading->>'band' = 'high' AND r.category_slug IS NOT NULL) OR r.flagged_at IS NOT NULL)
+          AND r.raw_text <> ''
           AND r.created_at > now() - make_interval(days => $1)
           AND NOT EXISTS (SELECT 1 FROM understanding_reviews v WHERE v.request_id = r.id)
-        ORDER BY random() LIMIT $2`,
+        ORDER BY r.flagged_at IS NULL, random() LIMIT $2`,
       [days, limit],
     );
   });

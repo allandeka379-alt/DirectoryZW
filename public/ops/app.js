@@ -369,7 +369,7 @@ const screens = {
     } }, term, lang, role, category, action, h("label", { class: "row" }, root, "verb root"), gloss, h("button", { class: "primary" }, "Save word"));
 
     return [
-      ...header("Word list", "What words mean to the assistant. The Shona list is a first draft by the developers: a native speaker should check each word. Until a word is approved, requests that depend on it get a \"Did you mean…?\" question instead of a straight answer."),
+      ...header("Word list", "What words mean to the assistant. The Shona and Ndebele lists are first drafts by the developers: a native speaker should check each word. Until a word is approved, requests that depend on it get a \"Did you mean…?\" question instead of a straight answer."),
       h("div", { class: "row" },
         h("select", { onchange: (e) => go({ language: e.target.value }) },
           ...[["sn", "Shona"], ["en", "English"], ["nd", "Ndebele"]].map(([v, l]) => h("option", { value: v, selected: v === language || null }, l))),
@@ -404,11 +404,12 @@ const screens = {
     const [rows, categories] = await Promise.all([api("/review/sample?limit=50"), api("/categories")]);
     const verdict = (r, v, category) => async () => { await post(`/requests/${r.id}/review`, { verdict: v, category }); render(); };
     return [
-      ...header("Check answers", "Once a week, check a random sample of answers the assistant gave without asking anyone. Aim for 98% right. A wrong answer is fixed for that wording straight away; also tell the developers, so they can fix the word list or the rules."),
+      ...header("Check answers", "Once a week, check the answers customers said were wrong, then a random sample of answers the assistant gave without asking anyone. Aim for 98% right. A wrong answer is fixed for that wording straight away; also tell the developers, so they can fix the word list or the rules."),
       table([
         { label: "When", render: (r) => day(r.created_at) },
         { label: "Customer wrote", key: "raw_text" },
-        { label: "Assistant understood", render: (r) => h("span", {}, h("strong", {}, r.category_name), r.area ? ` · ${r.area}` : "") },
+        { label: "Assistant understood", render: (r) => h("span", {}, h("strong", {}, r.category_name || "no category"), r.area ? ` · ${r.area}` : "",
+          r.flagged_at ? h("div", {}, h("span", { class: "tag bad" }, "customer said this was wrong")) : null) },
         { label: "Why", render: (r) => h("span", { class: "muted" }, (r.reading?.reasons || []).join("; ")) },
         { label: "", render: (r) => {
           const right = categorySelect(categories, "The right category…");
@@ -526,11 +527,13 @@ const screens = {
         h("p", {}, h("strong", {}, "Requests, last 7 days: "), shares(s.understood7d, byLabel, "by")),
         h("p", {}, h("strong", {}, "Results, last 7 days: "), shares(s.matched7d, matchLabel, "match")),
         h("p", {}, h("strong", {}, "\"Did you mean…?\", last 7 days: "),
-          questions.asked ? `asked ${questions.asked}, a category picked ${questions.picked}, "something else" ${questions.something_else}, no answer ${questions.asked - questions.picked - questions.something_else}` : "none asked"),
+          questions.asked ? `asked ${questions.asked}, a category picked ${questions.picked}, "something else" ${questions.something_else}, no answer ${questions.asked - questions.picked - questions.something_else}` : "none asked",
+          `. Customers said we got it wrong: ${questions.flagged ?? 0}.`),
         h("p", {}, h("strong", {}, "Answers checked, last 4 weeks: "),
           check.reviewed ? `${check.reviewed} checked, ${Math.round((100 * check.right) / check.reviewed)}% right (aim: 98%)` : "none yet (see Check answers)"),
-        h("p", {}, h("strong", {}, "Shona word list: "),
-          `${wordCount("sn", "approved")} approved, ${wordCount("sn", "draft")} waiting for a native speaker, ${wordCount("sn", "rejected")} rejected` +
+        h("p", {}, h("strong", {}, "Word lists: "),
+          [["sn", "Shona"], ["nd", "Ndebele"]].map(([lang, name]) =>
+            `${name} ${wordCount(lang, "approved")} approved, ${wordCount(lang, "draft")} waiting for a native speaker, ${wordCount(lang, "rejected")} rejected`).join("; ") +
           (s.lexicon?.trustDrafts ? ". Draft words are trusted (LEXICON_TRUST_DRAFTS)." : ". Draft words lead to a question until approved.")),
         h("p", { class: "muted" },
           `Claude, last 7 days: ${s.claude.last7Days?.calls ?? 0} calls, ${usd(s.claude.last7Days?.usd)}. ` +

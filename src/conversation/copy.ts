@@ -87,6 +87,11 @@ export function locationSaved(place: string): OutboundMessage {
   return { kind: "text", text: `Thanks, I'll search near *${place}*. What are you looking for?` };
 }
 
+/** A row under the results for telling us we got it wrong: it feeds the team's weekly check. */
+function notWhatIAskedRow(requestId: string) {
+  return { id: Ids.notIt(requestId), title: "Not what I asked for", description: "Tell me again, or talk to a person" };
+}
+
 function businessRows(requestId: string, hits: BusinessView[]) {
   return hits.map((h) => ({
     id: Ids.business(requestId, h.id),
@@ -107,7 +112,10 @@ export function results(requestId: string, hits: BusinessView[], need: string, p
     kind: "list",
     body: `I found ${count} for *${need}*${place ? ` near ${place}` : ""}. Tap *See options* and pick one.\n\n✅ = checked in person by our team.${unverifiedNote(hits)}`,
     button: "See options",
-    sections: [{ title: "Businesses", rows: businessRows(requestId, hits) }],
+    sections: [
+      { title: "Businesses", rows: businessRows(requestId, hits.slice(0, 9)) },
+      { title: "Not right?", rows: [notWhatIAskedRow(requestId)] },
+    ],
     footer: "Type menu to start a new search",
   };
 }
@@ -124,8 +132,11 @@ export function relatedResults(requestId: string, hits: BusinessView[], need: st
       `Tap *See options*.\n\n✅ = checked in person by our team.${unverifiedNote(hits)}`,
     button: "See options",
     sections: [
-      { title: "Businesses", rows: businessRows(requestId, hits.slice(0, 9)) },
-      { title: "Not what you need?", rows: [{ id: Ids.human(requestId), title: "Talk to a person", description: "Someone from our team helps you find it" }] },
+      { title: "Businesses", rows: businessRows(requestId, hits.slice(0, 8)) },
+      {
+        title: "Not what you need?",
+        rows: [{ id: Ids.human(requestId), title: "Talk to a person", description: "Someone from our team helps you find it" }, notWhatIAskedRow(requestId)],
+      },
     ],
     footer: "Type menu to start a new search",
   };
@@ -165,23 +176,41 @@ export function connectLink(b: BusinessView, url: string, refCode: string, fromP
   };
 }
 
-/** Nothing on our list: a person takes over straight away, in the same reply. */
-export function noSupplierHandoff(need: string, place?: string): OutboundMessage {
+/**
+ * Nothing on our list: a person takes over straight away, in the same reply. `when` says when a
+ * person will reply (see whenTeamReplies).
+ */
+export function noSupplierHandoff(need: string, place: string | undefined, when: string): OutboundMessage {
   return {
     kind: "text",
     text:
-      `I couldn't find a business for *${need}*${place ? ` near ${place}` : ""} on our list yet, so I've passed your request to our team. ` +
-      "A person will reply here to help you find it (Monday to Saturday, 8am to 6pm).\n\n" +
+      `I couldn't find a business for *${need}*${place ? ` near ${place}` : ""} on our list yet, so I've passed your request to our team ` +
+      `to help you find it. ${when}\n\n` +
       "Know a good business that does this? Tell the team, and we'll invite them. Type *menu* to go back to the assistant.",
   };
 }
 
-export function notUnderstoodHandoff(): OutboundMessage {
+export function notUnderstoodHandoff(when: string): OutboundMessage {
   return {
     kind: "text",
-    text:
-      "Sorry, I'm still not sure what you need, so I've passed your message to our team. " +
-      "A person will reply here soon (Monday to Saturday, 8am to 6pm). Type *menu* to go back to the assistant.",
+    text: `Sorry, I'm still not sure what you need, so I've passed your message to our team. ${when} Type *menu* to go back to the assistant.`,
+  };
+}
+
+/** The customer says we've got it wrong ("you don't understand"): a person takes over. */
+export function frustratedHandoff(when: string): OutboundMessage {
+  return {
+    kind: "text",
+    text: `Sorry, I'm not getting this right. I've passed your chat to our team. ${when} Type *menu* to go back to the assistant.`,
+  };
+}
+
+/** They tapped "Not what I asked for" under results. */
+export function notWhatIAsked(requestId: string): OutboundMessage {
+  return {
+    kind: "buttons",
+    body: "Sorry about that. Tell me again in other words what you need, and I'll look again.",
+    buttons: [{ id: Ids.human(requestId), title: "Talk to a person" }],
   };
 }
 
@@ -222,10 +251,10 @@ export function recCancelled(): OutboundMessage {
   return { kind: "text", text: "No problem. What are you looking for?" };
 }
 
-export function handoff(): OutboundMessage {
+export function handoff(when: string): OutboundMessage {
   return {
     kind: "text",
-    text: "Okay. A person from our team will reply here soon (Monday to Saturday, 8am to 6pm). Type *menu* to go back to the assistant.",
+    text: `Okay, I've passed your chat to our team. ${when} Type *menu* to go back to the assistant.`,
   };
 }
 

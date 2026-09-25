@@ -156,8 +156,29 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
 - [x] `npm run explain` shows how a message is read, word by word.
 - [x] Tests (139)
 - [ ] A native speaker reviews the Shona word list ([WORD_LIST.md](WORD_LIST.md))
-- [ ] Ndebele word list and word shapes
-- [ ] From [UNDERSTANDING.md](UNDERSTANDING.md): out-of-hours handoff messages, spotting frustration, a "not what I asked" button on results
+- [x] Ndebele word list and word shapes (Milestone 7)
+- [x] Out-of-hours handoff messages, spotting frustration, a "not what I asked" button on results (Milestone 7)
+
+## Milestone 7: Ndebele, and the rest of Phase 2
+
+- [x] **Ndebele word shapes** (`src/ai/ndebele.ts`):
+  - noun prefixes, including on borrowed words ("ifriji", "ifridge", "amatyres")
+  - "of" and "and" forms that swallow the next word's first vowel: "ikhekhe lomtshado" (wedding cake), "inyama yenkomo" (beef: meat of cattle, so it's a butchery, not livestock)
+  - e- and -ini for places ("eNkulumane", "emtshadweni")
+  - verb roots with their prefixes and endings: "olungisa" (who repairs), "ukuqasha" (to hire), "owakha" (who builds), "umthengisi" (a seller)
+- [x] **A draft Ndebele word list** of about 300 words and roots, for native speakers to review like the Shona list.
+- [x] **Shona or Ndebele?** Each message is weighed by which language has more of its own words.
+- [x] **Handoff messages say when a person will reply:** "soon" during the team's hours (`TEAM_HOURS`, default Monday–Saturday 8am–6pm), otherwise "our team is back at 8am tomorrow" or "on Monday".
+- [x] **Frustration:** "you don't understand", "useless", "hauna kunzwisisa", "awuzwisisi"… hand the chat to a person at once, and the last request goes to the weekly check.
+- [x] **"Not what I asked for"** under results:
+  - The customer can say it again or talk to a person; if it's still not understood, a person takes over.
+  - The request comes first in **Check answers**.
+- [x] **Eval:** 159 requests (56 Shona, 48 Ndebele), every category right.
+  - Drafts unreviewed: 98% of English answered locally; 79% of Shona and Ndebele get a question with the right option.
+  - Words approved: 97% answered locally.
+- [x] Migration 007; tests (147)
+- [ ] Native speakers review the Shona and Ndebele word lists ([WORD_LIST.md](WORD_LIST.md))
+- [ ] Set `TEAM_HOURS` to the team's real hours
 
 ## Later: monetization (only after traction)
 

@@ -104,15 +104,21 @@ The local engine reads a request word by word ([docs/UNDERSTANDING.md](docs/UNDE
   - joining prefixes ("keke remuchato", a wedding cake; "matende nemacheya", tents and chairs)
   - the plural "ma-" on borrowed words ("matyres")
   - verb roots with their prefixes and endings ("anogadzira", who repairs; "yekuroja", for hire)
+- **Ndebele word shapes:**
+  - noun prefixes, including on borrowed words ("ifriji", "ifridge")
+  - "of" and "and" forms that swallow a vowel ("ikhekhe lomtshado", a wedding cake)
+  - verb roots ("olungisa", who repairs; "ukuqasha", to hire)
 - **English word forms** ("installer", "drilling"), texting spellings ("pls", "2moro", "55inch") and one-letter misspellings of longer words ("plumbar").
 - **Action rules** in `src/ai/rules.ts` (repair + fridge = appliance repairs, hire + chairs = event hire). Brands and occasions only narrow ("tyres for my Toyota" is car parts).
 
-**The Shona word list is a first draft by the developers.** Until a native speaker approves a word (ops console → **Word list**, or the spreadsheet download), requests that depend on it get a "Did you mean…?" question rather than a straight answer. `LEXICON_TRUST_DRAFTS=true` uses the drafts as if approved. The reviewer's guide is [docs/WORD_LIST.md](docs/WORD_LIST.md).
+**The Shona and Ndebele word lists are first drafts by the developers.** Until a native speaker approves a word (ops console → **Word list**, or the spreadsheet download), requests that depend on it get a "Did you mean…?" question rather than a straight answer. `LEXICON_TRUST_DRAFTS=true` uses the drafts as if approved. The reviewer's guide is [docs/WORD_LIST.md](docs/WORD_LIST.md).
 
 The team keeps teaching it:
 - **Handoffs → Teach the assistant**: what the customer actually wanted
-- **Check answers**: the weekly check of a random sample of answers it gave on its own; a wrong one is fixed for that wording at once
+- **Check answers**: the weekly check. Requests customers said were wrong come first (they tapped "Not what I asked for", or told the assistant it doesn't understand), then a random sample of answers it gave on its own. A wrong one is fixed for that wording at once.
 - **Vocabulary → Suggested words**: words customers used, with what they turned out to mean
+
+A customer who says the assistant doesn't understand ("useless", "hauna kunzwisisa", "awuzwisisi") goes straight to a person. Handoff messages say when a person will reply, from `TEAM_HOURS`.
 
 `npm run explain -- "ndoda keke remuchato ku Budiriro"` shows how a message is read, word by word.
 

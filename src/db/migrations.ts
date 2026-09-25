@@ -463,4 +463,13 @@ ALTER TABLE requests ADD COLUMN reading jsonb;
 ALTER TABLE categories ADD COLUMN short_name text;
 `,
   },
+  {
+    id: "007_not_what_i_asked",
+    sql: /* sql */ `
+-- The customer said the results weren't what they asked for, or that the assistant didn't
+-- understand them. Such requests come first in the team's weekly check.
+ALTER TABLE requests ADD COLUMN flagged_at timestamptz;
+CREATE INDEX requests_flagged_idx ON requests (flagged_at) WHERE flagged_at IS NOT NULL;
+`,
+  },
 ];

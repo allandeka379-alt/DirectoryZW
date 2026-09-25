@@ -1,15 +1,13 @@
 # Reviewing the word list
 
-The assistant reads customers' requests with a word list (the lexicon): what each word means, and what it does in a request. The English words were written and checked by the development team. **The Shona list (about 460 words and verb roots) is a first draft by the developers, who aren't native speakers.**
+The assistant reads customers' requests with a word list (the lexicon): what each word means, and what it does in a request. The English words were written and checked by the development team. **The Shona list (about 460 words and verb roots) and the Ndebele list (about 300) are first drafts by the developers, who aren't native speakers.**
 
-A Shona word starts as a draft. Until someone approves it, a request that depends on it gets a question: "Just to check, do you mean *Cakes and baking*?" Once a native speaker approves the word, such requests are answered straight away. So the review makes the assistant faster for Shona speakers, and it keeps wrong words from ever giving a confident wrong answer.
-
-Ndebele hasn't been drafted yet.
+A Shona or Ndebele word starts as a draft. Until someone approves it, a request that depends on it gets a question: "Just to check, do you mean *Cakes and baking*?" Once a native speaker approves the word, such requests are answered straight away. So the review makes the assistant faster for Shona and Ndebele speakers, and it keeps wrong words from ever giving a confident wrong answer.
 
 ## How to review
 
 **In the ops console** (any team account):
-1. Open **Word list**, choose **Shona** and **To review**.
+1. Open **Word list**, choose **Shona** (or **Ndebele**) and **To review**.
 2. For each word, read **Meaning** and **What it does**.
 3. Tick the words that are right, then press **Approve ticked**. Press **Wrong** on a word that's wrong.
 4. To correct a word, open **Add a word, or correct what one means** at the bottom. Enter the word with the right meaning and category, and save. A saved word counts as approved.
@@ -43,13 +41,24 @@ Verbs are listed by their root, such as "gadzir", with example forms (kugadzira,
 - the example forms are real words with the meaning shown
 - no common word that contains the root means something else. If one does, tell the developers; they can list that word separately.
 
-The action rules are in the code (`src/ai/rules.ts`), for example repair + phone = phone repairs. If a rule gives a wrong result in Shona, tell the developers.
+The action rules are in the code (`src/ai/rules.ts`), for example repair + phone = phone repairs. If a rule gives a wrong result in Shona or Ndebele, tell the developers.
 
 ## Where to start
 
-1. **Verb roots** (they affect many words): gadzir, teng, roj, takur, tam, cher, vak, pend, son, bik, chenes, wach.
+1. **Verb roots** (they affect many words):
+   - Shona: gadzir, teng, roj, takur, tam, cher, vak, pend, son, bik, chenes, wach
+   - Ndebele: lungis, theng, qash, thuth, akh, gebh, pend, thung, phek, hlanz, wash
 2. Words for the busiest categories: phones, phone and appliance repairs, event hire, building materials, rentals, cars.
 3. **Fillers**: words that should be ignored, but might carry meaning.
+
+## Ndebele: nouns are listed with their prefix
+
+Ndebele nouns are listed as people say them alone ("ifriji", "amathende", "umtshado"). The assistant also recognises them:
+- after "of" and "and", which swallow the first vowel: "ikhekhe **lo**mtshado" (la + umtshado), "inyama **ye**nkomo" (ya + inkomo)
+- as places with e- and -ini: "emtshadweni" (at the wedding)
+- on borrowed words with a prefix: "ifridge", "amatyres"
+
+So check the word as said alone, and tell the developers about common forms it misses.
 
 ## Missing words
 

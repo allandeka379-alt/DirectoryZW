@@ -11,7 +11,9 @@ import { fileReport, reportsSince } from "../directory/reports.js";
 import { searchBusinesses, searchRelated } from "../directory/search.js";
 import type { Category } from "../directory/taxonomy.js";
 import { eraseContact } from "../privacy.js";
-import { normalizeText, normalizeZimPhone } from "../text.js";
+import { containsPhrase, normalizeText, normalizeZimPhone } from "../text.js";
+import { whenTeamReplies } from "../time.js";
+import type { OutboundMessage } from "../whatsapp/outbound.js";
 import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
 import type { BusinessView, PriceView } from "./copy.js";
@@ -20,6 +22,7 @@ import { fetchMedia, hearVoiceNote } from "./media.js";
 import {
   annotateInbound,
   createRequest,
+  flagRequest,
   getRequest,
   recordAnswer,
   recordQuestion,
@@ -83,6 +86,17 @@ interface Place {
 /** Requests that came from a photo start with this, so the business can be asked to look at it. */
 const PHOTO_MARK = "📷 ";
 const RECOMMEND_WORDS = ["recommend", "recommend a business", "suggest a business", "recommendation"];
+/**
+ * Clear signs the assistant keeps getting it wrong, in English, Shona and Ndebele: a person takes
+ * over straight away. Draft phrases: native speakers should check the Shona and Ndebele ones.
+ */
+const FRUSTRATED = [
+  "you dont understand", "you do not understand", "you are not helping", "youre not helping", "this is not helping",
+  "not helpful", "useless", "stupid", "not what i asked", "wrong answer", "are you a robot", "are you a bot",
+  "hauna kunzwisisa", "haunzwisise", "hazvina basa", "hazvisi izvo",
+  "awuzwisisi", "akuzwisisi", "akusizo", "akulancedo",
+];
+
 export const ERASE_WORDS = [
   "delete my data",
   "delete my information",
@@ -192,6 +206,14 @@ async function onText(t: T, text: string): Promise<void> {
   }
 
   if (state.stage?.startsWith("rec_")) return continueRecommendation(t, raw);
+
+  // "You don't understand": don't make them try again, and let the team check what went wrong.
+  const said = normalizeText(raw);
+  if (FRUSTRATED.some((p) => containsPhrase(said, p))) {
+    if (state.lastRequestId) await flagRequest(svc.db, state.lastRequestId);
+    resetSearch(state);
+    return startHandoff(t, null, raw, copy.frustratedHandoff(whenTeamReplies(svc.now(), svc.config.teamHours)));
+  }
 
   if (state.stage === "awaiting_area" && state.pending) {
     const area = svc.gazetteer.match(raw, { fuzzy: true });
@@ -385,7 +407,7 @@ async function notUnderstood(
   state.stage = "handoff";
   await setRequestStatus(svc.db, request.id, "handoff", 0, "none");
   svc.log.info({ contactId: contact.id, requestId: request.id }, "Not understood twice; handed over to a person");
-  return t.reply(copy.notUnderstoodHandoff());
+  return t.reply(copy.notUnderstoodHandoff(whenTeamReplies(svc.now(), svc.config.teamHours)));
 }
 
 async function onPhoto(t: T, mediaId: string, caption?: string): Promise<void> {
@@ -486,7 +508,7 @@ async function runSearch(
   await setRequestStatus(svc.db, request.id, "handoff", 0, "none");
   state.stage = "handoff";
   svc.log.info({ contactId: contact.id, requestId: request.id }, "No supplier found; handed over to a person");
-  return t.reply(copy.noSupplierHandoff(what, place?.label));
+  return t.reply(copy.noSupplierHandoff(what, place?.label, whenTeamReplies(svc.now(), svc.config.teamHours)));
 }
 
 async function onAction(t: T, id: string): Promise<void> {
@@ -505,6 +527,8 @@ async function onAction(t: T, id: string): Promise<void> {
       return startHandoff(t, args[0] || null, null);
     case "mean":
       return chooseMeaning(t, args[0] ?? "");
+    case "notit":
+      return notWhatTheyAsked(t, args[0] ?? "");
     case "new":
       resetSearch(state);
       return t.reply(copy.askWhatYouNeed(contact.profile_name));
@@ -586,7 +610,21 @@ async function reshowResults(t: T, requestId: string): Promise<void> {
   return t.reply(copy.results(request.id, views, what, place));
 }
 
-async function startHandoff(t: T, requestId: string | null, text: string | null, message = copy.handoff()): Promise<void> {
+/**
+ * "Not what I asked for" under the results: the request goes to the team's weekly check, and the
+ * customer can say it again or talk to a person. If the engine still can't tell, a person takes over.
+ */
+async function notWhatTheyAsked(t: T, requestId: string): Promise<void> {
+  const request = await ownRequest(t, requestId);
+  if (!request) return t.reply(copy.askWhatYouNeed(t.contact.profile_name));
+  await flagRequest(t.svc.db, request.id);
+  resetSearch(t.state);
+  t.state.unclear = true;
+  t.svc.log.info({ contactId: t.contact.id, requestId: request.id }, "Customer said the results weren't what they asked for");
+  return t.reply(copy.notWhatIAsked(request.id));
+}
+
+async function startHandoff(t: T, requestId: string | null, text: string | null, message?: OutboundMessage): Promise<void> {
   const { svc, state, contact } = t;
   state.stage = "handoff";
   const request = requestId ? await ownRequest(t, requestId) : undefined;
@@ -612,7 +650,7 @@ async function startHandoff(t: T, requestId: string | null, text: string | null,
     });
   }
   svc.log.info({ contactId: contact.id, requestId }, "Handed over to a person");
-  return t.reply(message);
+  return t.reply(message ?? copy.handoff(whenTeamReplies(svc.now(), svc.config.teamHours)));
 }
 
 // ---------- Deleting their data ----------

@@ -2,6 +2,7 @@ import type { Area, Gazetteer } from "../directory/gazetteer.js";
 import type { Taxonomy } from "../directory/taxonomy.js";
 import { isStopword, normalizeMessage } from "../text.js";
 import { baseForms, STRONG_ROLES, WEAK_ROLES, type Action, type Family, type Lexicon, type Role, type Sense } from "./lexicon.js";
+import { ndebeleStems } from "./ndebele.js";
 import { ACTION_DEFAULTS, FAMILY_CONTEXT, RULES, SOFT_ACTIONS } from "./rules.js";
 import { withoutJoiner, withoutPlural } from "./shona.js";
 
@@ -20,8 +21,8 @@ export interface ReadWord {
   key: string;
   kind: WordKind;
   senses: Sense[];
-  /** How it was recognised: as written, as a word form ("drilling"), through Shona prefixes, or as a likely misspelling. */
-  via?: "exact" | "form" | "shona" | "spelling";
+  /** How it was recognised: as written, as a word form ("drilling"), through Shona or Ndebele prefixes, or as a likely misspelling. */
+  via?: "exact" | "form" | "shona" | "ndebele" | "spelling";
   /** It describes another word ("yemombe", of cattle, in "nyama yemombe"): it narrows, it doesn't compete. */
   describes?: boolean;
 }
@@ -236,14 +237,19 @@ export function readRequest(text: string, ctx: ReadContext): Reading {
     ]),
   ];
 
-  const shona =
-    SHONA_HINT.test(norm) ||
-    words.some(
-      (w) =>
-        w.via === "shona" ||
-        w.senses.some((s) => s.language === "sn" && (!["filler", "spec"].includes(s.role) || (w.text.length > 3 && !isStopword(w.text)))),
+  // Shona or Ndebele, by which has more of its own words (and giveaway words like "ndoda" or "ngifuna").
+  const score = { sn: SHONA_HINT.test(norm) ? 1 : 0, nd: NDEBELE_HINT.test(norm) ? 1 : 0 };
+  for (const w of words) {
+    const langs = new Set(
+      w.senses
+        .filter((s) => s.language !== "en" && (!["filler", "spec"].includes(s.role) || (w.text.length > 3 && !isStopword(w.text))))
+        .map((s) => s.language as "sn" | "nd"),
     );
-  const language = shona ? "sn" : NDEBELE_HINT.test(norm) ? "nd" : "en";
+    if (w.via === "shona") langs.add("sn");
+    if (w.via === "ndebele") langs.add("nd");
+    if (langs.size === 1) for (const l of langs) score[l]++;
+  }
+  const language = score.nd > score.sn ? "nd" : score.sn > 0 ? "sn" : "en";
 
   const query = words
     .filter((w) => w.kind === "unknown" || w.kind === "number" || (w.kind === "meaning" && !onlyBuying(w)))
@@ -306,8 +312,13 @@ function readWord(word: string, lexicon: Lexicon): ReadWord {
     const senses = lexicon.word(stem) ?? (bare ? lexicon.word(bare) : undefined);
     if (senses) return { ...recognised(word, senses[0]!.term, senses, "shona"), describes };
   }
+  // Ndebele: "of"/"and" forms that swallow a vowel ("lomtshado"), e- for places, prefixes on borrowed words ("ifridge").
+  for (const { stem, describes } of ndebeleStems(word)) {
+    const senses = lexicon.word(stem);
+    if (senses) return { ...recognised(word, senses[0]!.term, senses, "ndebele"), describes };
+  }
   const root = lexicon.root(word);
-  if (root) return recognised(word, root.root, root.senses, "shona");
+  if (root) return recognised(word, root.root, root.senses, root.language === "nd" ? "ndebele" : "shona");
   const loose = lexicon.looseMatch(word);
   if (loose) return recognised(word, loose[0]!.term, loose, "shona");
 

@@ -115,7 +115,7 @@ describe("customer journey", () => {
     const c = as(newCustomer());
     await c.consented();
     await c.say("I want to talk to a person");
-    expect(textOf(c.last())).toContain("person from our team");
+    expect(textOf(c.last())).toContain("passed your chat to our team");
     const before = c.outbox().length;
     await c.say("hello?");
     expect(c.outbox()).toHaveLength(before); // the bot stays quiet

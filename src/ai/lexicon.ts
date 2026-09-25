@@ -1,8 +1,9 @@
 import type { Db } from "../db/client.js";
-import { englishWords, shonaWords, type LexiconSeed } from "../db/seed-data/lexicon.js";
+import { englishWords, ndebeleWords, shonaWords, type LexiconSeed } from "../db/seed-data/lexicon.js";
 import type { Taxonomy } from "../directory/taxonomy.js";
 import { normalizeText } from "../text.js";
 import { allowedEdits, editDistance } from "./fuzzy.js";
+import { findNdebeleRoot } from "./ndebele.js";
 import { CATEGORY_FAMILY } from "./rules.js";
 import { findRoot, looseKey } from "./shona.js";
 
@@ -114,7 +115,7 @@ export function baseForms(word: string): string[] {
   return out;
 }
 
-/** The seed lexicon as rows: English approved, Shona as drafts for native speakers to review. */
+/** The seed lexicon as rows: English approved, Shona and Ndebele as drafts for native speakers to review. */
 export function seedEntries(): LexiconEntry[] {
   const rows = (seeds: LexiconSeed[], language: Lang, status: LexiconStatus): LexiconEntry[] =>
     seeds.map((s) => ({
@@ -129,7 +130,7 @@ export function seedEntries(): LexiconEntry[] {
       status,
     }));
   const seen = new Set<string>();
-  return [...rows(englishWords, "en", "approved"), ...rows(shonaWords, "sn", "draft")].filter((e) => {
+  return [...rows(englishWords, "en", "approved"), ...rows(shonaWords, "sn", "draft"), ...rows(ndebeleWords, "nd", "draft")].filter((e) => {
     const key = `${e.term}|${e.language}|${e.role}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -148,8 +149,9 @@ export class Lexicon {
   /** Plural terms by their singular ("chair" → "chairs"), when the singular isn't a term itself. */
   private readonly bySingular = new Map<string, Sense[]>();
   private readonly phrases = new Map<string, Phrase[]>();
-  private readonly roots = new Map<string, Sense[]>();
-  private readonly rootList: string[];
+  /** Verb roots by language, each matched with its own grammar; lists longest first. */
+  private readonly roots = new Map<Lang, Map<string, Sense[]>>();
+  private readonly rootLists = new Map<Lang, string[]>();
   private readonly loose = new Map<string, Sense[]>();
   private readonly spellings: { term: string; senses: Sense[] }[] = [];
 
@@ -177,7 +179,9 @@ export class Lexicon {
         fromCategory: false,
       };
       if (e.root) {
-        this.roots.set(term, [...(this.roots.get(term) ?? []), sense]);
+        const byRoot = this.roots.get(e.language) ?? new Map<string, Sense[]>();
+        byRoot.set(term, [...(byRoot.get(term) ?? []), sense]);
+        this.roots.set(e.language, byRoot);
         continue;
       }
       add(term, sense);
@@ -218,7 +222,7 @@ export class Lexicon {
     for (const [term, senses] of this.singles) {
       for (const singular of singularsOf(term)) if (!this.singles.has(singular)) this.bySingular.set(singular, senses);
     }
-    this.rootList = [...this.roots.keys()].sort((a, b) => b.length - a.length);
+    for (const [language, byRoot] of this.roots) this.rootLists.set(language, [...byRoot.keys()].sort((a, b) => b.length - a.length));
   }
 
   /** The lexicon table, plus the categories' own words. */
@@ -252,7 +256,7 @@ export class Lexicon {
   /** Whether a dictionary form (a word, phrase or root, as a phrasebook signature holds it) is in the lexicon. */
   knows(key: string): boolean {
     const k = key.replace(/_/g, " ");
-    if (this.singles.has(k) || this.bySingular.has(k) || this.roots.has(k)) return true;
+    if (this.singles.has(k) || this.bySingular.has(k) || [...this.roots.values()].some((r) => r.has(k))) return true;
     return (this.phrases.get(k.split(" ")[0]!) ?? []).some((p) => p.words.join(" ") === k);
   }
 
@@ -277,10 +281,13 @@ export class Lexicon {
       .find((p) => start + p.words.length <= end && p.words.every((w, k) => sameWord(words[start + k]!, w)));
   }
 
-  /** A known verb root inside a Shona word: "anogadzira" → gadzir. */
-  root(word: string): { root: string; senses: Sense[] } | undefined {
-    const found = findRoot(word, this.rootList);
-    return found ? { root: found.root, senses: this.roots.get(found.root)! } : undefined;
+  /** A known verb root inside a word, read with its language's grammar: "anogadzira" → gadzir, "olungisa" → lungis. */
+  root(word: string): { root: string; senses: Sense[]; language: Lang } | undefined {
+    for (const [language, list] of this.rootLists) {
+      const found = language === "nd" ? findNdebeleRoot(word, list) : findRoot(word, list);
+      if (found) return { root: found.root, senses: this.roots.get(language)!.get(found.root)!, language };
+    }
+    return undefined;
   }
 
   /** A Shona word written with a common spelling variation ("bazi" for "bhazi"). */

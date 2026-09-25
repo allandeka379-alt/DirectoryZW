@@ -105,11 +105,13 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
           WHERE match IS NOT NULL AND created_at > now() - interval '7 days' GROUP BY 1 ORDER BY 2 DESC`,
       ),
       // "Did you mean…?" questions this week, and what customers did with them.
-      one<{ asked: number; picked: number; something_else: number }>(
+      one<{ asked: number; picked: number; something_else: number; flagged: number }>(
         app.db,
         `SELECT count(*)::int AS asked,
                 count(*) FILTER (WHERE chosen IS NOT NULL AND chosen <> 'other')::int AS picked,
-                count(*) FILTER (WHERE chosen = 'other')::int AS something_else
+                count(*) FILTER (WHERE chosen = 'other')::int AS something_else,
+                -- requests customers said we got wrong
+                (SELECT count(*)::int FROM requests WHERE flagged_at > now() - interval '7 days') AS flagged
            FROM clarifications WHERE created_at > now() - interval '7 days'`,
       ),
       // The weekly check of answers the engine gave on its own, over four weeks.

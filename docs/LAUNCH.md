@@ -27,7 +27,8 @@ In order. The code is ready for each step; most of the work here is accounts, ap
 ## 4. Quality checks
 
 - [ ] **Shona word list** reviewed by a native speaker, ideally two: ops console → **Word list**, or the spreadsheet download. See [WORD_LIST.md](WORD_LIST.md). Until then, Shona requests get a "Did you mean…?" question more often than they need to.
-- [ ] **Ndebele word list**: not drafted yet. Ndebele requests go to a question, Claude or a person until it is.
+- [ ] **Ndebele word list** reviewed by a native speaker the same way.
+- [ ] `TEAM_HOURS` set to when the team really answers handed-over chats.
 - [ ] **Understanding requests:**
   - After the first weeks of real traffic, run `npm run eval:export -- --out evals/real.jsonl`, correct the labels, mark them reviewed, and aim for about 300.
   - Run `npm run eval -- --claude --file evals/real.jsonl`, then again with a cheaper `--model`.

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseTeamHours, type TeamHours } from "./time.js";
 
 const flag = (fallback: boolean) =>
   z
@@ -28,6 +29,7 @@ const EnvSchema = z.object({
   CLAUDE_DAILY_BUDGET_USD: z.coerce.number().min(0).default(5),
   CLAUDE_CALLS_PER_NUMBER_PER_DAY: z.coerce.number().int().min(0).default(5),
   LEXICON_TRUST_DRAFTS: flag(false),
+  TEAM_HOURS: z.string().default("Mon-Sat 08:00-18:00"),
   SPEECH_TO_TEXT_URL: optionalString,
   SPEECH_TO_TEXT_TOKEN: optionalString,
   SPEECH_LANGUAGES: z.string().default("sn,nd,en"),
@@ -94,8 +96,10 @@ export interface Config {
   claudeModel: string;
   /** Claude spending stops for the day at `dailyUsd`; one number can cause `perNumberPerDay` calls. */
   claudeBudget: { dailyUsd: number; perNumberPerDay: number };
-  /** Use draft lexicon words (the unreviewed Shona list) as if a native speaker had approved them. */
+  /** Use draft lexicon words (the unreviewed Shona and Ndebele lists) as if a native speaker had approved them. */
   lexiconTrustDrafts: boolean;
+  /** When a person answers chats handed to the team, so customers are told when to expect a reply. */
+  teamHours: TeamHours;
   /** Speech-to-text for voice notes: Google Chirp 2, or any service behind the HTTP contract in src/ai/speech.ts. */
   speech: {
     url?: string;
@@ -167,6 +171,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     claudeModel: e.CLAUDE_MODEL,
     claudeBudget: { dailyUsd: e.CLAUDE_DAILY_BUDGET_USD, perNumberPerDay: e.CLAUDE_CALLS_PER_NUMBER_PER_DAY },
     lexiconTrustDrafts: e.LEXICON_TRUST_DRAFTS,
+    teamHours: parseTeamHours(e.TEAM_HOURS),
     speech: {
       url: e.SPEECH_TO_TEXT_URL,
       token: e.SPEECH_TO_TEXT_TOKEN,

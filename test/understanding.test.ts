@@ -128,7 +128,7 @@ describe("when nothing matches", () => {
     const list = c.last();
     expect(textOf(list)).toContain("couldn't find a business listing *fridge repair* near Avondale yet, but these electronics and appliances businesses may have it");
     expect(rows(list)).toEqual(expect.arrayContaining([expect.stringMatching(/^Borrowdale Home/)]));
-    expect(rows(list, 1)).toEqual(["Talk to a person"]);
+    expect(rows(list, 1)).toEqual(["Talk to a person", "Not what I asked for"]);
     expect(await requestFor("Fridge repair in Avondale")).toMatchObject({ match: "related", status: "answered" });
 
     await c.tap("Borrowdale Home");

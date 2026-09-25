@@ -12,9 +12,12 @@ import {
 const GREETINGS = [
   "hi", "hello", "hey", "hie", "howzit", "good morning", "good afternoon", "good evening", "morning",
   "mhoro", "mhoroi", "makadini", "maswera sei", "mangwanani", "masikati", "manheru", "hesi", "ndeipi", "zvirisei",
-  "salibonani", "sawubona",
+  "salibonani", "sawubona", "livukile", "uvukile", "lotshonile", "linjani", "unjani",
 ];
-const THANKS = ["thanks", "thank you", "ok", "okay", "cool", "ndatenda", "tatenda", "mazvita", "maita basa", "ndinotenda", "ngiyabonga", "siyabonga"];
+const THANKS = [
+  "thanks", "thank you", "ok", "okay", "cool", "ndatenda", "tatenda", "mazvita", "maita basa", "ndinotenda",
+  "ngiyabonga", "siyabonga", "ngiyathokoza", "sibonga",
+];
 const HELP = ["help", "menu", "how does this work", "how it works", "what can you do"];
 const HUMAN = ["agent", "human", "real person", "customer care", "speak to someone", "talk to someone", "talk to a person"];
 const WHEN = /\b(today|tonight|tomorrow|this weekend|weekend|next week|saturday|sunday|monday|tuesday|wednesday|thursday|friday|asap|urgently|urgent)\b/;

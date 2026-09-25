@@ -132,6 +132,8 @@ export interface RequestRow {
   match: "exact" | "related" | "none" | null;
   /** What the local engine made of it. */
   reading: ReadingSummary | null;
+  /** When the customer said the results weren't what they asked for. */
+  flagged_at: Date | null;
   created_at: Date;
 }
 
@@ -170,6 +172,12 @@ export async function createRequest(
     ],
   );
   return row!;
+}
+
+/** The customer said a request's results weren't what they asked for: it goes to the team's weekly check. */
+export async function flagRequest(db: Db, requestId: string): Promise<void> {
+  if (!isUuid(requestId)) return;
+  await db.query("UPDATE requests SET flagged_at = COALESCE(flagged_at, now()) WHERE id = $1", [requestId]);
 }
 
 /** We asked "Did you mean…?" with these categories. Returns the question's ID. */

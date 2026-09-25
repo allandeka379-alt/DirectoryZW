@@ -12,6 +12,8 @@ export const Ids = {
   rate: (introId: string, stars: number) => `rate:${introId}:${stars}`,
   eraseYes: "erase:yes",
   eraseNo: "erase:no",
+  /** "Not what I asked for" under results. */
+  notIt: (requestId: string) => `notit:${requestId}`,
   /** An answer to "Did you mean…?": a category, or none of them. */
   mean: (slug: string) => `mean:${slug}`,
   meanOther: "mean:",

@@ -2,11 +2,11 @@
 
 **Goal:** our own engine understands normal requests, for free and instantly. It calls Claude only for messages it genuinely can't read, and hands to a person when Claude can't either. Every hard case it sees once should be easy the next time.
 
-**Status:** Phase 1 is built (Milestone 5). Phase 2 is built for English and Shona (Milestone 6); Ndebele vocabulary comes next. Phase 3 needs real traffic. Since this was written, three decisions changed it:
+**Status:** Phase 1 is built (Milestone 5). Phase 2 is built: English and Shona in Milestone 6, and Ndebele and the rest in Milestone 7. Phase 3 needs real traffic. Since this was written, three decisions changed it:
 
 - **No web search.** "Found online" is gone. We're building up our own suppliers.
 - **Nothing found means suppliers first, then people.** When no supplier in the category is nearby, the customer gets suppliers in related categories (a gadget nobody lists goes to our electronics shops). When nothing fits, a person takes over in the same reply.
-- **Shona first, with a draft word list.** The developers wrote the starting Shona list, not native speakers. So a draft word can only ever lead to a "Did you mean…?" question, never a straight answer, until a native speaker approves it ([WORD_LIST.md](WORD_LIST.md)).
+- **Draft word lists.** The developers wrote the starting Shona and Ndebele lists, not native speakers. So a draft word can only ever lead to a "Did you mean…?" question, never a straight answer, until a native speaker approves it ([WORD_LIST.md](WORD_LIST.md)).
 
 ## Summary
 
@@ -109,7 +109,7 @@ Shona and Ndebele nouns and verbs belong in the lexicon too:
 - Nouns: *keke/ikhekhe* (cake), *muchato/umtshado* (wedding), *matende* (tents), *macheya* (chairs), *mota/imoto* (car), *firiji/ifriji* (fridge), *umakhenikha* (mechanic).
 - Verbs: *gadzira/lungisa* (repair), *tenga/thenga* (buy), *roja/qasha* (hire), *chera/gebha* (dig or drill), *takura/thutha* (carry or move).
 
-The first lists should come from native speakers. In practice the developers drafted the Shona list, so draft words lead only to questions until a native speaker approves them. The phrasebook then adds what real customers write.
+The first lists should come from native speakers. In practice the developers drafted the Shona and Ndebele lists, so draft words lead only to questions until a native speaker approves them. The phrasebook then adds what real customers write.
 
 **Rules (few, explicit, each with a test)**
 - An action changes the category family:
@@ -178,11 +178,12 @@ The target is **98% or better precision for HIGH answers**, checked weekly on a 
   - no supplier in the category or in related categories (built: the reply itself says a person will help)
   - nobody could make sense of it after one "please say it differently" (built)
   - over budget, and the engine didn't understand
-  - the customer repeats themselves or shows frustration ("you don't understand", "useless")
+  - the customer shows frustration ("you don't understand", "useless", "hauna kunzwisisa", "awuzwisisi") (built: a person takes over at once, and their last request goes to the weekly check)
+  - the customer repeats themselves
   - several needs in one message
   - urgent or sensitive situations (a medical or legal emergency)
   - the customer asks for a person
-- **Out of hours:** outside Monday–Saturday, 8am–6pm, say when a person will reply, and queue the chat.
+- **Out of hours:** outside the team's hours (`TEAM_HOURS`, Monday–Saturday 8am–6pm by default), say when a person will reply, and queue the chat (built).
 - **The handoff card shows the ladder's notes:** what the engine understood, the candidates and the unknown words. The person picks the category and area when replying, which fills the phrasebook.
 - **Aim:** under 2% of requests reach a person.
 
@@ -241,24 +242,21 @@ Each phase ships on its own and must keep the eval at least as accurate as Claud
 - A category picker instead of Claude at registration and for tips.
 - Web search removed. Related suppliers, then a person, when nothing matches.
 
-**Phase 2: a local engine that reads like a Zimbabwean (built for English and Shona; Ndebele next)**
+**Phase 2: a local engine that reads like a Zimbabwean (built)**
 - Built:
   - the normaliser (texting spellings, numbers stuck to units, stretched letters), word roles, English word forms, fuzzy matching (same first letter, 6+ letters) and place prefixes
   - the lexicon in the database, editable in the ops console
   - Shona word shapes: joining prefixes, "ma-" on borrowed words, verb roots with their prefixes and endings, common spelling variations. A word joined by "of" ("nyama yemombe") only describes the main word.
   - a draft Shona list of about 460 words and roots
+  - Ndebele word shapes: noun prefixes ("ifriji", "ifridge"), "of"/"and" forms that swallow a vowel ("ikhekhe lomtshado", "inyama yenkomo"), e- and -ini for places, verb roots ("olungisa", "ukuqasha"), and a draft list of about 300 words and roots
   - the action rules
   - "Did you mean…?" (step 3), learning from taps, handoffs and the weekly check
   - vocabulary suggestions, the Word list review screen, and the Check answers screen
-- On the 117 test requests (56 Shona):
-  - With the Shona words still drafts: 57% are answered locally, 39% get a question (always offering the right option), 3% go to Claude or a person, and none is confidently wrong.
-  - With them approved: 93% are answered locally (95% of Shona), all correctly.
-  - The developers wrote these examples alongside the word list, so real traffic will score lower. That's what Phase 3 measures.
-- Not built yet:
-  - Ndebele vocabulary and word shapes
-  - out-of-hours handoff messages
-  - spotting frustration
-  - a "not what I asked" button on results
+  - handoff messages that say when the team is next in, a person at once when the customer is frustrated, and "Not what I asked for" under results (both feed the weekly check)
+- On the 159 test requests (56 Shona, 48 Ndebele), every category is right:
+  - With the Shona and Ndebele words still drafts: 98% of English requests are answered locally. 79% of Shona and Ndebele ones get a question, always offering the right option. None is confidently wrong.
+  - With them approved: 97% are answered locally, all correctly.
+  - The developers wrote these examples alongside the word lists, so real traffic will score lower. That's what Phase 3 measures.
 
 **Phase 3: tune on real traffic (after the first 2–4 weeks)**
 - Label about 300 real requests and set the HIGH and MEDIUM thresholds from them.

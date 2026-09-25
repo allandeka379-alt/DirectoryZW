@@ -115,3 +115,45 @@
 {"id":"sn-54","text":"ndiri kutsvaga gweta","language":"sn","expect":{"intent":"search","category":"legal"},"source":"synthetic"}
 {"id":"sn-55","text":"ndoda mbatya dzevana ku Mbare","language":"sn","expect":{"intent":"search","category":"clothing","area":"Mbare"},"source":"synthetic"}
 {"id":"sn-56","text":"ndinoda basa","language":"sn","expect":{"intent":"search","category":null},"source":"synthetic"}
+{"id":"nd-07","text":"Ngifuna ukuqasha indlu eMpopoma","language":"nd","expect":{"intent":"search","category":"rentals","area":"Mpopoma"},"source":"synthetic"}
+{"id":"nd-08","text":"Ngidinga umakhenikha eNkulumane","language":"nd","expect":{"intent":"search","category":"car_repairs","area":"Nkulumane"},"source":"synthetic"}
+{"id":"nd-09","text":"Ngifuna ukuthenga imoto","language":"nd","expect":{"intent":"search","category":"car_sales"},"source":"synthetic"}
+{"id":"nd-10","text":"Kukhona olungisa amafoni?","language":"nd","expect":{"intent":"search","category":"electronics_repair"},"source":"synthetic"}
+{"id":"nd-11","text":"Ngifuna ilori yokuthutha impahla","language":"nd","expect":{"intent":"search","category":"transport_moving"},"source":"synthetic"}
+{"id":"nd-12","text":"Ngifuna umthungi eLuveve","language":"nd","expect":{"intent":"search","category":"tailoring","area":"Luveve"},"source":"synthetic"}
+{"id":"nd-13","text":"Ngidinga usimende lezitina ePumula","language":"nd","expect":{"intent":"search","category":"building_materials","area":"Pumula"},"source":"synthetic"}
+{"id":"nd-14","text":"Ngifuna umuntu openda izindlu eCowdray Park","language":"nd","expect":{"intent":"search","category":"painting","area":"Cowdray Park"},"source":"synthetic"}
+{"id":"nd-15","text":"Ngifuna umuntu owakha indlu eMagwegwe","language":"nd","expect":{"intent":"search","category":"building","area":"Magwegwe"},"source":"synthetic"}
+{"id":"nd-16","text":"Ngifuna isikolo sokushayela eHillside","language":"nd","expect":{"intent":"search","category":"driving_school","area":"Hillside"},"source":"synthetic"}
+{"id":"nd-17","text":"Ngifuna ikhekhe lomtshado eBurnside","language":"nd","expect":{"intent":"search","category":"cakes","area":"Burnside"},"source":"synthetic"}
+{"id":"nd-18","text":"Sifuna amathende lezitulo zomngcwabo eLuveve","language":"nd","expect":{"intent":"search","category":"event_hire","area":"Luveve"},"source":"synthetic"}
+{"id":"nd-19","text":"Ngidinga inyama yenkomo eMpopoma","language":"nd","expect":{"intent":"search","category":"butchery","area":"Mpopoma"},"source":"synthetic"}
+{"id":"nd-20","text":"Ngifuna imbewu lomanyolo","language":"nd","expect":{"intent":"search","category":"agri_inputs"},"source":"synthetic"}
+{"id":"nd-21","text":"Ngifuna umuntu opheka ukudla komtshado","language":"nd","expect":{"intent":"search","category":"catering"},"source":"synthetic"}
+{"id":"nd-22","text":"Ngifuna olungisa ifriji eBulawayo","language":"nd","expect":{"intent":"search","category":"appliance_repair","area":"Bulawayo"},"source":"synthetic"}
+{"id":"nd-23","text":"Ngifuna ukuthenga ifoni","language":"nd","expect":{"intent":"search","category":"phones"},"source":"synthetic"}
+{"id":"nd-24","text":"Ngifuna umuntu ohlanza indlu eFamona","language":"nd","expect":{"intent":"search","category":"cleaning","area":"Famona"},"source":"synthetic"}
+{"id":"nd-25","text":"Ngifuna ukuwasha izembatho eFamona","language":"nd","expect":{"intent":"search","category":"laundry","area":"Famona"},"source":"synthetic"}
+{"id":"nd-26","text":"Ngifuna utitshala wezibalo","language":"nd","expect":{"intent":"search","category":"tutoring"},"source":"synthetic"}
+{"id":"nd-27","text":"Ngifuna utshwala","language":"nd","expect":{"intent":"blocked","category":"blocked_alcohol"},"source":"synthetic"}
+{"id":"nd-28","text":"Ngidinga isikweletu","language":"nd","expect":{"intent":"blocked","category":"blocked_lending"},"source":"synthetic"}
+{"id":"nd-29","text":"Ngifuna igesi eNkulumane","language":"nd","expect":{"intent":"search","category":"gas_lpg","area":"Nkulumane"},"source":"synthetic"}
+{"id":"nd-30","text":"Ngifuna ihholo lomtshado eHillside","language":"nd","expect":{"intent":"search","category":"venues","area":"Hillside"},"source":"synthetic"}
+{"id":"nd-31","text":"Ngifuna i-solar panel ePumula","language":"nd","expect":{"intent":"search","category":"solar","area":"Pumula"},"source":"synthetic"}
+{"id":"nd-32","text":"Ngifuna umuntu olungisa imoto yami eLuveve","language":"nd","expect":{"intent":"search","category":"car_repairs","area":"Luveve"},"source":"synthetic"}
+{"id":"nd-33","text":"Ngifuna umuntu olukayo inwele eMpopoma","language":"nd","expect":{"intent":"search","category":"salons","area":"Mpopoma"},"source":"synthetic"}
+{"id":"nd-34","text":"Ngifuna umuntu obulala amaphela eFamona","language":"nd","expect":{"intent":"search","category":"pest_control","area":"Famona"},"source":"synthetic"}
+{"id":"nd-35","text":"Ngifuna umthombo","language":"nd","expect":{"intent":"search","category":"borehole"},"source":"synthetic"}
+{"id":"nd-36","text":"Ngifuna ukugebha umthombo eNkulumane","language":"nd","expect":{"intent":"search","category":"borehole","area":"Nkulumane"},"source":"synthetic"}
+{"id":"nd-37","text":"Ngifuna ithange lamanzi eHillside","language":"nd","expect":{"intent":"search","category":"water_delivery","area":"Hillside"},"source":"synthetic"}
+{"id":"nd-38","text":"Ngifuna othatha izithombe emtshadweni","language":"nd","expect":{"intent":"search","category":"photography"},"source":"synthetic"}
+{"id":"nd-39","text":"Ngifuna i-DJ yedili eMagwegwe","language":"nd","expect":{"intent":"search","category":"entertainment","area":"Magwegwe"},"source":"synthetic"}
+{"id":"nd-40","text":"Ngifuna ukuthenga izinkomo eBulawayo","language":"nd","expect":{"intent":"search","category":"livestock","area":"Bulawayo"},"source":"synthetic"}
+{"id":"nd-41","text":"Ngifuna umuntu wogesi eBurnside","language":"nd","expect":{"intent":"search","category":"electrical","area":"Burnside"},"source":"synthetic"}
+{"id":"nd-42","text":"Ngifuna ummeli","language":"nd","expect":{"intent":"search","category":"legal"},"source":"synthetic"}
+{"id":"nd-43","text":"Ngifuna izicathulo zabantwana eBulawayo","language":"nd","expect":{"intent":"search","category":"clothing","area":"Bulawayo"},"source":"synthetic"}
+{"id":"nd-44","text":"Ngifuna ibhethri lemoto","language":"nd","expect":{"intent":"search","category":"car_parts"},"source":"synthetic"}
+{"id":"nd-45","text":"Ngifuna umsebenzi","language":"nd","expect":{"intent":"search","category":null},"source":"synthetic"}
+{"id":"nd-46","text":"Linjani","language":"nd","expect":{"intent":"greeting","category":null},"source":"synthetic"}
+{"id":"nd-47","text":"Ngifuna ifridge entsha eEntumbane","language":"nd","expect":{"intent":"search","category":"appliances","area":"Entumbane"},"source":"synthetic"}
+{"id":"nd-48","text":"Ngifuna iselula ye-Samsung","language":"nd","expect":{"intent":"search","category":"phones"},"source":"synthetic"}

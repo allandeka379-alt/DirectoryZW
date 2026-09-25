@@ -3,6 +3,7 @@ import { KeywordInterpreter } from "../src/ai/keyword-interpreter.js";
 import { Lexicon } from "../src/ai/lexicon.js";
 import { analyzeLocally } from "../src/ai/local.js";
 import { signatureOf } from "../src/ai/reading.js";
+import { findNdebeleRoot, ndebeleStems } from "../src/ai/ndebele.js";
 import { findRoot, withoutJoiner } from "../src/ai/shona.js";
 import type { InterpretContext } from "../src/ai/types.js";
 import { openDb } from "../src/db/client.js";
@@ -54,6 +55,41 @@ describe("Shona word shapes", () => {
   it("strips joining prefixes, and knows which ones make a word describe another", () => {
     expect(withoutJoiner("remuchato")).toContainEqual({ stem: "muchato", describes: true });
     expect(withoutJoiner("nemacheya")).toContainEqual({ stem: "macheya", describes: false });
+  });
+});
+
+describe("Ndebele word shapes", () => {
+  const roots = ["lungis", "theng", "qash", "thuth", "akh", "phek"].sort((a, b) => b.length - a.length);
+
+  it("finds verb roots inside inflected words", () => {
+    expect(findNdebeleRoot("olungisa", roots)?.root).toBe("lungis");
+    expect(findNdebeleRoot("olungisayo", roots)?.root).toBe("lungis");
+    expect(findNdebeleRoot("ukuqasha", roots)?.root).toBe("qash");
+    expect(findNdebeleRoot("umthengisi", roots)?.root).toBe("theng");
+    expect(findNdebeleRoot("ukwakha", roots)?.root).toBe("akh");
+    expect(findNdebeleRoot("owakha", roots)?.root).toBe("akh");
+    expect(findNdebeleRoot("amakhaya", roots)).toBeUndefined(); // homes, not building
+  });
+
+  it("puts back the vowel that \"of\" and \"and\" swallow", () => {
+    expect(ndebeleStems("lomtshado")).toContainEqual({ stem: "umtshado", describes: false });
+    expect(ndebeleStems("yenkomo")).toContainEqual({ stem: "inkomo", describes: true });
+    expect(ndebeleStems("lamathende")).toContainEqual({ stem: "amathende", describes: false });
+    expect(ndebeleStems("emtshadweni").map((s) => s.stem)).toContain("umtshado");
+    expect(ndebeleStems("ifridge").map((s) => s.stem)).toContain("fridge");
+  });
+
+  it("reads Ndebele requests", () => {
+    expect(read("Ngifuna umuntu olungisa ifriji eNkulumane")).toMatchObject({ candidates: ["appliance_repair"], language: "nd" });
+    expect(read("Ngifuna umuntu olungisa ifriji eNkulumane").area?.name).toBe("Nkulumane");
+    expect(read("Ngidinga inyama yenkomo eMpopoma").candidates).toEqual(["butchery"]); // meat of cattle
+    expect(read("Sifuna amathende lezitulo zomngcwabo eLuveve").candidates).toEqual(["event_hire"]);
+    expect(read("Ngifuna ukuqasha indlu eMpopoma").candidates).toEqual(["rentals"]);
+    expect(read("Ngifuna ifridge entsha").candidates).toEqual(["appliances"]);
+    expect(read("Ngifuna utshwala").blocked).toBe("blocked_alcohol");
+    expect(signatureOf(read("Ngifuna ikhekhe lomtshado eBurnside"))).toBe("ikhekhe umtshado");
+    expect(read("ndoda keke remuchato").language).toBe("sn");
+    expect(read("Ngifuna ukuthenga i-solar e Pumula").language).toBe("nd");
   });
 });
 
@@ -123,6 +159,8 @@ describe("how sure the engine is", () => {
     expect(draft.reasons.join(" ")).toContain("draft word");
     expect((await analyze("ndoda keke remuchato", reviewed)).band).toBe("high");
     expect((await analyze("ndirikutsvaga munhu anogadzira fridge ku Glen View", reviewed)).band).toBe("high");
+    expect(await analyze("Ngifuna ikhekhe lomtshado")).toMatchObject({ band: "medium", options: ["cakes"] });
+    expect((await analyze("Ngifuna ikhekhe lomtshado", reviewed)).band).toBe("high");
   });
 
   it("asks when several categories fit, a spelling was guessed or an action doesn't fit", async () => {
