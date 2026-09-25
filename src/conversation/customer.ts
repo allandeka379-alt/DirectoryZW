@@ -249,6 +249,7 @@ function readerContext(t: T): ReaderContext {
     taxonomy: svc.taxonomy,
     gazetteer: svc.gazetteer,
     lexicon: svc.lexicon,
+    classifier: svc.classifier,
     previousRequest: state.lastQuery,
     contactId: contact.id,
   };
@@ -412,6 +413,17 @@ async function notUnderstood(
 
 async function onPhoto(t: T, mediaId: string, caption?: string): Promise<void> {
   const { svc, state, contact } = t;
+  // A clear caption says what they want: no need to pay Claude to look at the photo.
+  const words = caption?.trim();
+  if (words) {
+    const understood = await svc.understanding.understand(words, { ...readerContext(t), localOnly: true });
+    const { interpretation, by, band } = understood;
+    if (interpretation.intent === "search" && interpretation.category_slug && (by === "phrasebook" || (by === "local" && band === "high"))) {
+      resetSearch(state);
+      svc.log.info({ contactId: contact.id }, "Understood a photo from its caption, without reading the photo");
+      return handleInterpretation(t, `${PHOTO_MARK}${words}`, interpretation, by, understood.reading);
+    }
+  }
   if (!svc.vision) return t.reply(copy.photosNotYet());
   if (!(await svc.budget.allows(contact.id))) return t.reply(copy.photosBusy());
   const image = await fetchMedia(t, mediaId);

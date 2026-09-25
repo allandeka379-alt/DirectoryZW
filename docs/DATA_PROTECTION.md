@@ -16,6 +16,7 @@ A working record of what personal data the service holds, where it goes, and how
 | --- | --- | --- | --- |
 | Customers | WhatsApp number, profile name, messages, requests, shared locations | Find businesses for them, follow up, improve the service | Messages 180 days (`MESSAGE_RETENTION_DAYS`). A request's wording, and the local engine's notes on it, 365 days (`REQUEST_RETENTION_DAYS`); after that only its category, area and outcome remain, for statistics. |
 | Customers | "Did you mean…?" questions we asked them and what they picked | Understand them, and answer the same wording directly next time | 365 days (`REQUEST_RETENTION_DAYS`). The wording's key words and category are kept, unlinked from the person, in the phrasebook. |
+| Customers | The team's labels on a sample of requests (what the customer wanted) | Measure and tune how well requests are understood | With the request: deleted with the customer's data. The eval export (`evals/real*.jsonl`) holds request wording, so keep it private and delete it after use. |
 | Customers | Voice notes and photos | Understand the request | Not stored. Only the transcript or a short description is saved with the message. |
 | Customers | Ratings and reports about businesses | Rank businesses, stop scams | Until the customer deletes their data. Reports stay after that, with the link to the customer removed. |
 | Businesses | Name, WhatsApp number, location, description, photos, price list, ratings | The listing | While listed. Deleting their data removes the listing and photos. |
@@ -29,7 +30,7 @@ Idle chat state is deleted after 90 days (except chats waiting for a person). Fi
 | Provider | Receives | Where |
 | --- | --- | --- |
 | Meta (WhatsApp Cloud API) | All messages, numbers and names | Meta's data centres (outside Zimbabwe) |
-| Anthropic (Claude) | Only requests the local engine can't read (and hasn't seen before), customers' photos, and price-list photos | United States |
+| Anthropic (Claude) | Only requests the local engine can't read (and hasn't seen before), customers' photos whose caption isn't enough, and price-list photos. Field agents' price-list photos go through the Batch API, whose results Anthropic keeps for 29 days. | United States |
 | Google Cloud (Speech-to-Text), if enabled | Voice notes | The region in `GOOGLE_STT_LOCATION` (europe-west4 by default) |
 | Hosting and database provider | Everything in the database | Your chosen region |
 | Storage provider (S3 or R2) | Business photos | Your chosen region |

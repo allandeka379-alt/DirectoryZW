@@ -1,6 +1,8 @@
 import type { Alerts } from "../alerts.js";
 import type { ClaudeBudget } from "../ai/budget.js";
+import type { WordShapeClassifier } from "../ai/classifier.js";
 import type { KeywordInterpreter } from "../ai/keyword-interpreter.js";
+import type { PriceListBatches } from "../ai/price-list-batch.js";
 import type { Lexicon } from "../ai/lexicon.js";
 import type { SpeechToText } from "../ai/speech.js";
 import type { Understander } from "../ai/understanding.js";
@@ -25,6 +27,8 @@ export interface Services {
   gazetteer: Gazetteer;
   /** What words mean to the local engine; rebuilt when words or categories change. */
   lexicon: Lexicon;
+  /** A second opinion from word shapes; retrained as the engine learns (see learning.ts). */
+  classifier?: WordShapeClassifier;
   /** Reads requests: locally first, then the phrasebook, then Claude within budget. */
   understanding: Understander;
   /** The local keyword engine, for classifying business descriptions and tips (never Claude). */
@@ -39,6 +43,8 @@ export interface Services {
   store: FileStore;
   /** Optional: reading photos needs Claude. */
   vision?: Vision;
+  /** Optional: field agents' price-list photos read through the Batch API, at half price. */
+  priceListBatches?: PriceListBatches;
   /** Optional: voice notes need a speech-to-text service. */
   speech?: SpeechToText;
   /** Tells the team when something needs a person. */

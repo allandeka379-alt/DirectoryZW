@@ -83,7 +83,7 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
   ops.get("/system", async () => {
     const { services, config } = app;
     const now = services.now();
-    const [claudeToday, claudeWeek, understood, matched, questions, precision, words] = await Promise.all([
+    const [claudeToday, claudeWeek, understood, matched, questions, precision, words, priceLists, targets] = await Promise.all([
       app.db.query<{ feature: string; calls: number; usd: number }>(
         `SELECT feature, count(*)::int AS calls, COALESCE(sum(cost_usd), 0)::float8 AS usd
            FROM ai_usage WHERE created_at >= $1 GROUP BY feature ORDER BY feature`,
@@ -126,6 +126,36 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
       app.db.query<{ language: string; status: string; words: number }>(
         "SELECT language, status, count(*)::int AS words FROM lexicon GROUP BY 1, 2 ORDER BY 1, 2",
       ),
+      // Field price lists going through the Batch API.
+      one<{ queued: number; submitted: number; failed: number; done_7d: number }>(
+        app.db,
+        `SELECT count(*) FILTER (WHERE status = 'queued')::int AS queued,
+                count(*) FILTER (WHERE status = 'submitted')::int AS submitted,
+                count(*) FILTER (WHERE status = 'failed')::int AS failed,
+                count(*) FILTER (WHERE status = 'done' AND updated_at > now() - interval '7 days')::int AS done_7d
+           FROM price_list_reads`,
+      ),
+      // The Phase 3 targets (docs/UNDERSTANDING.md): the last 7 days, and the labels so far.
+      one<{
+        requests: number;
+        without_claude: number;
+        claude_calls: number;
+        handoffs: number;
+        labelled: number;
+        labelled_right: number;
+      }>(
+        app.db,
+        `SELECT
+           (SELECT count(*)::int FROM requests WHERE understood_by IS NOT NULL AND created_at > now() - interval '7 days') AS requests,
+           (SELECT count(*)::int FROM requests WHERE understood_by IN ('local', 'phrasebook', 'customer')
+               AND created_at > now() - interval '7 days') AS without_claude,
+           (SELECT count(*)::int FROM ai_usage WHERE feature = 'request' AND created_at > now() - interval '7 days') AS claude_calls,
+           (SELECT count(*)::int FROM requests WHERE status = 'handoff' AND created_at > now() - interval '7 days') AS handoffs,
+           (SELECT count(*)::int FROM request_labels) AS labelled,
+           (SELECT count(*)::int FROM request_labels l JOIN requests r ON r.id = l.request_id
+             WHERE (l.intent = 'search' AND r.interpretation->>'intent' = 'search' AND l.category_slug IS NOT DISTINCT FROM r.category_slug)
+                OR (l.intent <> 'search' AND l.intent = r.interpretation->>'intent')) AS labelled_right`,
+      ),
     ]);
     const health = await one<Record<string, unknown>>(
       app.db,
@@ -163,6 +193,9 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
       questions7d: questions,
       precision28d: precision,
       lexicon: { trustDrafts: config.lexiconTrustDrafts, words },
+      priceLists: { batch: !!services.priceListBatches, ...priceLists },
+      targets,
+      local: config.local,
       limits: config.limits,
       retention: config.retention,
       ...health,

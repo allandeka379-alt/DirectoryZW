@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseUnknownWords, type LocalSettings } from "./ai/local.js";
 import { parseTeamHours, type TeamHours } from "./time.js";
 
 const flag = (fallback: boolean) =>
@@ -30,6 +31,9 @@ const EnvSchema = z.object({
   CLAUDE_CALLS_PER_NUMBER_PER_DAY: z.coerce.number().int().min(0).default(5),
   LEXICON_TRUST_DRAFTS: flag(false),
   TEAM_HOURS: z.string().default("Mon-Sat 08:00-18:00"),
+  PRICE_LIST_BATCH: flag(true),
+  LOCAL_UNKNOWN_WORDS: z.string().default("en:1,sn:0,nd:0"),
+  LOCAL_CLASSIFIER_MIN: z.coerce.number().min(0).max(1).default(0.4),
   SPEECH_TO_TEXT_URL: optionalString,
   SPEECH_TO_TEXT_TOKEN: optionalString,
   SPEECH_LANGUAGES: z.string().default("sn,nd,en"),
@@ -100,6 +104,10 @@ export interface Config {
   lexiconTrustDrafts: boolean;
   /** When a person answers chats handed to the team, so customers are told when to expect a reply. */
   teamHours: TeamHours;
+  /** Read field agents' price-list photos through the Batch API (half price, results within hours). */
+  priceListBatch: boolean;
+  /** The local engine's thresholds: unknown words allowed in a straight answer, and the classifier's bar. */
+  local: LocalSettings;
   /** Speech-to-text for voice notes: Google Chirp 2, or any service behind the HTTP contract in src/ai/speech.ts. */
   speech: {
     url?: string;
@@ -172,6 +180,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     claudeBudget: { dailyUsd: e.CLAUDE_DAILY_BUDGET_USD, perNumberPerDay: e.CLAUDE_CALLS_PER_NUMBER_PER_DAY },
     lexiconTrustDrafts: e.LEXICON_TRUST_DRAFTS,
     teamHours: parseTeamHours(e.TEAM_HOURS),
+    priceListBatch: e.PRICE_LIST_BATCH,
+    local: { unknownWords: parseUnknownWords(e.LOCAL_UNKNOWN_WORDS), classifierMin: e.LOCAL_CLASSIFIER_MIN },
     speech: {
       url: e.SPEECH_TO_TEXT_URL,
       token: e.SPEECH_TO_TEXT_TOKEN,

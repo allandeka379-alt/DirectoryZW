@@ -472,4 +472,30 @@ ALTER TABLE requests ADD COLUMN flagged_at timestamptz;
 CREATE INDEX requests_flagged_idx ON requests (flagged_at) WHERE flagged_at IS NOT NULL;
 `,
   },
+  {
+    id: "008_labels_and_batches",
+    sql: /* sql */ `
+-- What real customers actually wanted, labelled by the team: the ground truth for tuning the
+-- local engine's thresholds and choosing Claude's model (Phase 3).
+CREATE TABLE request_labels (
+  request_id uuid PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE,
+  intent text NOT NULL CHECK (intent IN ('search', 'greeting', 'help', 'human', 'out_of_scope', 'blocked', 'unclear')),
+  category_slug text REFERENCES categories(slug),
+  labelled_by text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Field agents' price-list photos read through the Batch API (half price; nobody is waiting).
+CREATE TABLE price_list_reads (
+  photo_id uuid PRIMARY KEY REFERENCES business_photos(id) ON DELETE CASCADE,
+  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'submitted', 'done', 'failed')),
+  batch_id text,
+  attempts integer NOT NULL DEFAULT 0,
+  error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX price_list_reads_status_idx ON price_list_reads (status);
+`,
+  },
 ];

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Gazetteer } from "../directory/gazetteer.js";
 import type { Taxonomy } from "../directory/taxonomy.js";
+import type { WordShapeClassifier } from "./classifier.js";
 import type { Lexicon } from "./lexicon.js";
 
 export const RequestInterpretationSchema = z.object({
@@ -30,6 +31,8 @@ export interface InterpretContext {
   gazetteer?: Gazetteer;
   /** What words mean to the local engine; the seed lexicon when left out. */
   lexicon?: Lexicon;
+  /** A second opinion from word shapes, for words the rules don't know. */
+  classifier?: WordShapeClassifier;
   /** The customer's previous request, for follow-ups like "cheaper ones?". */
   previousRequest?: string;
 }

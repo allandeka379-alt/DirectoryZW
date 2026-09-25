@@ -3,7 +3,7 @@ import type { Logger } from "../logger.js";
 import { searchTokens } from "../text.js";
 import type { ClaudeBudget } from "./budget.js";
 import type { KeywordInterpreter } from "./keyword-interpreter.js";
-import { analyzeLocally, type Band, type LocalAnalysis } from "./local.js";
+import { analyzeLocally, type Band, type LocalAnalysis, type LocalSettings } from "./local.js";
 import { fromPhrasebook, lookup, markUsed, remember, signatureOf, type PhraseEntry } from "./phrasebook.js";
 import type { InterpretContext, RequestInterpretation } from "./types.js";
 
@@ -19,6 +19,8 @@ export interface ReaderContext extends InterpretContext {
   noAsk?: boolean;
   /** Categories the customer ruled out by tapping "Something else". */
   exclude?: string[];
+  /** Only the local engine and the phrasebook: no question and no Claude (e.g. a photo's caption). */
+  localOnly?: boolean;
 }
 
 /** Something that reads requests the local engine couldn't: Claude. Null means it couldn't either. */
@@ -54,6 +56,8 @@ export interface UnderstanderOptions {
   claude?: RequestReader;
   budget?: ClaudeBudget;
   log: Logger;
+  /** The local engine's thresholds (defaults when left out). */
+  settings?: LocalSettings;
 }
 
 /**
@@ -74,7 +78,7 @@ export class Understander {
 
   async understand(text: string, ctx: ReaderContext): Promise<Understanding> {
     const { db, log } = this.opts;
-    const local = await analyzeLocally(text, ctx, this.opts.local);
+    const local = await analyzeLocally(text, ctx, this.opts.local, this.opts.settings);
     const signature = signatureOf(local.reading);
     const reading: ReadingSummary = { band: local.band, candidates: local.candidates, unknown: local.unknown, reasons: local.reasons };
     const exclude = new Set(ctx.exclude ?? []);
@@ -99,6 +103,7 @@ export class Understander {
     if (usable?.source === "team") return remembered(usable);
     if (local.band === "high" && allowed(local.interpretation.category_slug)) return answer(local.interpretation, "local");
     if (usable) return remembered(usable);
+    if (ctx.localOnly) return answer(local.interpretation, "fallback");
 
     const options = local.options.filter(allowed);
     if (local.band === "medium" && options.length && !ctx.noAsk) return answer(local.interpretation, "local", local.reasons, options);

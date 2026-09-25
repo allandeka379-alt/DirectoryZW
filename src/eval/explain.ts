@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import { KeywordInterpreter } from "../ai/keyword-interpreter.js";
+import { trainClassifier } from "../ai/learning.js";
 import { Lexicon } from "../ai/lexicon.js";
 import { analyzeLocally } from "../ai/local.js";
 import { signatureOf } from "../ai/reading.js";
@@ -28,7 +29,8 @@ const db = await openDb({});
 await migrate(db);
 await seedReferenceData(db);
 const [taxonomy, gazetteer] = await Promise.all([Taxonomy.load(db), Gazetteer.load(db)]);
-const ctx = { taxonomy, gazetteer, lexicon: await Lexicon.load(db, taxonomy, { trustDrafts: values["trust-drafts"] }) };
+const lexicon = await Lexicon.load(db, taxonomy, { trustDrafts: values["trust-drafts"] });
+const ctx = { taxonomy, gazetteer, lexicon, classifier: await trainClassifier({ taxonomy, lexicon, gazetteer }) };
 const keywords = new KeywordInterpreter();
 
 for (const text of positionals) {

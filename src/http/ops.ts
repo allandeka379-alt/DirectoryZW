@@ -20,6 +20,7 @@ import { logAction } from "../ops/accounts.js";
 import { normalizeText, normalizeZimPhone } from "../text.js";
 import { registerAdminRoutes } from "./ops-admin.js";
 import { actorOf, opsAuthHook, refuseUnlessAdmin, registerAccountRoutes } from "./ops-auth.js";
+import { registerLabelRoutes } from "./ops-labels.js";
 import { registerWordRoutes } from "./ops-words.js";
 import { serveFile } from "./static.js";
 
@@ -57,6 +58,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
       registerAccountRoutes(ops, app);
       registerAdminRoutes(ops, app);
       registerWordRoutes(ops, app);
+      registerLabelRoutes(ops, app);
 
       // ----- Overview -----
 

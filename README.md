@@ -90,7 +90,8 @@ Claude is the backup, not the first reader. The design and its reasoning are in 
   - `CLAUDE_CALLS_PER_NUMBER_PER_DAY` (default 5) caps what one number can cause.
   - Every call's cost is recorded, and the **System** screen shows today's spend and how requests were understood.
 - **Business sign-up never uses Claude:** the local engine reads the description, and when it can't, the owner picks the category from a list.
-- **Photos:** a customer's "find me this" photo becomes a request. An owner's price-list photo becomes items and prices, and the owner confirms before anything is saved. Price-list photos field agents take are read in the background, and wait for the next day when the budget is spent.
+- **Photos:** a customer's "find me this" photo becomes a request, unless its caption says clearly what they want; then the photo isn't sent to Claude at all. An owner's price-list photo becomes items and prices, and the owner confirms before anything is saved.
+- **Field agents' price-list photos** go through the Batch API at half price (`PRICE_LIST_BATCH`, on by default). Every 20 minutes the waiting photos go in one batch, and results are saved when it ends, usually within the hour. They wait when the day's budget is spent.
 
 Measure before changing models: `npm run eval -- --claude --model …` compares models on labelled requests. Plain `npm run eval` shows how many requests the local engine answers on its own, and whether any of those confident answers were wrong.
 
@@ -121,6 +122,15 @@ The team keeps teaching it:
 A customer who says the assistant doesn't understand ("useless", "hauna kunzwisisa", "awuzwisisi") goes straight to a person. Handoff messages say when a person will reply, from `TEAM_HOURS`.
 
 `npm run explain -- "ndoda keke remuchato ku Budiriro"` shows how a message is read, word by word.
+
+**Tuning on real traffic (Phase 3).** The team labels real requests in the ops console (**Label requests**); about 300 are enough. Then:
+- `npm run eval:export -- --out evals/real.jsonl --labelled` exports them as the eval's answer key.
+- `npm run eval -- --file evals/real.jsonl --tune` suggests the thresholds: `LOCAL_UNKNOWN_WORDS`, unknown words a straight answer may have per language, and `LOCAL_CLASSIFIER_MIN`, the word-shape classifier's bar.
+- `npm run eval -- --file evals/real.jsonl --claude --model claude-sonnet-5,claude-haiku-4-5` compares models on the requests Claude would actually see, with cost per 100 requests.
+
+The **System** screen tracks the targets: understood without Claude, Claude calls per 100 requests, handoffs, the weekly check, and labelling progress.
+
+The **word-shape classifier** is a second opinion for words the rules don't know. It finds the known word most like a misspelling ("fotographer" → "photographer"), and only ever offers it as a "Did you mean…?" option.
 
 ## Voice notes
 
@@ -211,7 +221,8 @@ The ops console at `/ops` is built on these JSON endpoints. They live under `/op
 | `POST /lexicon` | Add a word or change what one means (`term`, `language`, `role`, `categories`, `action`, `root`, `gloss`); approved straight away |
 | `POST /lexicon/review` | Approve, reject or reopen words (`{ "ids": [..], "status": "approved" }`) |
 | `POST /requests/:id/teach` | What a customer actually wanted (`{ "category": "…" }`): corrects the request and remembers the wording |
-| `GET /review/sample?days=7`, `POST /requests/:id/review` | Answers the engine gave on its own, for the weekly check; record `right`, `should_ask` or `wrong` with the right `category` |
+| `GET /review/sample?days=7`, `POST /requests/:id/review` | Answers customers said were wrong, then answers the engine gave on its own, for the weekly check; record `right`, `should_ask` or `wrong` with the right `category` |
+| `GET /labels/next?limit=20`, `POST /requests/:id/label`, `GET /labels/summary` | Real requests to label (`{ "intent": "search", "category": "…" }`), and how often each step of the ladder was right |
 | `GET /categories`, `POST /categories/:slug/synonyms` | Categories with their words; add or remove words (`{ "add": ["kombi"] }`), effective immediately and kept across restarts |
 
 The field app talks to `/field/api` with the agent's token:
@@ -233,7 +244,8 @@ The field app talks to `/field/api` with the agent's token:
 | `npm run templates [-- --create]` | Check (or submit) the WhatsApp message templates |
 | `npm run eval [-- --claude --model …]` | Score request understanding on `evals/requests.jsonl`, and show what the ladder does with each: answered locally, "Did you mean…?", or passed on (free; `--trust-drafts` as if the Shona words were approved; `--claude` calls the API) |
 | `npm run explain -- "text"` | Show how the local engine reads a message, word by word |
-| `npm run eval:export -- --out evals/real.jsonl` | Export real requests to label for the eval (kept out of git) |
+| `npm run eval:export -- --out evals/real.jsonl [--labelled]` | Export real requests for the eval: the team's labelled ones, or a sample to label by hand (kept out of git) |
+| `npm run eval -- --tune` | Suggest `LOCAL_UNKNOWN_WORDS` and `LOCAL_CLASSIFIER_MIN` from the labelled examples |
 
 Tests run two at a time because each starts its own embedded Postgres; set `VITEST_MAX_WORKERS` higher on a machine with more than 8 GB of memory.
 

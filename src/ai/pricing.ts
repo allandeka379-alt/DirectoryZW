@@ -24,12 +24,13 @@ const PRICES: { prefix: string; input: number; output: number; cacheRead: number
 /** An unknown model is priced like Opus, so the budget errs on the safe side. */
 const UNKNOWN = { input: 5, output: 25, cacheRead: 0.1 };
 
-export function costOf(model: string, usage: Usage): number {
+/** What a call cost. The Batch API charges half. */
+export function costOf(model: string, usage: Usage, opts: { batch?: boolean } = {}): number {
   const p = PRICES.find((x) => model.startsWith(x.prefix)) ?? UNKNOWN;
   const dollars =
     usage.input_tokens * p.input +
     (usage.cache_read_input_tokens ?? 0) * p.input * p.cacheRead +
     (usage.cache_creation_input_tokens ?? 0) * p.input * 1.25 +
     usage.output_tokens * p.output;
-  return dollars / 1_000_000;
+  return (dollars / 1_000_000) * (opts.batch ? 0.5 : 1);
 }

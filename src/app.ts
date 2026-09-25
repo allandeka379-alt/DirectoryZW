@@ -4,7 +4,9 @@ import { ClaudeBudget } from "./ai/budget.js";
 import { ClaudeInterpreter } from "./ai/claude-interpreter.js";
 import { GoogleSpeechToText, loadServiceAccount } from "./ai/google-speech.js";
 import { KeywordInterpreter } from "./ai/keyword-interpreter.js";
+import { trainClassifier } from "./ai/learning.js";
 import { Lexicon } from "./ai/lexicon.js";
+import { ClaudePriceListBatches, type PriceListBatches } from "./ai/price-list-batch.js";
 import { HttpSpeechToText, SimulatorSpeechToText, type SpeechToText } from "./ai/speech.js";
 import { Understander, type RequestReader } from "./ai/understanding.js";
 import { ClaudeVision, type Vision } from "./ai/vision.js";
@@ -41,6 +43,8 @@ export interface App {
   reloadTaxonomy(): Promise<void>;
   /** Re-read the lexicon after words are added, approved or rejected. */
   reloadLexicon(): Promise<void>;
+  /** Relearn the classifier from what's known now (after teaching, labelling, new words). */
+  retrainClassifier(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -53,6 +57,7 @@ export interface AppOptions {
   /** Pass null to switch a feature off even when it is configured. */
   claude?: RequestReader | null;
   vision?: Vision | null;
+  priceListBatches?: PriceListBatches | null;
   speech?: SpeechToText | null;
   log?: Logger;
   now?: () => Date;
@@ -98,8 +103,11 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
   const claudeOpts = client ? { client, model: config.claudeModel, brand: config.brandName, log, alerts, meter: budget } : undefined;
   const keywords = new KeywordInterpreter();
   const claude = pick(opts.claude, () => (claudeOpts ? new ClaudeInterpreter(claudeOpts) : undefined));
-  const understanding = new Understander({ db, local: keywords, claude, budget, log });
+  const understanding = new Understander({ db, local: keywords, claude, budget, log, settings: config.local });
   const vision = pick(opts.vision, () => (claudeOpts ? new ClaudeVision(claudeOpts) : undefined));
+  const priceListBatches = pick(opts.priceListBatches, () =>
+    client && config.priceListBatch ? new ClaudePriceListBatches({ client, model: config.claudeModel, meter: budget }) : undefined,
+  );
   const speech = pick(opts.speech, () => {
     const google = config.speech.google;
     if (google) {
@@ -137,11 +145,16 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     media,
     store,
     vision,
+    priceListBatches,
     speech,
     alerts,
     log,
     now,
   };
+  async function retrainClassifier(): Promise<void> {
+    if (config.local.classifierMin > 0) services.classifier = await trainClassifier({ ...services, db });
+  }
+  await retrainClassifier();
   const engine = new ConversationEngine(services);
   const handlers = jobHandlers(services);
   await scheduleRecurringJobs(services);
@@ -159,10 +172,13 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     reloadTaxonomy: async () => {
       services.taxonomy = await Taxonomy.load(db);
       services.lexicon = services.lexicon.withTaxonomy(services.taxonomy);
+      await retrainClassifier();
     },
     reloadLexicon: async () => {
       services.lexicon = await Lexicon.load(db, services.taxonomy, lexiconOptions);
+      await retrainClassifier();
     },
+    retrainClassifier,
     close: async () => {
       await engine.idle();
       await db.close();

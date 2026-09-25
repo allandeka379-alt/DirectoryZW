@@ -8,6 +8,8 @@ import type { Channel } from "../whatsapp/types.js";
 import type { Services } from "./context.js";
 import * as copy from "./copy.js";
 import { Ids } from "./ids.js";
+import { trainClassifier } from "../ai/learning.js";
+import { PRICE_LIST_BATCH_EVERY_MS, queuePriceListRead, runPriceListBatches } from "./price-list-batches.js";
 import { getContactById } from "./store.js";
 
 /** Background jobs the conversation schedules. */
@@ -50,9 +52,30 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
       }
     },
 
+    /** Every hour: relearn the word-shape classifier from the phrasebook's newest answers. */
+    retrain_classifier: async () => {
+      try {
+        if (svc.config.local.classifierMin > 0) svc.classifier = await trainClassifier({ ...svc });
+      } finally {
+        await svc.jobs.enqueue("retrain_classifier", {}, new Date(svc.now().getTime() + 3600_000));
+      }
+    },
+
+    /** Every 20 minutes: collect finished price-list batches, and send queued photos off in a new one. */
+    price_list_batches: async () => {
+      try {
+        const result = await runPriceListBatches(svc);
+        if (result.collected || result.submitted) svc.log.info(result, "Price-list batches");
+      } finally {
+        await svc.jobs.enqueue("price_list_batches", {}, new Date(svc.now().getTime() + PRICE_LIST_BATCH_EVERY_MS));
+      }
+    },
+
     /** A field agent photographed a price list: read it into the listing. */
     read_price_list: async (payload) => {
       if (!svc.vision) return;
+      // With the Batch API on, the photo waits for the next batch: half the price, and nobody is waiting.
+      if (svc.priceListBatches) return queuePriceListRead(svc, String(payload.photoId ?? ""));
       // Over today's Claude budget: try again tomorrow rather than failing.
       if (!(await svc.budget.allows())) {
         await svc.jobs.enqueue("read_price_list", payload, nextDailyRun(svc.now()));
@@ -128,7 +151,9 @@ export async function scheduleRecurringJobs(svc: Services): Promise<void> {
   const recurring: [string, Date][] = [
     ["weekly_summaries", nextWeeklyRun(svc.now())],
     ["retention", nextDailyRun(svc.now())],
+    ["retrain_classifier", new Date(svc.now().getTime() + 3600_000)],
   ];
+  if (svc.priceListBatches) recurring.push(["price_list_batches", new Date(svc.now().getTime() + PRICE_LIST_BATCH_EVERY_MS)]);
   for (const [kind, runAt] of recurring) {
     const queued = await svc.db.query("SELECT 1 FROM jobs WHERE kind = $1 AND status IN ('queued', 'running') LIMIT 1", [kind]);
     if (!queued.length) await svc.jobs.enqueue(kind, {}, runAt);

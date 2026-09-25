@@ -157,3 +157,15 @@
 {"id":"nd-46","text":"Linjani","language":"nd","expect":{"intent":"greeting","category":null},"source":"synthetic"}
 {"id":"nd-47","text":"Ngifuna ifridge entsha eEntumbane","language":"nd","expect":{"intent":"search","category":"appliances","area":"Entumbane"},"source":"synthetic"}
 {"id":"nd-48","text":"Ngifuna iselula ye-Samsung","language":"nd","expect":{"intent":"search","category":"phones"},"source":"synthetic"}
+{"id":"typo-01","text":"i need a fotographer","language":"en","expect":{"intent":"search","category":"photography"},"source":"synthetic"}
+{"id":"typo-02","text":"looking for a plumbaa in Mbare","language":"en","expect":{"intent":"search","category":"plumbing","area":"Mbare"},"source":"synthetic"}
+{"id":"typo-03","text":"mekaniki ku Kuwadzana","language":"sn","expect":{"intent":"search","category":"car_repairs","area":"Kuwadzana"},"source":"synthetic"}
+{"id":"typo-04","text":"boreholl in Ruwa","language":"en","expect":{"intent":"search","category":"borehole","area":"Ruwa"},"source":"synthetic"}
+{"id":"typo-05","text":"ndoda mafrijji ku Glen View","language":"sn","expect":{"intent":"search","category":"appliances","area":"Glen View"},"source":"synthetic"}
+{"id":"typo-06","text":"tailer in Highfield","language":"en","expect":{"intent":"search","category":"tailoring","area":"Highfield"},"source":"synthetic"}
+{"id":"typo-07","text":"butchary near Mbare","language":"en","expect":{"intent":"search","category":"butchery","area":"Mbare"},"source":"synthetic"}
+{"id":"typo-08","text":"ndoda kekhe","language":"sn","expect":{"intent":"search","category":"cakes"},"source":"synthetic"}
+{"id":"typo-09","text":"carpentar in Avondale","language":"en","expect":{"intent":"search","category":"carpentry","area":"Avondale"},"source":"synthetic"}
+{"id":"typo-10","text":"solr panal in Kwekwe","language":"en","expect":{"intent":"search","category":"solar","area":"Kwekwe"},"source":"synthetic"}
+{"id":"typo-11","text":"elektrishan in Belvedere","language":"en","expect":{"intent":"search","category":"electrical","area":"Belvedere"},"source":"synthetic"}
+{"id":"typo-12","text":"fridj repair in Hatfield","language":"en","expect":{"intent":"search","category":"appliance_repair","area":"Hatfield"},"source":"synthetic"}

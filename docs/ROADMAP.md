@@ -116,7 +116,7 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
 - [x] Removed "found online" web search, and ask-around (related suppliers do its job), with their tables and two message templates
 - [x] Tests (114)
 - [x] Phase 2: done for English and Shona in Milestone 6
-- [ ] Phase 3: thresholds and escalation model tuned on about 300 labelled real requests; optional small local classifier; caption-first photos; field price lists through the Batch API
+- [x] Phase 3 tools: done in Milestone 8 (the tuning itself needs about 300 labelled real requests)
 
 ## Milestone 6: the local engine reads Shona (Phase 2, Shona first)
 
@@ -179,6 +179,23 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
 - [x] Migration 007; tests (147)
 - [ ] Native speakers review the Shona and Ndebele word lists ([WORD_LIST.md](WORD_LIST.md))
 - [ ] Set `TEAM_HOURS` to the team's real hours
+
+## Milestone 8: tuning on real traffic (Phase 3 tools)
+
+- [x] **Label requests** screen: the team labels a random sample of real requests (what the customer wanted). It shows how often each step of the ladder was right, and a correction teaches the phrasebook.
+  - `npm run eval:export -- --labelled` makes the eval's answer key from the labels.
+- [x] **Thresholds as settings:** `LOCAL_UNKNOWN_WORDS` (unknown words a straight answer may have, per language) and `LOCAL_CLASSIFIER_MIN`.
+  - `npm run eval -- --tune` shows each value's coverage and precision, and suggests the best at 98% precision.
+- [x] **Choosing Claude's model:** `npm run eval -- --claude --model a,b` compares models on the requests the local engine passes on, with accuracy and cost per 100 customer requests.
+- [x] **The word-shape classifier:** for words the rules don't know, the known word most like each one ("fotographer" → "photographer").
+  - It only offers "Did you mean…?" options; its guesses go through the action rules.
+  - It learns from category words, the lexicon, the phrasebook and the labels, and is retrained hourly.
+- [x] **Caption-first photos:** a caption the engine understands on its own is used without sending the photo to Claude.
+- [x] **Field price lists through the Batch API** (half price): photos are sent every 20 minutes and results saved when the batch ends, with up to three tries. The System screen shows the queue. `PRICE_LIST_BATCH=false` switches it off.
+- [x] **Targets on the System screen:** understood without Claude, Claude calls per 100 requests, handoffs, the weekly check, labelling progress.
+- [x] **Eval:** 171 requests, including 12 misspellings. None is confidently wrong; the classifier turns 4 of the 10 it could help with into the right question.
+- [x] Migration 008; tests (159)
+- [ ] Label about 300 real requests, run the tuning and the model comparison, and set `LOCAL_UNKNOWN_WORDS`, `LOCAL_CLASSIFIER_MIN` and `CLAUDE_MODEL` from the results
 
 ## Later: monetization (only after traction)
 

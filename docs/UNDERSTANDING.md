@@ -2,7 +2,7 @@
 
 **Goal:** our own engine understands normal requests, for free and instantly. It calls Claude only for messages it genuinely can't read, and hands to a person when Claude can't either. Every hard case it sees once should be easy the next time.
 
-**Status:** Phase 1 is built (Milestone 5). Phase 2 is built: English and Shona in Milestone 6, and Ndebele and the rest in Milestone 7. Phase 3 needs real traffic. Since this was written, three decisions changed it:
+**Status:** Phases 1 and 2 are built (Milestones 5 to 7). Phase 3's tools are built (Milestone 8); running them needs real traffic: about 300 labelled requests. Since this was written, three decisions changed it:
 
 - **No web search.** "Found online" is gone. We're building up our own suppliers.
 - **Nothing found means suppliers first, then people.** When no supplier in the category is nearby, the customer gets suppliers in related categories (a gadget nobody lists goes to our electronics shops). When nothing fits, a person takes over in the same reply.
@@ -258,11 +258,29 @@ Each phase ships on its own and must keep the eval at least as accurate as Claud
   - With them approved: 97% are answered locally, all correctly.
   - The developers wrote these examples alongside the word lists, so real traffic will score lower. That's what Phase 3 measures.
 
-**Phase 3: tune on real traffic (after the first 2–4 weeks)**
-- Label about 300 real requests and set the HIGH and MEDIUM thresholds from them.
-- Pick the escalation model with the eval.
-- Optionally add a small local classifier as a second opinion. Plain TypeScript is enough, for example a naive Bayes model over letter sequences, trained on the phrasebook and the labelled requests. It helps with spelling variants and Shona and Ndebele word forms.
-- Caption-first photos, and the Batch API for field price lists.
+**Phase 3: tune on real traffic (tools built in Milestone 8; run them after the first 2–4 weeks)**
+- **Labelling** (built): the ops console's **Label requests** screen shows random real requests with what the assistant did. The team says what each customer wanted.
+  - A correction also teaches the phrasebook.
+  - `npm run eval:export -- --labelled` turns the labels into the eval's answer key.
+  - The screen shows how often each step of the ladder was right.
+- **Thresholds** (built):
+  - How many unknown words a straight answer may have, per language, is a setting (`LOCAL_UNKNOWN_WORDS`, now en:1, sn:0, nd:0).
+  - `npm run eval -- --tune --file evals/real.jsonl` shows each value's coverage and precision, and suggests the one that answers most at 98% precision.
+  - The classifier's bar is a setting too (`LOCAL_CLASSIFIER_MIN`).
+- **The escalation model** (built): `npm run eval -- --claude --model claude-sonnet-5,claude-haiku-4-5` compares models on the requests Claude actually sees, those the local engine doesn't answer, with accuracy and cost per 100 customer requests.
+- **The classifier** (built): a second opinion for words the rules don't know.
+  - It isn't naive Bayes after all. It finds the known word most like each unknown one, by shared letter patterns (rare ones count more), among words of about the same length ("fotographer" → "photographer"; "controller" isn't taken for "control").
+  - It learns from single words only: category words, the lexicon, the phrasebook and the labels.
+  - It only offers "Did you mean…?" options, never answers. Its guesses go through the action rules ("fridj repair" → appliance repairs).
+  - It's retrained hourly and whenever words change.
+  - On 12 misspelled test requests it turned 4 of 10 unanswerable ones into questions with the right option, and made no wrong guesses.
+- **Caption-first photos** (built): a caption the local engine understands on its own is used without sending the photo to Claude.
+- **The Batch API for field price lists** (built): field agents' price-list photos are sent every 20 minutes in one batch, at half price. Results usually come within the hour, and failures are retried up to three times. Owners' own photos are still read straight away. We skipped downscaling photos, which needs an image library; Claude sizes them down anyway.
+- **Targets** (built): the System screen shows the targets from §9 against the last 7 days: understood without Claude, Claude calls per 100 requests, handoffs, the weekly check, and labelling progress.
+- **To do once there's traffic:**
+  - label about 300 requests
+  - run the tuning and the model comparison
+  - set `LOCAL_UNKNOWN_WORDS`, `LOCAL_CLASSIFIER_MIN` and `CLAUDE_MODEL` from the results
 
 ## Risks and how the design handles them
 

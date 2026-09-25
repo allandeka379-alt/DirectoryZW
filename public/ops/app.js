@@ -426,6 +426,53 @@ const screens = {
     ];
   },
 
+  async label() {
+    const [next, summary, categories] = await Promise.all([api("/labels/next?limit=20"), api("/labels/summary"), api("/categories")]);
+    const byLabel = { local: "Understood locally", phrasebook: "From the phrasebook", customer: "The customer picked", claude: "By Claude", photo: "From a photo", fallback: "Not understood" };
+    const pct = (right, n) => (n ? `${Math.round((100 * right) / n)}%` : "-");
+    // Ways a request can be labelled besides a category.
+    const others = [
+      ["search:", "Something we don't list"],
+      ["greeting:", "Greeting or thanks"],
+      ["out_of_scope:", "A question about something else"],
+      ["human:", "Wants a person"],
+      ["unclear:", "Too vague to tell"],
+    ];
+    const save = async (r, value) => {
+      const [intent, category] = value.includes(":") ? value.split(":") : ["search", value];
+      await post(`/requests/${r.id}/label`, { intent, category: category || null });
+      render();
+    };
+    const pick = (r) => {
+      const select = h("select", {},
+        h("optgroup", { label: "Not a category" }, ...others.map(([v, l]) => h("option", { value: v }, l))),
+        h("optgroup", { label: "Categories" }, ...categories.filter((c) => c.risk !== "blocked").map((c) => h("option", { value: c.slug }, `${c.group_name} › ${c.name}`))));
+      select.value = r.intent === "search" || !r.intent ? (r.category_slug || "search:") : `${r.intent}:`;
+      return select;
+    };
+    return [
+      ...header("Label requests", `What did customers actually want? Label a random sample of real requests: about ${summary.target} are enough to tune the assistant and choose Claude's model (see "npm run eval"). A correction also teaches the assistant.`),
+      h("div", { class: "tiles" },
+        h("div", { class: "tile" }, h("b", {}, `${summary.labelled} of ${summary.target}`), h("span", {}, "Requests labelled")),
+        h("div", { class: "tile" }, h("b", {}, pct(summary.right, summary.labelled)), h("span", {}, "The assistant was right"))),
+      summary.byStep.length ? table([
+        { label: "How it was understood", render: (r) => byLabel[r.by] || r.by || "(not recorded)" },
+        { label: "Labelled", key: "labelled", num: true },
+        { label: "Right", num: true, render: (r) => pct(r.right, r.labelled) },
+      ], summary.byStep) : null,
+      h("h2", {}, "To label"),
+      next.requests.length ? table([
+        { label: "Customer wrote", key: "raw_text" },
+        { label: "The assistant", render: (r) => h("span", { class: "muted" },
+          [r.category_name || (r.intent && r.intent !== "search" ? r.intent : "no category"), byLabel[r.understood_by] || r.understood_by].filter(Boolean).join(" · ")) },
+        { label: "They wanted", render: (r) => {
+          const select = pick(r);
+          return h("div", { class: "row" }, select, h("button", { class: "primary", onclick: () => save(r, select.value) }, "Save"));
+        } },
+      ], next.requests) : h("p", { class: "muted" }, "Nothing left to label from the last 90 days."),
+    ];
+  },
+
   async people() {
     const q = new URLSearchParams(location.hash.split("?")[1]);
     const phone = h("input", { type: "search", placeholder: "Phone number, e.g. 0771234567", value: q.get("phone") || "" });
@@ -523,6 +570,7 @@ const screens = {
         tile(usd(spentToday), `Claude today, of ${usd(s.claude.dailyBudgetUsd)}`, spentToday >= 0.8 * s.claude.dailyBudgetUsd && s.claude.dailyBudgetUsd > 0),
         tile(callsToday, "Claude calls today"),
       ),
+      targetsCard(s),
       h("div", { class: "card" },
         h("p", {}, h("strong", {}, "Requests, last 7 days: "), shares(s.understood7d, byLabel, "by")),
         h("p", {}, h("strong", {}, "Results, last 7 days: "), shares(s.matched7d, matchLabel, "match")),
@@ -535,6 +583,9 @@ const screens = {
           [["sn", "Shona"], ["nd", "Ndebele"]].map(([lang, name]) =>
             `${name} ${wordCount(lang, "approved")} approved, ${wordCount(lang, "draft")} waiting for a native speaker, ${wordCount(lang, "rejected")} rejected`).join("; ") +
           (s.lexicon?.trustDrafts ? ". Draft words are trusted (LEXICON_TRUST_DRAFTS)." : ". Draft words lead to a question until approved.")),
+        s.priceLists?.batch ? h("p", {}, h("strong", {}, "Field price lists (Batch API, half price): "),
+          `${s.priceLists.queued} waiting, ${s.priceLists.submitted} being read, ${s.priceLists.done_7d} read this week` +
+          (s.priceLists.failed ? `, ${s.priceLists.failed} couldn't be read` : "")) : null,
         h("p", { class: "muted" },
           `Claude, last 7 days: ${s.claude.last7Days?.calls ?? 0} calls, ${usd(s.claude.last7Days?.usd)}. ` +
           `Today by use: ${s.claude.today.map((r) => `${r.feature} ${r.calls} (${usd(r.usd)})`).join(", ") || "none"}. ` +
@@ -604,6 +655,32 @@ const screens = {
     ];
   },
 };
+
+/** Where the assistant stands against the targets in docs/UNDERSTANDING.md. */
+function targetsCard(s) {
+  const t = s.targets;
+  if (!t) return null;
+  const check = s.precision28d || { reviewed: 0, right: 0 };
+  const rate = (n, of) => (of ? Math.round((100 * n) / of) : null);
+  const rows = [
+    ["Understood without Claude, last 7 days", rate(t.without_claude, t.requests), "%", "80% or more", (v) => v >= 80],
+    ["Claude calls per 100 requests, last 7 days", t.requests ? Math.round((100 * t.claude_calls) / t.requests) : null, "", "10 or fewer", (v) => v <= 10],
+    ["Handed to a person, last 7 days", rate(t.handoffs, t.requests), "%", "under 2%", (v) => v < 2],
+    ["Answers checked and right, last 4 weeks", rate(check.right, check.reviewed), "%", "98% or more", (v) => v >= 98],
+    ["Labelled real requests the assistant got right", rate(t.labelled_right, t.labelled), "%", `${t.labelled} of 300 labelled`, () => t.labelled >= 300],
+  ];
+  return h("div", { class: "card" },
+    h("p", {}, h("strong", {}, "Targets")),
+    table([
+      { label: "Measure", render: (r) => r[0] },
+      { label: "Now", num: true, render: (r) => (r[1] == null ? "no data yet" : `${r[1]}${r[2]}`) },
+      { label: "Target", render: (r) => r[3] },
+      { label: "", render: (r) => (r[1] == null ? "" : h("span", { class: `tag ${r[4](r[1]) ? "ok" : "warn"}` }, r[4](r[1]) ? "on target" : "not yet")) },
+    ], rows),
+    h("p", { class: "muted" },
+      `Straight answers allow ${Object.entries(s.local.unknownWords).map(([l, n]) => `${l} ${n}`).join(", ")} unknown words (LOCAL_UNKNOWN_WORDS); ` +
+      `the classifier offers guesses from ${Math.round(100 * s.local.classifierMin)}% (LOCAL_CLASSIFIER_MIN). Tune them with npm run eval -- --tune on labelled requests.`));
+}
 
 function handoffCard(chat, categories = []) {
   const text = h("textarea", { placeholder: "Reply as the team…" });

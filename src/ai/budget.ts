@@ -4,11 +4,11 @@ import type { Logger } from "../logger.js";
 import { harareStartOfDay } from "../time.js";
 import { costOf, type Usage } from "./pricing.js";
 
-export type AiFeature = "request" | "photo" | "price_list";
+export type AiFeature = "request" | "photo" | "price_list" | "price_list_batch";
 
 /** Records what each Claude call cost. */
 export interface UsageMeter {
-  record(feature: AiFeature, model: string, usage: Usage, contactId?: string): Promise<void>;
+  record(feature: AiFeature, model: string, usage: Usage, contactId?: string, opts?: { batch?: boolean }): Promise<void>;
 }
 
 export interface ClaudeBudgetOptions {
@@ -41,8 +41,8 @@ export class ClaudeBudget implements UsageMeter {
     return !contactId || mine < this.opts.perNumberPerDay;
   }
 
-  async record(feature: AiFeature, model: string, usage: Usage, contactId?: string): Promise<void> {
-    const cost = costOf(model, usage);
+  async record(feature: AiFeature, model: string, usage: Usage, contactId?: string, opts: { batch?: boolean } = {}): Promise<void> {
+    const cost = costOf(model, usage, opts);
     await this.opts.db.query(
       `INSERT INTO ai_usage (feature, model, contact_id, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,

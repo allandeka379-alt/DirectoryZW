@@ -29,10 +29,11 @@ In order. The code is ready for each step; most of the work here is accounts, ap
 - [ ] **Shona word list** reviewed by a native speaker, ideally two: ops console → **Word list**, or the spreadsheet download. See [WORD_LIST.md](WORD_LIST.md). Until then, Shona requests get a "Did you mean…?" question more often than they need to.
 - [ ] **Ndebele word list** reviewed by a native speaker the same way.
 - [ ] `TEAM_HOURS` set to when the team really answers handed-over chats.
-- [ ] **Understanding requests:**
-  - After the first weeks of real traffic, run `npm run eval:export -- --out evals/real.jsonl`, correct the labels, mark them reviewed, and aim for about 300.
-  - Run `npm run eval -- --claude --file evals/real.jsonl`, then again with a cheaper `--model`.
-  - Switch `CLAUDE_MODEL` only if the cheaper model scores about as well.
+- [ ] **Understanding requests** (Phase 3, after the first 2–4 weeks of real traffic):
+  - Label about 300 real requests in the ops console (**Label requests**), spread over the team, 20 at a time.
+  - `npm run eval:export -- --out evals/real.jsonl --labelled`, then `npm run eval -- --file evals/real.jsonl --tune`. Set `LOCAL_UNKNOWN_WORDS` and `LOCAL_CLASSIFIER_MIN` to what it suggests.
+  - `npm run eval -- --file evals/real.jsonl --claude --model claude-sonnet-5,claude-haiku-4-5`. Switch `CLAUDE_MODEL` only if the cheaper model scores about as well.
+  - Watch the **Targets** on the System screen.
 - [ ] **Voice notes:**
   - Collect 50 real voice notes (with permission), in Shona, Ndebele and English, and check the transcripts (the "I heard" line) against what was said.
   - Turn Ndebele off (remove `zu-ZA` from `GOOGLE_STT_LANGUAGES`) if the Zulu model misleads more than it helps.
