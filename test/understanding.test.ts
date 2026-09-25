@@ -41,9 +41,11 @@ function as(customer: string) {
   };
 }
 
-function rows(m: ReturnType<TestApp["last"]>, section = 0): string[] {
+/** The businesses in a results list (verified ones first), or the rows of one section. */
+function rows(m: ReturnType<TestApp["last"]>, section?: number): string[] {
   if (m.kind !== "list") throw new Error(`Expected a list, got ${m.kind}`);
-  return m.sections[section]!.rows.map((r) => r.title);
+  if (section != null) return m.sections[section]!.rows.map((r) => r.title);
+  return m.sections.flatMap((s) => s.rows).filter((r) => r.id.startsWith("biz:")).map((r) => r.title);
 }
 
 const requestFor = async (text: string) =>
@@ -116,7 +118,8 @@ describe("when nothing matches", () => {
     const c = as(newCustomer());
     await c.consented();
     await c.say("I need a PS5 controller in Avondale");
-    expect(textOf(c.last())).toContain("for *ps5 controller*");
+    // The closest category's stores, said to have it: the wording the owner chose.
+    expect(textOf(c.last())).toContain("that our team has verified, and they have *ps5 controller*");
     expect(rows(c.last())).toEqual(expect.arrayContaining([expect.stringMatching(/^Avondale Electronics/)]));
   });
 
@@ -177,7 +180,7 @@ describe("business sign-up without Claude", () => {
     await b("We restore antique clocks");
     const picker = app.last("business", owner);
     expect(textOf(picker)).toContain("Which of these best describes your business?");
-    expect(rows(picker)).toContain("Home and furniture");
+    expect(rows(picker, 0)).toContain("Home and furniture");
     await app.tap("Home and furniture", "business", owner);
     await app.tap("Furniture", "business", owner);
     expect(textOf(app.last("business", owner))).toContain("• Furniture");

@@ -106,16 +106,48 @@ function unverifiedNote(hits: BusinessView[]): string {
     : "";
 }
 
-export function results(requestId: string, hits: BusinessView[], need: string, place?: string): OutboundMessage {
-  const count = hits.length === 1 ? "1 place" : `${hits.length} places`;
+/**
+ * Results, said with confidence: the businesses our team verified, which have what the customer
+ * asked for (stores, for categories that sell goods) or do it (services). Businesses that listed
+ * themselves only fill gaps (see searchBusinesses); they're counted apart, with a warning.
+ */
+export function results(requestId: string, hits: BusinessView[], need: string, place?: string, goods = false): OutboundMessage {
+  const shown = hits.slice(0, 9);
+  const verified = shown.filter((h) => h.verification === "verified");
+  const unchecked = shown.filter((h) => h.verification !== "verified");
+  const near = place ? ` near ${place}` : "";
+  const noun = (n: number) => (goods ? (n === 1 ? "store" : "stores") : n === 1 ? "business" : "businesses");
+  const some = (n: number) => (n === 1 ? `a ${noun(1)}` : `${n} ${noun(n)}`);
+  const them = (n: number) => (n === 1 ? "it" : "them");
+
+  let body: string;
+  if (verified.length) {
+    const v = verified.length;
+    body = goods
+      ? `We have ${some(v)}${near} that our team has verified, and ${v === 1 ? "it has" : "they have"} *${need}*.`
+      : `We have ${some(v)} for *${need}*${near}, and our team has verified ${them(v)}.`;
+    if (unchecked.length) {
+      const u = unchecked.length;
+      body += ` ${u} more listed ${u === 1 ? "itself" : "themselves"} and ${u === 1 ? "hasn't" : "haven't"} been checked by our team yet.`;
+    }
+  } else {
+    const u = unchecked.length;
+    body =
+      `We don't have a verified ${noun(1)} for *${need}*${near} yet. ${u === 1 ? "This one" : `These ${u}`} listed ` +
+      `${u === 1 ? "itself" : "themselves"} and ${u === 1 ? "hasn't" : "haven't"} been checked by our team.`;
+  }
+  body += ` Tap ${shown.length === 1 ? "it" : "one"} to connect with them.`;
+  if (unchecked.length) body += "\n\n⚠️ Don't pay a deposit before you see the item or the work.";
+
   return {
     kind: "list",
-    body: `I found ${count} for *${need}*${place ? ` near ${place}` : ""}. Tap *See options* and pick one.\n\n✅ = checked in person by our team.${unverifiedNote(hits)}`,
-    button: "See options",
+    body,
+    button: goods ? "See stores" : "See businesses",
     sections: [
-      { title: "Businesses", rows: businessRows(requestId, hits.slice(0, 9)) },
+      { title: "Verified by our team", rows: businessRows(requestId, verified) },
+      { title: "Not checked yet", rows: businessRows(requestId, unchecked) },
       { title: "Not right?", rows: [notWhatIAskedRow(requestId)] },
-    ],
+    ].filter((s) => s.rows.length),
     footer: "Type menu to start a new search",
   };
 }

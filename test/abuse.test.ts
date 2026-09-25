@@ -43,7 +43,7 @@ describe("floods from one number", () => {
     for (let i = 0; i < 18; i++) await c.say(`I need a plumber in Mabelreign ${i}`);
     const texts = c.texts();
     expect(texts.filter((t) => t.includes("faster than I can answer"))).toHaveLength(1);
-    expect(texts.filter((t) => t.startsWith("I found"))).toHaveLength(13); // messages 3 to 15 of the minute
+    expect(texts.filter((t) => t.startsWith("We have"))).toHaveLength(13); // messages 3 to 15 of the minute
   });
 
   it("caps photos and voice notes per day", async () => {

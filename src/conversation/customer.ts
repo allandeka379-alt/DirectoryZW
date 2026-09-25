@@ -373,7 +373,7 @@ async function handleInterpretation(
   if (!place && category?.needsLocation !== false) {
     state.stage = "awaiting_area";
     state.pending = { raw, interpretation, by, reading };
-    return t.reply(copy.askLocation(need(interpretation, category)));
+    return t.reply(copy.askLocation(need(interpretation, category, by)));
   }
   if (area) state.location = place;
   return runSearch(t, raw, interpretation, by, category?.needsLocation === false && !area ? undefined : place, reading);
@@ -491,7 +491,7 @@ async function runSearch(
   });
   state.lastRequestId = request.id;
   state.lastQuery = raw;
-  const what = need(interpretation, category);
+  const what = need(interpretation, category, by);
   const search = {
     lat: place?.lat,
     lng: place?.lng,
@@ -507,7 +507,7 @@ async function runSearch(
   if (hits.length) {
     await saveResults(svc.db, request.id, hits.map((h) => h.id));
     await setRequestStatus(svc.db, request.id, "answered", hits.length, "exact");
-    return t.reply(copy.results(request.id, hits, what, place?.label));
+    return t.reply(copy.results(request.id, hits, what, place?.label, category?.goods));
   }
 
   const related = category ? await searchRelated(svc.db, svc.taxonomy, { ...search, categorySlug: category.slug }) : [];
@@ -615,11 +615,11 @@ async function reshowResults(t: T, requestId: string): Promise<void> {
   );
   const category = svc.taxonomy.get(request.category_slug);
   const place = request.area_id != null ? svc.gazetteer.get(request.area_id)?.name : undefined;
-  const what = need(request.interpretation, category);
+  const what = need(request.interpretation, category, request.understood_by);
   if (!rows.length) return t.reply(copy.askWhatYouNeed(contact.profile_name));
   const views = rows.map((b) => viewOf(t, b, request));
   if (request.match === "related" && category) return t.reply(copy.relatedResults(request.id, views, what, relatedLabel(t, category), place));
-  return t.reply(copy.results(request.id, views, what, place));
+  return t.reply(copy.results(request.id, views, what, place, category?.goods));
 }
 
 /**
@@ -816,8 +816,14 @@ function features(t: T): { photos: boolean; voice: boolean } {
   return { photos: !!t.svc.vision, voice: !!t.svc.speech };
 }
 
-function need(i: RequestInterpretation | undefined, category: Category | undefined): string {
-  return i?.query || category?.name.toLowerCase() || "that";
+/**
+ * What they asked for, as replies name it. Replies are always in English: the customer's own
+ * words are repeated only when they wrote in English (Claude's query is English), otherwise the
+ * category's name is used.
+ */
+function need(i: RequestInterpretation | undefined, category: Category | undefined, by: string | null | undefined): string {
+  const english = i?.language === "en" || by === "claude" || by === "photo";
+  return (english && i?.query) || category?.name.toLowerCase() || "that";
 }
 
 function resetSearch(state: CustomerState): void {

@@ -28,7 +28,7 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
 - [x] Tests (53)
 - [x] Price list from a photo, done in Milestone 3
 
-## Milestone 3: answer more requests (done, except translated replies and semantic search)
+## Milestone 3: answer more requests (done, except semantic search; replies stay in English)
 
 - [x] "Found online": Claude's web search runs when nothing is listed, never for high-scam categories. (Removed in Milestone 5.)
   - Results are labelled unchecked and connect by link only; the business isn't messaged.
@@ -50,7 +50,7 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
   - Adding a word to a category takes effect immediately and survives reseeding.
 - [x] Offline interpreter ignores common Shona and Ndebele filler words ("ndoda", "ku", "ngifuna")
 - [x] Tests (81)
-- [ ] Shona and Ndebele replies. Deferred: the copy needs native-speaker translation and review, not machine translation. The interpreter already detects the language, so this is wiring once translations exist.
+- [x] Replies in English. Decided in Milestone 9: the assistant reads Shona and Ndebele and always answers in English, so no translations are needed.
 - [ ] Semantic search (pgvector). Deferred: it needs an embeddings provider (Anthropic doesn't offer one) and real request data to show it beats keywords plus the growing synonym list. Revisit with the 300-request test set in Milestone 4.
 
 ## Milestone 4: launch readiness (code done; the rest is accounts, approvals and people, see [LAUNCH.md](LAUNCH.md))
@@ -197,6 +197,18 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
 - [x] Migration 008; tests (159)
 - [ ] Label about 300 real requests, run the tuning and the model comparison, and set `LOCAL_UNKNOWN_WORDS`, `LOCAL_CLASSIFIER_MIN` and `CLAUDE_MODEL` from the results
 
+## Milestone 9: English replies, and results that say who we verified
+
+- [x] **Every reply is in English**, whatever language the customer writes in.
+  - Claude's clarifying questions and "needed by" are in English.
+  - Replies repeat the customer's words only when they wrote in English. A Shona or Ndebele request is named by its English category ("ndoda keke remuchato" → *cakes and baking*).
+- [x] **Results say which businesses our team verified**, so customers can trust them:
+  - Goods: "We have 3 stores near Avondale that our team has verified, and they have *iphone 18 pro max*. Tap one to connect with them."
+  - Services: "We have 2 businesses for *plumber* near Mabelreign, and our team has verified them."
+  - Businesses that listed themselves still fill gaps. They're counted apart ("2 more listed themselves and haven't been checked by our team yet"), in their own "Not checked yet" section, with the deposit warning.
+  - Which categories sell goods is a list in `src/db/seed-data/categories.ts` (`goodsCategories`).
+- [x] Migration 009; tests (163)
+
 ## Later: monetization (only after traction)
 
 - [ ] Featured placement, lead credits and sponsored slots, as priced in the feasibility study
@@ -206,7 +218,7 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
 ## Known limitations
 
 - Area coordinates are approximate centroids; refine them from field GPS pins.
-- Replies are in English only. The assistant reads Shona, but replying in it needs translations checked by native speakers.
+- Results say a verified store "has" what the customer asked for because our team checked what it sells (its categories), not its stock of that model. The customer's message to the store names the item, so the store answers about stock.
 - Customers' photos aren't stored, so a person taking over a chat sees Claude's description of the photo, not the photo itself.
 - The related-categories list is a first draft: review it with the field team, especially across groups (solar to electricians, catering to restaurants).
 - The field name for WhatsApp's business-scoped user IDs is unconfirmed; the parser accepts `from` and `from_user_id`.

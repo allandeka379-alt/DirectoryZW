@@ -13,6 +13,8 @@ export interface Category {
   related: string[];
   /** The name, or a shorter label that fits a WhatsApp button. */
   short: string;
+  /** Its businesses sell things (stores) rather than do a job. */
+  goods: boolean;
 }
 
 export interface CategoryMatch {
@@ -44,8 +46,9 @@ export class Taxonomy {
       needs_location: boolean;
       related: string[];
       short_name: string | null;
+      sells_goods: boolean;
     }>(
-      `SELECT slug, name, group_name, synonyms || extra_synonyms AS synonyms, risk, needs_location, related, short_name
+      `SELECT slug, name, group_name, synonyms || extra_synonyms AS synonyms, risk, needs_location, related, short_name, sells_goods
          FROM categories ORDER BY slug`,
     );
     return new Taxonomy(
@@ -58,6 +61,7 @@ export class Taxonomy {
         needsLocation: r.needs_location,
         related: r.related,
         short: r.short_name ?? r.name,
+        goods: r.sells_goods,
       })),
     );
   }

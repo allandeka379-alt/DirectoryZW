@@ -69,8 +69,8 @@ function requestFields(taxonomy: Taxonomy): string {
 - query: a short English search phrase with the key product or service words, brand, size or model, e.g. "samsung 55 inch tv" or "plumber blocked drain". No filler words, no place names.
 - area: the suburb, town or landmark they mention, as written, or null.
 - budget_usd: their maximum budget in US dollars if they give one, else null.
-- needed_by: when they need it, as written ("tomorrow", "Saturday"), else null.
-- clarifying_question: only when a search would be useless without one more detail. One short question in the customer's language. Otherwise null. Never ask for their location; the app asks for that itself.
+- needed_by: when they need it, in English ("tomorrow", "Saturday"), else null.
+- clarifying_question: only when a search would be useless without one more detail. One short question in simple English, whatever language they wrote in: we always reply in English. Otherwise null. Never ask for their location; the app asks for that itself.
 - language: en (English), sn (Shona), nd (Ndebele) or other. Customers often mix English with Shona or Ndebele; pick the main one.
 
 Categories:

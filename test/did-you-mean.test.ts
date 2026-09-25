@@ -44,9 +44,10 @@ function choices(m: OutboundMessage): string[] {
   return [];
 }
 
+/** The businesses in a results list, verified ones first. */
 function rows(m: OutboundMessage): string[] {
   if (m.kind !== "list") throw new Error(`Expected a list, got ${m.kind}: ${textOf(m)}`);
-  return m.sections[0]!.rows.map((r) => r.title);
+  return m.sections.flatMap((s) => s.rows).filter((r) => r.id.startsWith("biz:")).map((r) => r.title);
 }
 
 const requestFor = async (text: string) =>
@@ -65,6 +66,8 @@ describe("Did you mean…?", () => {
     expect(claude.calls).toHaveLength(0);
     await c.tap("Yes");
     expect(rows(c.last())[0]).toMatch(/^Sweet Layers/);
+    // Replies are in English: the category's name, not the customer's Shona words.
+    expect(textOf(c.last())).toMatch(/^We have (a store|\d stores) near Avondale that our team has verified, and (it has|they have) \*cakes and baking\*/);
     expect(await requestFor("ndoda keke remuchato ku Avondale")).toMatchObject({ understood_by: "customer", category_slug: "cakes" });
     const [question] = await app.db.query("SELECT options, chosen FROM clarifications ORDER BY created_at DESC LIMIT 1");
     expect(question).toMatchObject({ options: ["cakes"], chosen: "cakes" });
@@ -188,7 +191,7 @@ describe("Ndebele, and telling us we got it wrong", () => {
     await c.consented();
     await c.say("I need a plumber in Hatfield");
     const list = c.last();
-    expect(list.kind === "list" && list.sections[1]?.rows.map((r) => r.title)).toEqual(["Not what I asked for"]);
+    expect(list.kind === "list" && list.sections.find((s) => s.title === "Not right?")?.rows.map((r) => r.title)).toEqual(["Not what I asked for"]);
     await c.tap("Not what I asked for");
     expect(textOf(c.last())).toContain("Tell me again in other words");
     expect(choices(c.last())).toEqual(["Talk to a person"]);

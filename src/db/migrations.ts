@@ -498,4 +498,12 @@ CREATE TABLE price_list_reads (
 CREATE INDEX price_list_reads_status_idx ON price_list_reads (status);
 `,
   },
+  {
+    id: "009_category_sells_goods",
+    sql: /* sql */ `
+-- Categories whose businesses sell things (phones, furniture, cakes) rather than do a job
+-- (plumbing, photography). Results name them "stores" that "have" what the customer asked for.
+ALTER TABLE categories ADD COLUMN sells_goods boolean NOT NULL DEFAULT false;
+`,
+  },
 ];

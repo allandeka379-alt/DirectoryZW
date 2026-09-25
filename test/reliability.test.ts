@@ -69,7 +69,7 @@ describe("messages survive a crash", () => {
     app.advanceHours(0.1); // six minutes later
     expect(await app.engine.recover()).toBe(1);
     await app.engine.idle();
-    expect(sent(customer).at(-1)).toMatch(/^I found \d places for \*plumber\*/);
+    expect(sent(customer).at(-1)).toMatch(/^We have (a business|\d businesses) for \*plumber\*/);
     const [row] = await app.db.query<{ processed_at: Date | null }>("SELECT processed_at FROM messages WHERE wa_message_id = 'crash-1'");
     expect(row?.processed_at).not.toBeNull();
     expect(await app.engine.recover()).toBe(0); // done once
@@ -113,12 +113,12 @@ describe("replies that fail to send", () => {
         [customer],
       ))[0]?.status;
     expect(await status()).toBe("retrying");
-    expect(sent(customer).at(-1)).not.toMatch(/^I found/);
+    expect(sent(customer).at(-1)).not.toMatch(/^We have/);
 
     app.advanceHours(0.05);
     await app.runJobs();
     expect(await status()).toBe("sent");
-    expect(sent(customer).at(-1)).toMatch(/^I found/);
+    expect(sent(customer).at(-1)).toMatch(/^We have/);
   });
 
   it("doesn't retry errors that won't improve, and alerts on a rejected token", async () => {

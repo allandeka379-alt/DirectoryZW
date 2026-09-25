@@ -1,6 +1,6 @@
 import { seedEntries } from "../ai/lexicon.js";
 import type { Db } from "./client.js";
-import { categories, relatedCategories } from "./seed-data/categories.js";
+import { categories, goodsCategories, relatedCategories } from "./seed-data/categories.js";
 import { areas } from "./seed-data/areas.js";
 import { sampleBusinesses } from "./seed-data/sample-businesses.js";
 
@@ -9,12 +9,22 @@ export async function seedReferenceData(db: Db): Promise<void> {
   await db.transaction(async (tx) => {
     for (const c of categories) {
       await tx.query(
-        `INSERT INTO categories (slug, name, group_name, synonyms, risk, needs_location, related, short_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO categories (slug, name, group_name, synonyms, risk, needs_location, related, short_name, sells_goods)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (slug) DO UPDATE SET name = excluded.name, group_name = excluded.group_name,
            synonyms = excluded.synonyms, risk = excluded.risk, needs_location = excluded.needs_location,
-           related = excluded.related, short_name = excluded.short_name`,
-        [c.slug, c.name, c.group, c.synonyms, c.risk ?? "normal", c.needsLocation ?? true, relatedCategories[c.slug] ?? [], c.short ?? null],
+           related = excluded.related, short_name = excluded.short_name, sells_goods = excluded.sells_goods`,
+        [
+          c.slug,
+          c.name,
+          c.group,
+          c.synonyms,
+          c.risk ?? "normal",
+          c.needsLocation ?? true,
+          relatedCategories[c.slug] ?? [],
+          c.short ?? null,
+          goodsCategories.has(c.slug),
+        ],
       );
     }
     // New seed words are added, and ones nobody has reviewed follow the code. Words a person

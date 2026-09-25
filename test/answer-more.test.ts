@@ -100,7 +100,8 @@ describe("voice notes", () => {
     await c.send({ type: "audio", mediaId: id, voice: true, mimeType: "audio/ogg" });
 
     // What we heard tops the results, rather than costing a message of its own.
-    expect(textOf(c.last())).toMatch(/^🎙️ I heard: “ndoda plumber ku Mabelreign”\n\nI found \d places for \*plumber\* near Mabelreign/);
+    // Replies are in English: the category's name, not the customer's Shona words.
+    expect(textOf(c.last())).toMatch(/^🎙️ I heard: “ndoda plumber ku Mabelreign”\n\nWe have (a business|\d businesses) for \*plumbers\* near Mabelreign/);
     expect(rowsOf(c.last())[0]).toMatch(/^QuickFix/);
     const [logged] = await app.db.query<{ transcript: string }>(
       "SELECT notes->>'transcript' AS transcript FROM messages WHERE body->>'mediaId' = $1",

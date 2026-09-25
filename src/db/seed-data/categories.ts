@@ -12,6 +12,17 @@ export interface CategorySeed {
 }
 
 /**
+ * Categories whose businesses sell things rather than do a job: results call them stores that
+ * "have" what the customer asked for. The rest are services ("businesses for plumbing").
+ */
+export const goodsCategories = new Set([
+  "tv_audio", "phones", "computers", "appliances", "solar", "generators", "gas_lpg", "water_delivery",
+  "building_materials", "hardware", "furniture", "home_decor", "car_parts", "car_sales", "event_hire", "cakes",
+  "groceries", "butchery", "restaurants", "fresh_produce", "clothing", "stationery", "agri_inputs", "livestock",
+  "pharmacy",
+]);
+
+/**
  * Taxonomy v1. Synonyms drive the offline keyword interpreter and are shown to Claude.
  * - high_scam: only verified businesses are shown (rentals, cars, visas).
  * - restricted: not searchable until reviewed against WhatsApp's Commerce Policy (health).
