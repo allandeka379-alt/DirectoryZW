@@ -32,6 +32,7 @@ export const Ids = {
   howItWorks: "bhow",
   menu: "bmenu",
   summary: "bsum",
+  myCustomers: "bleads",
   pause: "bpause",
   resume: "bresume",
   remove: "bremove",

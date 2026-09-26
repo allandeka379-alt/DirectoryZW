@@ -38,11 +38,11 @@ const businesses = (m: OutboundMessage) =>
 
 const businessId = async (name: string) => (await app.db.query<{ id: string }>("SELECT id FROM businesses WHERE name = $1", [name]))[0]!.id;
 
-/** A customer connects with a business from their results; three days later, the follow-up. */
+/** A customer connects with a business from their results; the next day, the (free) follow-up. */
 async function connectAndFollowUp(c: ReturnType<typeof as>, business: string) {
   await c.tap(business);
   await c.tap("Connect me");
-  app.advanceHours(73);
+  app.advanceHours(21);
   await app.runJobs();
 }
 

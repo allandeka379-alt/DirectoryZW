@@ -78,8 +78,11 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
 
   const alerts = opts.alerts ?? new WebhookAlerts({ webhookUrl: config.alertWebhookUrl, brand: config.brandName, log, now });
   const budget = new ClaudeBudget({ db, ...config.claudeBudget, alerts, log, now });
-  const client = config.anthropicApiKey ? new Anthropic({ apiKey: config.anthropicApiKey }) : undefined;
-  const claudeOpts = client ? { client, model: config.claudeModel, brand: config.brandName, log, alerts, meter: budget } : undefined;
+  // A customer is waiting on every call: a short timeout and one retry, not the SDK's ten minutes and two.
+  const client = config.anthropicApiKey
+    ? new Anthropic({ apiKey: config.anthropicApiKey, timeout: config.claudeTimeoutMs, maxRetries: 1 })
+    : undefined;
+  const claudeOpts = client ? { client, model: config.claudeModel, brand: config.brandName, log, alerts, meter: budget, now } : undefined;
   const keywords = new KeywordInterpreter();
   const claude = pick(opts.claude, () => (claudeOpts ? new ClaudeInterpreter(claudeOpts) : undefined));
   const understanding = new Understander({ db, local: keywords, claude, budget, log, settings: config.local });

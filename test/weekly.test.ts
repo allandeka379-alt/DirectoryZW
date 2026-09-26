@@ -11,10 +11,10 @@ describe("nextWeeklyRun", () => {
   });
 });
 
-describe("weekly business summaries", () => {
+describe("weekly business summaries, when switched on", () => {
   let app: TestApp;
   beforeAll(async () => {
-    app = await testApp();
+    app = await testApp({ WEEKLY_SUMMARIES: "always" });
   });
   afterAll(async () => {
     await app.close();
@@ -42,5 +42,30 @@ describe("weekly business summaries", () => {
     const next = await app.db.query<{ run_at: Date }>("SELECT run_at FROM jobs WHERE kind = 'weekly_summaries' AND status = 'queued'");
     expect(next).toHaveLength(1);
     expect(new Date(next[0]!.run_at).toISOString()).toBe(nextWeeklyRun(app.clock.now).toISOString());
+  });
+});
+
+describe("weekly business summaries, by default", () => {
+  let app: TestApp;
+  beforeAll(async () => {
+    app = await testApp();
+  });
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("aren't pushed (they cost money): owners see their week at the top of the menu instead", async () => {
+    const customer = "263775550002";
+    await app.say("hi", customer);
+    await app.tap("I agree", "customer", customer);
+    await app.say("I need a plumber in Mabelreign", customer);
+    const plumber = await app.phoneOf("QuickFix Plumbing (sample)");
+
+    app.clock.now = new Date(nextWeeklyRun(app.clock.now).getTime() + 1000);
+    await app.runJobs();
+    expect(app.outbox("business", plumber)).toHaveLength(0);
+
+    await app.send("business", plumber, { type: "text", text: "menu" });
+    expect(textOf(app.last("business", plumber))).toContain("This week: shown in 1 search · 0 customers connected");
   });
 });

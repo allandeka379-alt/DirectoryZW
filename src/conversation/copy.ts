@@ -683,9 +683,15 @@ export function regCancelled(): OutboundMessage {
   return { kind: "text", text: "Registration cancelled. Type *register* when you're ready." };
 }
 
-export function bizMenu(b: { name: string; status: string; verification: string }, ownsSeveral: boolean): OutboundMessage {
+/** The owner's menu, with their week at the top: free to show, unlike a Monday summary. */
+export function bizMenu(
+  b: { name: string; status: string; verification: string },
+  ownsSeveral: boolean,
+  week?: { shown: number; intros: number },
+): OutboundMessage {
   const rows: { id: string; title: string; description?: string }[] = [
-    { id: Ids.summary, title: "My summary", description: "Searches and customers this week" },
+    { id: Ids.summary, title: "My summary", description: "Searches, customers and rating" },
+    { id: Ids.myCustomers, title: "My customers", description: "Who contacted you through us" },
     { id: Ids.editWhat, title: "Update what I sell", description: "Description and categories" },
     { id: Ids.editArea, title: "Update location", description: "Where customers find you" },
     b.status === "paused"
@@ -697,7 +703,12 @@ export function bizMenu(b: { name: string; status: string; verification: string 
   if (ownsSeveral) rows.push({ id: Ids.switchBusiness, title: "Switch business", description: "Manage one of your other listings" });
   return {
     kind: "list",
-    body: `*${b.name}*\n${b.verification === "verified" ? "✅ Verified" : "Not yet verified"} · ${b.status === "paused" ? "Paused" : "Live"}\n\nWhat would you like to do?`,
+    body:
+      `*${b.name}*\n${b.verification === "verified" ? "✅ Verified" : "Not yet verified"} · ${b.status === "paused" ? "Paused" : "Live"}` +
+      (week
+        ? `\nThis week: shown in ${week.shown} search${week.shown === 1 ? "" : "es"} · ${week.intros} customer${week.intros === 1 ? "" : "s"} connected`
+        : "") +
+      "\n\nWhat would you like to do?",
     button: "Options",
     sections: [{ title: "Your listing", rows }],
   };
@@ -756,6 +767,29 @@ export function bizSummary(name: string, shown: number, intros: number, ratingAv
       `• Shown in ${shown} search${shown === 1 ? "" : "es"}\n` +
       `• ${intros} customer${intros === 1 ? "" : "s"} connected with you\n` +
       `• Rating: ${ratingAvg != null && ratingCount ? `★${ratingAvg.toFixed(1)} from ${ratingCount}` : "no ratings yet"}`,
+  };
+}
+
+/**
+ * Customers who contacted the business through us, by reference code. Lead notices go out only
+ * when they're free, so this is where an owner can always check.
+ */
+export function myCustomers(businessName: string, leads: { ref: string; at: Date; what: string | null; outcome: string | null }[]): OutboundMessage {
+  if (!leads.length) {
+    return { kind: "text", text: `No customers have contacted *${businessName}* through us in the last 30 days yet. Type *menu* for your options.` };
+  }
+  const outcome: Record<string, string> = { sorted: " · ✅ sorted", couldnt_help: " · couldn't help", no_reply: " · said you didn't reply" };
+  const lines = leads.map(
+    (l) =>
+      `• *${l.ref}* · ${l.at.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Harare" })}` +
+      (l.what ? ` · ${l.what.length > 50 ? `${l.what.slice(0, 49)}…` : l.what}` : "") +
+      (l.outcome ? (outcome[l.outcome] ?? "") : ""),
+  );
+  return {
+    kind: "text",
+    text:
+      `Customers who contacted *${businessName}* through us, last 30 days:\n${lines.join("\n")}\n\n` +
+      "They message you directly on WhatsApp, with the reference in their first message. Type *menu* for your options.",
   };
 }
 

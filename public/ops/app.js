@@ -600,6 +600,7 @@ const screens = {
         tile(usd(spentToday), `Claude today, of ${usd(s.claude.dailyBudgetUsd)}`, spentToday >= 0.8 * s.claude.dailyBudgetUsd && s.claude.dailyBudgetUsd > 0),
         tile(callsToday, "Claude calls today"),
       ),
+      costsCard(s.costs),
       targetsCard(s),
       h("div", { class: "card" },
         h("p", {}, h("strong", {}, "Requests, last 7 days: "), shares(s.understood7d, byLabel, "by")),
@@ -683,6 +684,25 @@ const screens = {
   },
 };
 
+/** What running the service costs: Claude and paid WhatsApp templates (docs/HARDENING.md). */
+function costsCard(c) {
+  if (!c) return null;
+  const usd = (n) => `$${Number(n || 0).toFixed(2)}`;
+  const set = c.settings;
+  return h("div", { class: "card" },
+    h("h2", {}, "Running costs"),
+    h("p", {}, h("strong", {}, "Today: "), `Claude ${usd(c.today.claudeUsd)} · ${c.today.templates} paid WhatsApp templates (${usd(c.today.templatesUsd)})`),
+    h("p", {}, h("strong", {}, "This month: "),
+      `Claude ${usd(c.month.claudeUsd)} · ${c.month.templates} templates (${usd(c.month.templatesUsd)}) · heading for ${usd(c.projectedMonthUsd)}` +
+      (c.per1000RequestsUsd != null ? ` · ${usd(c.per1000RequestsUsd)} per 1,000 requests (${c.month.requests} so far)` : "")),
+    h("p", { class: "muted" },
+      `Replies inside a customer's 24-hour window are free. Templates, at about ${usd(c.templatePriceUsd)} each, go out only when: ` +
+      `lead notices ${set.leadNotices === "always" ? "always" : "never (only free ones)"} · ` +
+      `follow-ups ${set.paidFollowUps ? "when the window has closed" : "never (sent free, " + set.followUpDelayHours + " hours after connecting)"} · ` +
+      `weekly summaries ${set.weeklySummaries === "always" ? "every Monday" : set.weeklySummaries === "window_only" ? "never (only free ones)" : "off"} · ` +
+      `at most ${set.templateDailyCap} a day.`));
+}
+
 /** Where the assistant stands against the targets in docs/UNDERSTANDING.md. */
 function targetsCard(s) {
   const t = s.targets;
@@ -709,8 +729,17 @@ function targetsCard(s) {
       `the classifier offers guesses from ${Math.round(100 * s.local.classifierMin)}% (LOCAL_CLASSIFIER_MIN). Tune them with npm run eval -- --tune on labelled requests.`));
 }
 
+/** "3h 20m left" for a chat's free-reply window, or null once it has closed. */
+function windowLeft(closesAt) {
+  const ms = closesAt ? new Date(closesAt).getTime() - Date.now() : 0;
+  if (ms <= 0) return null;
+  const hours = Math.floor(ms / 3600_000);
+  return `${hours ? `${hours}h ` : ""}${Math.floor((ms % 3600_000) / 60_000)}m left`;
+}
+
 function handoffCard(chat, categories = []) {
-  const text = h("textarea", { placeholder: "Reply as the team…" });
+  const left = windowLeft(chat.window_closes_at);
+  const text = h("textarea", { placeholder: left ? "Reply as the team…" : "Their 24-hour window has closed: WhatsApp won't deliver a reply until they message us again.", disabled: !left || null });
   const request = chat.request;
   const nameOf = (slug) => categories.find((c) => c.slug === slug)?.name || slug;
   const teachStatus = h("span", { class: "muted" });
@@ -736,12 +765,16 @@ function handoffCard(chat, categories = []) {
     return h("div", { class: `msg ${m.direction}` }, content || "", h("small", {}, date(m.created_at)));
   });
   return h("div", { class: "card" },
-    h("strong", {}, chat.profile_name || "Customer"), " ", h("span", { class: "muted" }, `+${chat.wa_id} · waiting since ${date(chat.updated_at)}`),
+    h("strong", {}, chat.profile_name || "Customer"), " ",
+    chat.channel === "business" ? [h("span", { class: "tag" }, "business number"), " "] : null,
+    h("span", { class: "muted" }, `+${chat.wa_id} · waiting since ${date(chat.updated_at)}`), " ",
+    left ? h("span", { class: "tag ok", title: "Replies are free and delivered until their 24-hour window closes" }, `Reply window: ${left}`)
+      : h("span", { class: "tag warn" }, "Window closed"),
     h("div", { class: "msgs" }, ...messages),
     teach,
     text,
     h("div", { class: "row" },
-      h("button", { class: "primary", onclick: async () => {
+      h("button", { class: "primary", disabled: !left || null, onclick: async () => {
         if (!text.value.trim()) return;
         await post(`/contacts/${chat.contact_id}/reply`, { text: text.value.trim() });
         render();

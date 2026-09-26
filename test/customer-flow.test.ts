@@ -50,15 +50,16 @@ describe("customer journey", () => {
     expect(url.pathname).toBe(`/${phone}`);
     const ref = url.searchParams.get("text")!.match(/ref ([A-Z0-9]{5})/)![1]!;
 
-    const lead = app.outbox("business", phone).at(-1)!;
-    expect(lead.template).toBe("lead_notification"); // the business hasn't written to us, so a template is required
-    expect(textOf(lead.message)).toContain(ref);
-    expect(textOf(lead.message)).not.toContain(c.outbox()[0]!.to); // the customer's number is never handed over
+    // The business hasn't written to us in 24 hours, so telling it would need a paid template: it
+    // learns about the customer from their own message, which carries the reference.
+    expect(app.outbox("business", phone)).toHaveLength(0);
+    expect(url.searchParams.get("text")).toContain(`ref ${ref}`);
 
-    app.advanceHours(73);
+    // The follow-up goes out inside the window "Connect me" opened, so it's free: no template.
+    app.advanceHours(21);
     expect(await app.runJobs()).toBeGreaterThanOrEqual(1);
     const followUp = c.outbox().at(-1)!;
-    expect(followUp.template).toBe("follow_up");
+    expect(followUp.template).toBeUndefined();
     expect(textOf(followUp.message)).toContain("QuickFix Plumbing");
 
     await c.tap("Yes, sorted");
@@ -98,8 +99,9 @@ describe("customer journey", () => {
     await c.tap("Msasa Event Hire");
     await c.tap("Connect me");
     expect(c.last().kind).toBe("cta_url");
-    const eventHire = await app.phoneOf("Msasa Event Hire (sample)");
-    expect(textOf(app.last("business", eventHire))).toContain("wedding venue");
+    const link = c.last();
+    if (link.kind !== "cta_url") throw new Error(`Expected a link, got ${link.kind}`);
+    expect(new URL(link.url).searchParams.get("text")).toContain("wedding venue");
   });
 
   it("refuses blocked requests and off-topic questions", async () => {

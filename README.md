@@ -65,6 +65,7 @@ Rules the code enforces:
 - **Our suppliers, then people.** A request is answered from suppliers in its category. When none are nearby, the customer gets suppliers in related categories: a gadget nobody lists goes to the electronics shops. Related categories are a deliberate list in `src/db/seed-data/categories.ts`, and trades and professional services aren't cross-referred. When nothing fits, a person takes over straight away. Both kinds show up in supply gaps for the field team.
 - **Local first.** Greetings, help, "agent", blocked items and clear requests, in English or Shona, are understood without Claude. When one to three categories fit, or the request rests on Shona words nobody has checked yet, the customer taps "Did you mean…?" instead. Claude is asked only about wording the engine can't read at all, and only within the daily budget. Taps, Claude's answers and the team's corrections are remembered, so the same wording is never asked about twice. What nobody understands after one "please say it differently" goes to a person.
 - **Typed messages only, for now.** Voice notes and photos aren't downloaded or read: customers and owners are asked to type instead. It keeps running costs down (no speech-to-text, no Claude for images). Items on price lists read before this change still show on business cards.
+- **Free conversations.** Replies inside the 24-hour window a person's own message opens cost nothing. The follow-up goes out 20 hours after "Connect me", inside that window. A business hears about a new customer only while its own window is open; otherwise the customer's first message, which carries the reference, tells it. Owners see their week at the top of the business menu and their customers under **My customers**, instead of a paid Monday summary. Paid templates are off unless switched on, and capped per day. The **System** screen shows the running costs. See [docs/HARDENING.md](docs/HARDENING.md).
 - **We keep our promise.** The follow-up asks customers how it went, and "didn't reply" or "didn't have it" answers count against the business. Business cards show when our team checked them and, once five customers have answered, how many got what they needed. Verified businesses that keep letting customers down, have open reports or were verified over a year ago go on the Re-checks screen for the field team. Reports left open for a day raise an alert.
 - **Nothing is lost.** Every incoming message is saved before WhatsApp is told it arrived. Anything a crash leaves unhandled is picked up again. Replies that fail for a temporary reason are resent.
 - **Limits per number.** Floods of messages or reports from one number are cut off politely. A listing is paused automatically only after several customers who contacted it report it.
@@ -83,9 +84,11 @@ Claude is the backup, not the first reader. The design and its reasoning are in 
   - server-side refusal fallbacks are on (`fallbacks: "default"`)
   - any failure returns to the local reading, so the chat never stalls
 - **Budget:**
-  - `CLAUDE_DAILY_BUDGET_USD` (default $5) stops Claude calls for the rest of the day in Harare, and the team is alerted at 80% and 100%.
-  - `CLAUDE_CALLS_PER_NUMBER_PER_DAY` (default 5) caps what one number can cause.
+  - `CLAUDE_DAILY_BUDGET_USD` (default $1) stops Claude calls for the rest of the day in Harare, and the team is alerted at 80% and 100%.
+  - `CLAUDE_CALLS_PER_NUMBER_PER_DAY` (default 3) caps what one number can cause.
   - Every call's cost is recorded, and the **System** screen shows today's spend and how requests were understood.
+  - A call gives up after `CLAUDE_TIMEOUT_SECONDS` (default 6) with one retry. After three failures in a row, Claude is skipped for five minutes.
+  - The prompt is marked for caching only when the previous call was under four minutes ago, because a cache write costs 1.25 times the price and only pays off if another call reads it.
 - **Business sign-up never uses Claude:** the local engine reads the description, and when it can't, the owner picks the category from a list.
 
 Measure before changing models: `npm run eval -- --claude --model …` compares models on labelled requests. Plain `npm run eval` shows how many requests the local engine answers on its own, and whether any of those confident answers were wrong.

@@ -79,6 +79,7 @@ export async function handleBusinessTurn(t: T): Promise<void> {
     if (state.stage) return continueStage(t, c.text);
     if (REGISTER_WORDS.includes(cmd)) return startRegistration(t);
     if (["summary", "stats"].includes(cmd)) return withBusiness(t, (b) => sendSummary(t, b));
+    if (["customers", "my customers", "leads"].includes(cmd)) return withBusiness(t, (b) => showCustomers(t, b));
     if (cmd === "pause") return withBusiness(t, (b) => setPaused(t, b, true));
     if (cmd === "resume") return withBusiness(t, (b) => setPaused(t, b, false));
     if (cmd === "remove") return withBusiness(t, () => t.reply(copy.bizConfirmRemove()));
@@ -135,6 +136,8 @@ async function onAction(t: T, id: string): Promise<void> {
       return t.reply(copy.bizHowItWorks(t.svc.config.brandName));
     case "bsum":
       return withBusiness(t, (b) => sendSummary(t, b));
+    case "bleads":
+      return withBusiness(t, (b) => showCustomers(t, b));
     case "bpause":
       return withBusiness(t, (b) => setPaused(t, b, true));
     case "bresume":
@@ -168,7 +171,33 @@ async function withBusiness(t: T, fn: (b: Business) => Promise<void>): Promise<v
 async function showMenu(t: T): Promise<void> {
   const owned = await businessesOwnedBy(t.svc.db, t.contact.id);
   if (!owned.length) return t.reply(copy.bizWelcome(t.svc.config.brandName));
-  return withBusiness(t, (b) => t.reply(copy.bizMenu(b, owned.length > 1)));
+  return withBusiness(t, async (b) => t.reply(copy.bizMenu(b, owned.length > 1, await weekStats(t, b))));
+}
+
+/** Searches the business showed up in, and customers who contacted it, in the last 7 days. */
+async function weekStats(t: T, b: Business): Promise<{ shown: number; intros: number }> {
+  const since = new Date(t.svc.now().getTime() - 7 * 24 * 3600_000);
+  const stats = await one<{ shown: number; intros: number }>(
+    t.svc.db,
+    `SELECT
+       (SELECT count(*)::int FROM request_results rr JOIN requests r ON r.id = rr.request_id
+         WHERE rr.business_id = $1 AND r.created_at > $2) AS shown,
+       (SELECT count(*)::int FROM introductions i WHERE i.business_id = $1 AND i.created_at > $2) AS intros`,
+    [b.id, since],
+  );
+  return { shown: stats?.shown ?? 0, intros: stats?.intros ?? 0 };
+}
+
+/** The last 30 days' customers, by reference code, newest first. */
+async function showCustomers(t: T, b: Business): Promise<void> {
+  const leads = await t.svc.db.query<{ ref: string; at: Date; what: string | null; outcome: string | null }>(
+    `SELECT i.ref_code AS ref, i.created_at AS at, r.raw_text AS what, i.outcome
+       FROM introductions i LEFT JOIN requests r ON r.id = i.request_id
+      WHERE i.business_id = $1 AND i.created_at > now() - interval '30 days'
+      ORDER BY i.created_at DESC LIMIT 15`,
+    [b.id],
+  );
+  return t.reply(copy.myCustomers(b.name, leads.map((l) => ({ ...l, at: new Date(l.at) }))));
 }
 
 // ---------- Registration and edits ----------
@@ -344,18 +373,9 @@ async function eraseEverything(t: T): Promise<void> {
 // ---------- Listing management ----------
 
 async function sendSummary(t: T, b: Business): Promise<void> {
-  const { svc } = t;
-  const since = new Date(svc.now().getTime() - 7 * 24 * 3600_000);
-  const stats = await one<{ shown: number; intros: number }>(
-    svc.db,
-    `SELECT
-       (SELECT count(*)::int FROM request_results rr JOIN requests r ON r.id = rr.request_id
-         WHERE rr.business_id = $1 AND r.created_at > $2) AS shown,
-       (SELECT count(*)::int FROM introductions i WHERE i.business_id = $1 AND i.created_at > $2) AS intros`,
-    [b.id, since],
-  );
+  const week = await weekStats(t, b);
   const avg = b.rating_count > 0 ? b.rating_sum / b.rating_count : null;
-  return t.reply(copy.bizSummary(b.name, stats?.shown ?? 0, stats?.intros ?? 0, avg, b.rating_count));
+  return t.reply(copy.bizSummary(b.name, week.shown, week.intros, avg, b.rating_count));
 }
 
 async function setPaused(t: T, b: Business, paused: boolean): Promise<void> {

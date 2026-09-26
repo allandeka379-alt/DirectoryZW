@@ -50,44 +50,41 @@ A cold cache is the normal case until requests are less than 5 minutes apart. A 
 
 ### A. Know the cost of everything (Phase 1)
 
-- [ ] Record every template sent (which one, to whom, and the price from a `WHATSAPP_TEMPLATE_PRICE_USD` setting, default $0.004), next to the Claude costs already in `ai_usage`.
-- [ ] **Running costs** on the System screen, for today, this month and a projection for the month:
-  - Claude by feature
-  - templates by name
-  - cost per 1,000 requests
-- [ ] A daily cap on templates (`TEMPLATE_DAILY_CAP`). Past it, the optional ones stop first (weekly summaries, then follow-ups), and the team is alerted once.
+- [x] Templates sent are counted from the message log and priced with `WHATSAPP_TEMPLATE_PRICE_USD` (default $0.004), next to the Claude costs already in `ai_usage`.
+- [x] **Running costs** on the System screen, for today and this month, with a projection for the month and the cost per 1,000 requests. It also says which paid templates are switched on.
+- [x] A daily cap on templates (`TEMPLATE_DAILY_CAP`, default 100). Past it, templates stop for the day and the team is alerted once.
 - [ ] **Done when:** the System screen's monthly total is within 10% of the Anthropic and Meta invoices.
 
 ### B. Zero-cost messaging (Phase 1)
 
-- [ ] **Follow-ups inside the customer's window.** Tapping "Connect me" is a message from the customer, so the window runs 24 hours from then. Send the follow-up about 20 hours after connecting (`FOLLOW_UP_DELAY_HOURS=20`), which is free.
+- [x] **Follow-ups inside the customer's window.** Tapping "Connect me" is a message from the customer, so the window runs 24 hours from then. Send the follow-up about 20 hours after connecting (`FOLLOW_UP_DELAY_HOURS=20`), which is free.
   - More customers will answer "Not yet" this early. Track records only count final answers, so they stay honest.
-  - Optional, off by default: one paid follow-up at 72 hours for customers who said "Not yet".
-- [ ] **Lead notices only when they're free.** Send one when the business has written to us in the last 24 hours; otherwise skip it (`LEAD_NOTICES=free_only`).
+  - If the window has closed by the time it's due, the follow-up is skipped, unless `PAID_FOLLOW_UPS=true`.
+- [x] **Lead notices only when they're free.** Send one when the business has written to us in the last 24 hours; otherwise skip it (`LEAD_NOTICES=free_only`).
   - The customer's own first message already says "I found you on Directory ZW (ref K7Q2M)", so the business still knows where the customer came from.
   - The business menu gets **My customers**: recent reference codes, free to check any time.
-- [ ] **Weekly summaries on request.** They show at the top of the business menu and answer "summary". The Monday push becomes a setting, off by default (`WEEKLY_SUMMARIES=off|window_only|always`).
-- [ ] **Handoff replies inside the window.** The team can't send a free-form reply once a customer's 24 hours are over; today such a send fails.
-  - The inbox shows how long each window has left, and warns before a reply that can't be delivered.
+- [x] **Weekly summaries on request.** The week shows at the top of the business menu, and "summary" answers any time. The Monday push is a setting, off by default (`WEEKLY_SUMMARIES=off|window_only|always`).
+- [x] **Handoff replies inside the window.** The team can't send a free-form reply once a customer's 24 hours are over; today such a send fails.
+  - The inbox shows how long each window has left, and won't send a reply that can't be delivered (the API answers 409).
   - Chats about to expire go to the top.
 - [ ] **Done when:** a normal day sends no paid templates unless the team turned one on, and the Meta invoice is about $0.
 
 ### C. Fewer, cheaper Claude calls (Phases 1 and 2)
 
 - [ ] **Ask before paying (Phase 2).** When the local engine has one to three candidate categories, even with low confidence, ask "Did you mean…?" instead of calling Claude. Only wording with no candidates goes to Claude. Measure how often customers pick an option.
-- [ ] **Cache only when it pays (Phase 1).** Mark the prompt for caching only when the last Claude call was under 5 minutes ago, so a read can follow. Otherwise send it uncached, at 1× instead of 1.25×. Check the result in `ai_usage` (cache read and write tokens are already recorded).
+- [x] **Cache only when it pays (Phase 1).** Mark the prompt for caching only when the last Claude call was under 4 minutes ago, so a read can follow. Otherwise send it uncached, at 1× instead of 1.25×. Check the result in `ai_usage` (cache read and write tokens are already recorded).
 - [ ] **Choose the model by the eval (Phase 2).** Run `npm run eval -- --claude --model claude-sonnet-5,claude-haiku-4-5` on the labelled real requests.
   - Haiku 4.5 can't cache our prompt (its minimum is 4,096 tokens) but costs about $0.0034 a call, uncached.
   - Switch if Haiku is about as accurate.
 - [ ] **A smaller prompt (Phase 2).** Send each category as `slug: name` without its six example words, which halves the prompt, or send only the local engine's candidates. Keep whichever the eval says is no worse.
-- [ ] **Tighter budgets at launch (Phase 1).** `CLAUDE_DAILY_BUDGET_USD=1` (about 125 cold calls a day) and `CLAUDE_CALLS_PER_NUMBER_PER_DAY=3`. Over either limit, customers get a question or a person, as today.
-- [ ] **Timeouts and a circuit breaker (Phase 1).**
-  - The Anthropic client runs with the SDK's long default timeout and retries, so a stuck call can hold up a customer's reply for minutes. Set a 10-second timeout and one retry.
+- [x] **Tighter budgets at launch (Phase 1).** `CLAUDE_DAILY_BUDGET_USD=1` (about 125 cold calls a day) and `CLAUDE_CALLS_PER_NUMBER_PER_DAY=3`. Over either limit, customers get a question or a person, as today.
+- [x] **Timeouts and a circuit breaker (Phase 1).**
+  - The Anthropic client ran with the SDK's defaults (a 10-minute timeout and two retries), so a stuck call could hold up a customer's reply for minutes. Now it's a 6-second timeout and one retry (`CLAUDE_TIMEOUT_SECONDS`).
   - After three failures in a row, skip Claude for five minutes and alert once.
 - [ ] **Done when:**
   - fewer than 3 Claude calls per 100 requests after the first month
   - Claude costs under $0.30 per 1,000 requests
-  - no reply takes longer than 12 seconds
+  - no customer waits more than about 13 seconds on Claude (a 6-second timeout, one retry)
 
 ### D. Harden the engine (Phase 2)
 
@@ -131,6 +128,8 @@ A handoff costs minutes of someone's day, which is more than any message or Clau
 | 3 | Every week after | Check the Running costs and Targets on the System screen; clear unknown words; review handoffs |
 
 ## 5. Decisions for the owner
+
+Decided on 26 September 2026: all four as recommended, and built (see section 3).
 
 | Decision | Recommended | Alternative |
 | --- | --- | --- |

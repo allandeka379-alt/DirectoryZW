@@ -22,15 +22,24 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
         getContactById(svc.db, intro.contact_id),
       ]);
       if (!business || !customer || customer.is_blocked) return;
-      await svc.messenger.notify("customer", customer.wa_id, copy.followUp(intro.id, business.name), {
-        name: svc.config.whatsapp.templates.followUp,
-        params: [business.name],
-        quickReplies: [
-          { id: Ids.feedback(intro.id, "sorted"), title: "Yes, sorted" },
-          { id: Ids.feedback(intro.id, "not_yet"), title: "Not yet" },
-          { id: Ids.feedback(intro.id, "failed"), title: "It didn't work out" },
-        ],
-      });
+      // Sent inside the window "Connect me" opened, it's free (FOLLOW_UP_DELAY_HOURS, default 20).
+      // Later than that, it's a paid template, sent only with PAID_FOLLOW_UPS.
+      const sent = await svc.messenger.notify(
+        customer.channel,
+        customer.wa_id,
+        copy.followUp(intro.id, business.name),
+        {
+          name: svc.config.whatsapp.templates.followUp,
+          params: [business.name],
+          quickReplies: [
+            { id: Ids.feedback(intro.id, "sorted"), title: "Yes, sorted" },
+            { id: Ids.feedback(intro.id, "not_yet"), title: "Not yet" },
+            { id: Ids.feedback(intro.id, "failed"), title: "It didn't work out" },
+          ],
+        },
+        { freeOnly: !svc.config.paidFollowUps },
+      );
+      if (sent === "skipped") svc.log.info({ introductionId: intro.id }, "Follow-up skipped: the customer's free window had closed");
       await svc.db.query("UPDATE introductions SET followed_up_at = now() WHERE id = $1", [intro.id]);
     },
 
@@ -91,8 +100,14 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
   };
 }
 
-/** Summaries go only to businesses that had some activity, which keeps WhatsApp costs down. Returns how many were sent. */
+/**
+ * Monday summaries, to businesses that had some activity. Off by default (WEEKLY_SUMMARIES):
+ * owners see their week at the top of the business menu, which costs nothing. "window_only" sends
+ * them free to businesses that wrote to us in the last 24 hours; "always" pays for templates.
+ * Returns how many were sent.
+ */
 export async function sendWeeklySummaries(svc: Services, since: Date): Promise<number> {
+  if (svc.config.weeklySummaries === "off") return 0;
   const rows = await svc.db.query<{ name: string; phone: string; shown: number; intros: number }>(
     `SELECT b.name, b.phone,
        (SELECT count(*)::int FROM request_results rr JOIN requests r ON r.id = rr.request_id
@@ -105,11 +120,14 @@ export async function sendWeeklySummaries(svc: Services, since: Date): Promise<n
   let sent = 0;
   for (const b of rows) {
     if (b.shown === 0 && b.intros === 0) continue;
-    await svc.messenger.notify("business", b.phone, copy.weeklySummary(svc.config.brandName, b.name, b.shown, b.intros), {
-      name: svc.config.whatsapp.templates.weeklySummary,
-      params: [b.name, String(b.shown), String(b.intros)],
-    });
-    sent++;
+    const result = await svc.messenger.notify(
+      "business",
+      b.phone,
+      copy.weeklySummary(svc.config.brandName, b.name, b.shown, b.intros),
+      { name: svc.config.whatsapp.templates.weeklySummary, params: [b.name, String(b.shown), String(b.intros)] },
+      { freeOnly: svc.config.weeklySummaries === "window_only" },
+    );
+    if (result !== "skipped") sent++;
   }
   return sent;
 }

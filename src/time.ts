@@ -58,6 +58,12 @@ export function whenTeamReplies(now: Date, hours: TeamHours): string {
   return "A person will reply here as soon as they can.";
 }
 
+/** Midnight on the 1st of the month in Harare, for the given moment. */
+export function harareStartOfMonth(now: Date): Date {
+  const local = new Date(now.getTime() + 2 * 3600_000);
+  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - 2 * 3600_000);
+}
+
 /** Midnight in Harare (UTC+2, no daylight saving) for the given moment. */
 export function harareStartOfDay(now: Date): Date {
   const local = new Date(now.getTime() + 2 * 3600_000);

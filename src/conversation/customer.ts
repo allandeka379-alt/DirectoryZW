@@ -541,10 +541,15 @@ async function connect(t: T, requestId: string, businessId: string): Promise<voi
 
   const place = request?.area_id != null ? svc.gazetteer.get(request.area_id)?.name : null;
   const neededBy = request?.interpretation?.needed_by ?? null;
-  await svc.messenger.notify("business", business.phone, copy.leadNotification(brand, intro.ref_code, summary, place, neededBy), {
-    name: svc.config.whatsapp.templates.leadNotification,
-    params: [intro.ref_code, summary],
-  });
+  // The customer's own message carries the reference, so by default the business only hears from
+  // us while its window is open (free). LEAD_NOTICES=always pays for a template otherwise.
+  await svc.messenger.notify(
+    "business",
+    business.phone,
+    copy.leadNotification(brand, intro.ref_code, summary, place, neededBy),
+    { name: svc.config.whatsapp.templates.leadNotification, params: [intro.ref_code, summary] },
+    { freeOnly: svc.config.leadNotices === "free_only" },
+  );
   const runAt = new Date(svc.now().getTime() + svc.config.followUpDelayHours * 3600_000);
   await svc.jobs.enqueue("follow_up", { introductionId: intro.id }, runAt);
 }

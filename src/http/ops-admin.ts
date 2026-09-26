@@ -6,7 +6,7 @@ import { getBusiness, isUuid } from "../directory/businesses.js";
 import { logAction } from "../ops/accounts.js";
 import { eraseBusiness, eraseContact, exportContact } from "../privacy.js";
 import { normalizeZimPhone } from "../text.js";
-import { harareStartOfDay } from "../time.js";
+import { harareStartOfDay, harareStartOfMonth } from "../time.js";
 import { STARTED_AT, VERSION } from "../version.js";
 import { actorOf, refuseUnlessAdmin } from "./ops-auth.js";
 
@@ -148,6 +148,45 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
                 OR (l.intent <> 'search' AND l.intent = r.interpretation->>'intent')) AS labelled_right`,
       ),
     ]);
+    // Running costs: Claude, and the paid WhatsApp templates (replies inside a window are free).
+    const costRow = await one<{ claude_today: number; claude_month: number; templates_today: number; templates_month: number; requests_month: number }>(
+      app.db,
+      `SELECT
+         (SELECT COALESCE(sum(cost_usd), 0)::float8 FROM ai_usage WHERE created_at >= $1) AS claude_today,
+         (SELECT COALESCE(sum(cost_usd), 0)::float8 FROM ai_usage WHERE created_at >= $2) AS claude_month,
+         (SELECT count(*)::int FROM messages WHERE direction = 'out' AND body->'message'->>'kind' = 'template' AND created_at >= $1) AS templates_today,
+         (SELECT count(*)::int FROM messages WHERE direction = 'out' AND body->'message'->>'kind' = 'template' AND created_at >= $2) AS templates_month,
+         (SELECT count(*)::int FROM requests WHERE created_at >= $2) AS requests_month`,
+      [harareStartOfDay(now), harareStartOfMonth(now)],
+    );
+    const monthStart = harareStartOfMonth(now);
+    const daysSoFar = Math.max(1, (now.getTime() - monthStart.getTime()) / (24 * 3600_000));
+    const nextMonth = harareStartOfMonth(new Date(monthStart.getTime() + 32 * 24 * 3600_000));
+    const daysInMonth = Math.round((nextMonth.getTime() - monthStart.getTime()) / (24 * 3600_000));
+    const monthUsd = (costRow?.claude_month ?? 0) + (costRow?.templates_month ?? 0) * config.templatePriceUsd;
+    const costs = {
+      templatePriceUsd: config.templatePriceUsd,
+      today: {
+        claudeUsd: costRow?.claude_today ?? 0,
+        templates: costRow?.templates_today ?? 0,
+        templatesUsd: (costRow?.templates_today ?? 0) * config.templatePriceUsd,
+      },
+      month: {
+        claudeUsd: costRow?.claude_month ?? 0,
+        templates: costRow?.templates_month ?? 0,
+        templatesUsd: (costRow?.templates_month ?? 0) * config.templatePriceUsd,
+        requests: costRow?.requests_month ?? 0,
+      },
+      projectedMonthUsd: (monthUsd / daysSoFar) * daysInMonth,
+      per1000RequestsUsd: costRow?.requests_month ? (monthUsd / costRow.requests_month) * 1000 : null,
+      settings: {
+        leadNotices: config.leadNotices,
+        followUpDelayHours: config.followUpDelayHours,
+        paidFollowUps: config.paidFollowUps,
+        weeklySummaries: config.weeklySummaries,
+        templateDailyCap: config.templateDailyCap,
+      },
+    };
     const health = await one<Record<string, unknown>>(
       app.db,
       `SELECT
@@ -183,6 +222,7 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
       precision28d: precision,
       lexicon: { trustDrafts: config.lexiconTrustDrafts, words },
       targets,
+      costs,
       local: config.local,
       limits: config.limits,
       retention: config.retention,

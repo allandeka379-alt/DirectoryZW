@@ -111,7 +111,9 @@ export function registerOps(server: FastifyInstance, app: App): void {
 
       ops.get("/handoffs", async () =>
         app.db.query(
-          `SELECT c.id AS contact_id, c.wa_id, c.profile_name, s.updated_at,
+          `SELECT c.id AS contact_id, c.wa_id, c.channel, c.profile_name, s.updated_at,
+                  -- free replies are possible until 24 hours after their last message (5 minutes' margin)
+                  c.last_inbound_at + interval '1435 minutes' AS window_closes_at,
                   (SELECT json_agg(m ORDER BY m.created_at) FROM (
                      SELECT direction, body, notes, created_at FROM messages WHERE contact_id = c.id
                       ORDER BY created_at DESC LIMIT 20) m) AS recent_messages,
@@ -120,7 +122,9 @@ export function registerOps(server: FastifyInstance, app: App): void {
                      SELECT id, raw_text, category_slug, understood_by, reading FROM requests WHERE contact_id = c.id
                       ORDER BY created_at DESC LIMIT 1) r) AS request
              FROM sessions s JOIN contacts c ON c.id = s.contact_id
-            WHERE s.state->>'stage' = 'handoff' ORDER BY s.updated_at DESC`,
+            WHERE s.state->>'stage' = 'handoff'
+            -- chats that can still be answered first, those closing soonest at the top
+            ORDER BY (c.last_inbound_at + interval '1435 minutes' < now()), c.last_inbound_at + interval '1435 minutes'`,
         ),
       );
 
@@ -130,6 +134,10 @@ export function registerOps(server: FastifyInstance, app: App): void {
         if (!params.success || !body.success) return reply.code(400).send({ error: "Give a contact ID and some text" });
         const contact = await getContactById(app.db, params.data.id);
         if (!contact) return reply.code(404).send({ error: "Contact not found" });
+        // WhatsApp refuses free-form messages once 24 hours have passed since their last message.
+        if (!app.services.messenger.windowClosesAt(contact)) {
+          return reply.code(409).send({ error: "Their 24-hour window has closed, so WhatsApp won't deliver a reply. They need to message us again first." });
+        }
         await app.services.messenger.reply(contact, { kind: "text", text: body.data.text });
         await logAction(app.db, actorOf(req), "contact.reply", contact.id);
         return { ok: true };
