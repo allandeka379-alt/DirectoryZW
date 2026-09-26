@@ -4,15 +4,13 @@ import { seedReferenceData } from "../src/db/seed.js";
 import { searchBusinesses } from "../src/directory/search.js";
 import { createServer, registerRoutes } from "../src/http/server.js";
 import type { InboundContent } from "../src/whatsapp/types.js";
-import { FakeVision, interpretation } from "./fakes.js";
 import { testApp, textOf, type TestApp } from "./helpers.js";
 
-const vision = new FakeVision();
 let app: TestApp;
 let server: FastifyInstance;
 
 beforeAll(async () => {
-  app = await testApp({}, { vision });
+  app = await testApp();
   server = createServer({ logger: false });
   registerRoutes(server, app);
   await server.ready();
@@ -42,130 +40,51 @@ function as(customer: string) {
 const ops = (method: "GET" | "POST", url: string, payload?: object) =>
   server.inject({ method, url: `/ops/api${url}`, ...(payload ? { payload } : {}) });
 
-const photo = () => app.simulatorMedia!.put({ data: Buffer.from("jpeg bytes"), mimeType: "image/jpeg" });
-const voiceNote = (words: string) => app.simulatorMedia!.put({ data: Buffer.from(`ogg ${words}`), mimeType: "audio/ogg" }, words);
-
 function rowsOf(m: ReturnType<TestApp["last"]>, section = 0): string[] {
   if (m.kind !== "list") throw new Error(`Expected a list, got ${m.kind}`);
   return m.sections[section]!.rows.map((r) => r.title);
 }
 
-describe("photos", () => {
-  it("finds businesses from a photo and its caption", async () => {
-    vision.photoAnswer = (caption) =>
-      interpretation({ category_slug: "furniture", query: "black leather couch", area: caption?.includes("Glen View") ? "Glen View" : null });
+describe("typed messages only", () => {
+  it("asks customers to type instead of sending a photo or a voice note", async () => {
     const c = as(newCustomer());
     await c.consented();
-    await c.send({ type: "image", mediaId: photo(), caption: "Something like this in Glen View", mimeType: "image/jpeg" });
-
-    expect(vision.photos.at(-1)!.caption).toBe("Something like this in Glen View");
-    expect(textOf(c.last())).toContain("black leather couch");
-    expect(rowsOf(c.last()).some((t) => t.startsWith("Glen View"))).toBe(true);
-
-    await c.tap("Glen View");
-    await c.tap("Connect me");
-    const link = c.last();
-    if (link.kind !== "cta_url") throw new Error(`Expected a link, got ${link.kind}`);
-    expect(link.body).toContain("send them your photo");
-    expect(new URL(link.url).searchParams.get("text")).toContain("Something like this in Glen View (black leather couch)");
+    await c.send({ type: "image", mediaId: "photo-1", caption: "one like this", mimeType: "image/jpeg" });
+    expect(textOf(c.last())).toContain("I can only read typed messages for now");
+    await c.send({ type: "audio", mediaId: "voice-1", voice: true, mimeType: "audio/ogg" });
+    expect(textOf(c.last())).toContain("Please type what you need");
   });
 
-  it("keeps a photo sent before consent and reads it once the customer agrees", async () => {
-    vision.photoAnswer = () => interpretation({ category_slug: "furniture", query: "wardrobe", area: "Glen View" });
+  it("asks for consent, then what they need, when the first message is a voice note", async () => {
     const c = as(newCustomer());
-    const read = vision.photos.length;
-    await c.send({ type: "image", mediaId: photo(), mimeType: "image/jpeg" });
+    await c.send({ type: "audio", mediaId: "voice-2", voice: true, mimeType: "audio/ogg" });
     expect(textOf(c.last())).toContain("I agree");
-    expect(vision.photos.length).toBe(read); // nothing is sent to Claude before consent
-
     await c.tap("I agree");
-    expect(vision.photos.length).toBe(read + 1);
-    expect(c.last().kind).toBe("list");
+    expect(textOf(c.last())).toContain("What are you looking for");
   });
 
-  it("asks for words when the photo can't be used", async () => {
-    vision.photoAnswer = () => null;
-    const c = as(newCustomer());
-    await c.consented();
-    await c.send({ type: "image", mediaId: photo(), mimeType: "image/jpeg" });
-    expect(textOf(c.last())).toContain("describe it in words");
-  });
-});
-
-describe("voice notes", () => {
-  it("says back what it heard, then searches", async () => {
-    const c = as(newCustomer());
-    await c.consented();
-    const id = voiceNote("ndoda plumber ku Mabelreign");
-    await c.send({ type: "audio", mediaId: id, voice: true, mimeType: "audio/ogg" });
-
-    // What we heard tops the results, rather than costing a message of its own.
-    // Replies are in English: the category's name, not the customer's Shona words.
-    expect(textOf(c.last())).toMatch(/^🎙️ I heard: “ndoda plumber ku Mabelreign”\n\nWe have (a business|\w+ businesses) near Mabelreign that offers? \*plumbing services\*/);
-    expect(rowsOf(c.last())[0]).toMatch(/^QuickFix/);
-    const [logged] = await app.db.query<{ transcript: string }>(
-      "SELECT notes->>'transcript' AS transcript FROM messages WHERE body->>'mediaId' = $1",
-      [id],
-    );
-    expect(logged?.transcript).toBe("ndoda plumber ku Mabelreign"); // shown to the team in the ops console
-  });
-
-  it("asks for text when there's no speech-to-text service", async () => {
-    const speech = app.services.speech;
-    app.services.speech = undefined;
-    try {
-      const c = as(newCustomer());
-      await c.consented();
-      await c.send({ type: "audio", mediaId: voiceNote("plumber"), voice: true });
-      expect(textOf(c.last())).toContain("can't listen to voice notes");
-    } finally {
-      app.services.speech = speech;
-    }
-  });
-
-  it("lets business owners answer by voice note", async () => {
+  it("asks business owners to type too", async () => {
     const owner = "263779888001";
     await app.send("business", owner, { type: "text", text: "register" });
-    await app.send("business", owner, { type: "audio", mediaId: voiceNote("Chipo Tailoring"), voice: true });
-    const reply = textOf(app.last("business", owner));
-    expect(reply).toContain("I heard: “Chipo Tailoring”");
-    expect(reply).toContain("What do you sell or do?");
+    await app.send("business", owner, { type: "image", mediaId: "photo-2", mimeType: "image/jpeg" });
+    expect(textOf(app.last("business", owner))).toContain("I can only read typed messages for now");
   });
 });
 
 describe("price lists", () => {
-  it("reads a price-list photo into the listing once the owner confirms", async () => {
-    const phone = await app.phoneOf("Siyaso Hardware (sample)");
-    vision.priceListAnswer = {
-      is_price_list: true,
-      items: [
-        { name: "PPC Cement 50kg", price_usd: 11.5, price_text: "$11.50" },
-        { name: "IBR roofing sheet 3m", price_usd: 14, price_text: "$14" },
-        { name: "Wheelbarrow", price_usd: null, price_text: "ZiG 900" },
-      ],
-    };
-    await app.send("business", phone, { type: "text", text: "menu" });
-    await app.tap("Add price list photo", "business", phone);
-    expect(textOf(app.last("business", phone))).toContain("Send a photo of your price list");
-
-    await app.send("business", phone, { type: "image", mediaId: photo(), mimeType: "image/jpeg" });
-    const read = textOf(app.last("business", phone));
-    expect(read).toContain("I read 3 items");
-    expect(read).toContain("PPC Cement 50kg: $11.50");
-    expect(read).toContain("Wheelbarrow: ZiG 900");
-    const count = async () =>
-      (await app.db.query<{ n: number }>(
-        "SELECT count(*)::int AS n FROM offerings o JOIN businesses b ON b.id = o.business_id WHERE b.phone = $1",
-        [phone],
-      ))[0]!.n;
-    expect(await count()).toBe(0); // nothing changes until the owner says so
-
-    await app.tap("Save prices", "business", phone);
-    expect(textOf(app.last("business", phone))).toContain("Saved! 3 items");
-    expect(await count()).toBe(3);
-  });
-
   it("finds businesses by their price-list items and shows matching prices", async () => {
+    // Items read from price-list photos (before photos were switched off) stay searchable.
+    const [siyaso] = await app.db.query<{ id: string }>("SELECT id FROM businesses WHERE name = 'Siyaso Hardware (sample)'");
+    const items: [string, number | null, string][] = [
+      ["PPC Cement 50kg", 11.5, "$11.50"],
+      ["IBR roofing sheet 3m", 14, "$14"],
+      ["Wheelbarrow", null, "ZiG 900"],
+    ];
+    for (const [name, usd, text] of items) {
+      await app.db.query("INSERT INTO offerings (business_id, name, price_usd, price_text) VALUES ($1, $2, $3, $4)", [siyaso!.id, name, usd, text]);
+    }
+    await app.db.query("UPDATE businesses SET offerings_text = $2 WHERE id = $1", [siyaso!.id, items.map(([name]) => name).join(" ")]);
+
     // "wheelbarrow" is only on Siyaso's price list, not in its description or keywords.
     const hits = await searchBusinesses(app.db, app.services.taxonomy, { categorySlug: null, text: "wheelbarrow", limit: 8, minVerified: 3 });
     expect(hits.map((h) => h.name)).toContain("Siyaso Hardware (sample)");
@@ -181,15 +100,7 @@ describe("price lists", () => {
     expect(card).toContain("confirm with them");
   });
 
-  it("asks again when the photo isn't a price list", async () => {
-    const phone = await app.phoneOf("Southerton Building Supplies (sample)");
-    vision.priceListAnswer = { is_price_list: false, items: [] };
-    await app.send("business", phone, { type: "image", mediaId: photo(), mimeType: "image/jpeg" });
-    expect(textOf(app.last("business", phone))).toContain("couldn't read items and prices");
-  });
-
-  it("reads price lists that field agents photograph", async () => {
-    vision.priceListAnswer = { is_price_list: true, items: [{ name: "Braids", price_usd: 25, price_text: "$25" }] };
+  it("keeps field agents' price-list photos for the team, without reading them", async () => {
     const created = await ops("POST", "/agents", { name: "Tino Field" });
     const token = new URL(created.json().setupUrl).hash.replace("#token=", "");
     const avondale = app.services.gazetteer.match("Avondale")!;
@@ -211,7 +122,8 @@ describe("price lists", () => {
     expect(res.statusCode).toBe(201);
     await app.runJobs();
     const detail = (await ops("GET", `/businesses/${res.json().id}`)).json();
-    expect(detail.offerings).toMatchObject([{ name: "Braids", price_text: "$25" }]);
+    expect(detail.photos.map((p: { kind: string }) => p.kind)).toEqual(["price_list"]);
+    expect(detail.offerings).toEqual([]);
   });
 });
 

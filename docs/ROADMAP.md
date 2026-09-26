@@ -35,12 +35,12 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
   - Each result is checked: a Zimbabwe mobile number, and a source site the search returned.
   - Finds are reused for the same category nearby, and each customer has a daily limit on searches.
   - Finds are kept 30 days for the field team to invite, then deleted. A business that declines stays out of results (only a hash of its number is kept).
-- [x] Voice notes: speech-to-text behind an HTTP contract, so Google Chirp 2 or Meta Omnilingual ASR can plug in.
+- [x] Voice notes: speech-to-text behind an HTTP contract, so Google Chirp 2 or Meta Omnilingual ASR can plug in. Removed in Milestone 11: typed messages only, for now.
   - The reply starts with "I heard: …".
   - If nothing is understood, which is likely for much Ndebele, the customer is asked to type.
   - The simulator fakes transcription.
   - Works on the business number too.
-- [x] Photos, downloaded through WhatsApp's media API and read by Claude vision:
+- [x] Photos, downloaded through WhatsApp's media API and read by Claude vision. Removed in Milestone 11: typed messages only, for now. Price-list items read before then still show on business cards.
   - "Find me this" search from a photo and its caption.
   - Price lists read into listings. Owners confirm before saving; field agents' price-list photos are read in the background.
   - Customers see matching prices on business cards, and price-list items are searchable.
@@ -61,7 +61,7 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
   - Replies that fail for temporary reasons (network, rate limits, Meta errors, a rejected token) are resent from the job queue.
 - [x] Abuse controls:
   - Message limits per number, per minute and per day.
-  - A daily cap on photos and voice notes (each costs a Claude or speech-to-text call).
+  - A daily cap on photos and voice notes (each costs a Claude or speech-to-text call). Removed in Milestone 11.
   - A daily cap on reports, which count for more when the reporter contacted the business through us. Several such reports pause a listing and alert the team.
   - Numbers can be blocked from the console.
 - [x] Ops console accounts:
@@ -79,7 +79,7 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
   - Production requires Postgres.
   - [DEPLOY.md](DEPLOY.md) covers backups and monitoring.
 - [x] Message templates defined in code; `npm run templates` submits them and checks approval
-- [x] Google Chirp 2 speech-to-text:
+- [x] Google Chirp 2 speech-to-text (removed in Milestone 11):
   - Shona, with Zulu standing in for Ndebele.
   - The last request's language is tried first.
   - Tested against a stand-in for Google, not yet against the real API.
@@ -92,7 +92,6 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
 - [ ] Meta business verification, two numbers, display names, approved templates
 - [ ] Hosting set up (Postgres with a tested restore, private bucket, HTTPS domain, alert webhook)
 - [ ] POTRAZ data-controller licence and data protection officer; privacy notice and business terms published; confirm the lawful basis for keeping public details of businesses found online, and for sending voice notes abroad for transcription
-- [ ] Chirp 2 checked against 50 real voice notes (Shona, Ndebele, English)
 - [ ] About 300 real requests labelled; compare Claude models and pick the cheapest that scores as well
 - [ ] Soft launch in Harare with 2,000+ verified businesses
 
@@ -190,8 +189,8 @@ Design in [UNDERSTANDING.md](UNDERSTANDING.md). Target: 80% or more of requests 
 - [x] **The word-shape classifier:** for words the rules don't know, the known word most like each one ("fotographer" → "photographer").
   - It only offers "Did you mean…?" options; its guesses go through the action rules.
   - It learns from category words, the lexicon, the phrasebook and the labels, and is retrained hourly.
-- [x] **Caption-first photos:** a caption the engine understands on its own is used without sending the photo to Claude.
-- [x] **Field price lists through the Batch API** (half price): photos are sent every 20 minutes and results saved when the batch ends, with up to three tries. The System screen shows the queue. `PRICE_LIST_BATCH=false` switches it off.
+- [x] **Caption-first photos:** a caption the engine understands on its own is used without sending the photo to Claude. Removed in Milestone 11.
+- [x] **Field price lists through the Batch API** (half price; removed in Milestone 11): photos are sent every 20 minutes and results saved when the batch ends, with up to three tries. The System screen shows the queue. `PRICE_LIST_BATCH=false` switches it off.
 - [x] **Targets on the System screen:** understood without Claude, Claude calls per 100 requests, handoffs, the weekly check, labelling progress.
 - [x] **Eval:** 171 requests, including 12 misspellings. None is confidently wrong; the classifier turns 4 of the 10 it could help with into the right question.
 - [x] Migration 008; tests (159)
@@ -232,6 +231,14 @@ The welcome message says verified businesses are genuine and reliable and that w
 - [ ] Re-submit the `follow_up` template if it was already submitted: its third button is now "It didn't work out"
 - [ ] Make re-checks part of the field team's week, like call-backs
 
+## Milestone 11: typed messages only, and cheap to run
+
+- [x] **Typed messages only, for now.** Voice notes and photos get a polite "please type" reply on both numbers.
+  - Removed: speech-to-text (Google Chirp 2 and the HTTP adapter), Claude reading photos and price lists, the Batch API for field price lists, WhatsApp media downloads, and the daily cap on photos and voice notes.
+  - Kept: field agents' photos of businesses (evidence for the team, never read by AI), and price-list items read before this change, which still show on business cards.
+  - Claude is now used for one thing only: typed wording the local engine can't read.
+- [ ] **Hardening, so the system is very cheap to run:** see [HARDENING.md](HARDENING.md).
+
 ## Later: monetization (only after traction)
 
 - [ ] Featured placement, lead credits and sponsored slots, as priced in the feasibility study
@@ -242,11 +249,9 @@ The welcome message says verified businesses are genuine and reliable and that w
 
 - Area coordinates are approximate centroids; refine them from field GPS pins.
 - Results say a verified store "has" what the customer asked for because our team checked what it sells (its categories), not its stock of that model. The customer's message to the store names the item, so the store answers about stock.
-- Customers' photos aren't stored, so a person taking over a chat sees Claude's description of the photo, not the photo itself.
 - The related-categories list is a first draft: review it with the field team, especially across groups (solar to electricians, catering to restaurants).
 - The field name for WhatsApp's business-scoped user IDs is unconfirmed; the parser accepts `from` and `from_user_id`.
 - Simulator messages live in memory and reset when the server restarts; the database persists.
 - Run a single instance: messages from each person are kept in order in memory, and the login lockout and alert throttling are in memory too.
-- Voice notes longer than a minute fail with Google's synchronous recognition (the person is asked to type instead).
 - The Shona word list and the eval examples were both written by the developers, so the eval shows what's possible, not real-world accuracy. Labelled real requests (Phase 3) will show the real numbers.
 - GPS and offline mode need HTTPS (or localhost), so test the field app on a phone through an HTTPS tunnel or a deployed server.

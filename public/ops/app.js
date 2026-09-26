@@ -613,9 +613,6 @@ const screens = {
           [["sn", "Shona"], ["nd", "Ndebele"]].map(([lang, name]) =>
             `${name} ${wordCount(lang, "approved")} approved, ${wordCount(lang, "draft")} waiting for a native speaker, ${wordCount(lang, "rejected")} rejected`).join("; ") +
           (s.lexicon?.trustDrafts ? ". Draft words are trusted (LEXICON_TRUST_DRAFTS)." : ". Draft words lead to a question until approved.")),
-        s.priceLists?.batch ? h("p", {}, h("strong", {}, "Field price lists (Batch API, half price): "),
-          `${s.priceLists.queued} waiting, ${s.priceLists.submitted} being read, ${s.priceLists.done_7d} read this week` +
-          (s.priceLists.failed ? `, ${s.priceLists.failed} couldn't be read` : "")) : null,
         h("p", { class: "muted" },
           `Claude, last 7 days: ${s.claude.last7Days?.calls ?? 0} calls, ${usd(s.claude.last7Days?.usd)}. ` +
           `Today by use: ${s.claude.today.map((r) => `${r.feature} ${r.calls} (${usd(r.usd)})`).join(", ") || "none"}. ` +
@@ -623,7 +620,7 @@ const screens = {
       h("div", { class: "card" },
         h("p", {}, `Last message in: ${date(s.last_inbound_at) || "none yet"} · last reply out: ${date(s.last_sent_at) || "none yet"}`),
         h("p", {}, `Database: ${s.database} · WhatsApp: ${s.whatsapp} · photos stored on: ${s.storage}`),
-        h("p", {}, `Understanding requests: ${f.understanding} · photos: ${f.photos ? "on" : "off"} · voice notes: ${f.voiceNotes || "off"} · alerts: ${f.alertsTo}`),
+        h("p", {}, `Understanding requests: ${f.understanding} · typed messages only · alerts: ${f.alertsTo}`),
         h("p", { class: "muted" }, `Limits per number: ${s.limits.perMinute} a minute, ${s.limits.perDay} a day, ${s.limits.mediaPerDay} photos and voice notes a day. Chats kept ${s.retention.messageDays} days; request wording kept ${s.retention.requestDays} days.`)),
       h("h2", {}, "Recent alerts"),
       s.alerts.length

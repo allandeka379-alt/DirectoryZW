@@ -1,7 +1,6 @@
-import { one } from "../db/client.js";
+import { trainClassifier } from "../ai/learning.js";
 import { getBusiness } from "../directory/businesses.js";
 import { getIntroduction } from "../directory/introductions.js";
-import { replaceOfferings } from "../directory/offerings.js";
 import { reportsWaiting } from "../directory/trust.js";
 import { MAX_JOB_ATTEMPTS, type JobHandler } from "../jobs/queue.js";
 import { applyRetention } from "../privacy.js";
@@ -9,8 +8,6 @@ import type { Channel } from "../whatsapp/types.js";
 import type { Services } from "./context.js";
 import * as copy from "./copy.js";
 import { Ids } from "./ids.js";
-import { trainClassifier } from "../ai/learning.js";
-import { PRICE_LIST_BATCH_EVERY_MS, queuePriceListRead, runPriceListBatches } from "./price-list-batches.js";
 import { getContactById } from "./store.js";
 
 /** Background jobs the conversation schedules. */
@@ -82,40 +79,6 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
       }
     },
 
-    /** Every 20 minutes: collect finished price-list batches, and send queued photos off in a new one. */
-    price_list_batches: async () => {
-      try {
-        const result = await runPriceListBatches(svc);
-        if (result.collected || result.submitted) svc.log.info(result, "Price-list batches");
-      } finally {
-        await svc.jobs.enqueue("price_list_batches", {}, new Date(svc.now().getTime() + PRICE_LIST_BATCH_EVERY_MS));
-      }
-    },
-
-    /** A field agent photographed a price list: read it into the listing. */
-    read_price_list: async (payload) => {
-      if (!svc.vision) return;
-      // With the Batch API on, the photo waits for the next batch: half the price, and nobody is waiting.
-      if (svc.priceListBatches) return queuePriceListRead(svc, String(payload.photoId ?? ""));
-      // Over today's Claude budget: try again tomorrow rather than failing.
-      if (!(await svc.budget.allows())) {
-        await svc.jobs.enqueue("read_price_list", payload, nextDailyRun(svc.now()));
-        return;
-      }
-      const photo = await one<{ id: string; business_id: string; storage_key: string; content_type: string }>(
-        svc.db,
-        "SELECT id, business_id, storage_key, content_type FROM business_photos WHERE id = $1 AND kind = 'price_list'",
-        [String(payload.photoId ?? "")],
-      );
-      if (!photo) return;
-      const data = await svc.store.get(photo.storage_key);
-      if (!data) return;
-      const list = await svc.vision.readPriceList({ data, mimeType: photo.content_type });
-      // Throwing lets the queue retry a failed read; a photo that simply isn't a price list is left alone.
-      if (!list) throw new Error("Price list could not be read");
-      if (list.is_price_list && list.items.length) await replaceOfferings(svc.db, photo.business_id, list.items, photo.id);
-    },
-
     /** Every Monday: tell each listed business how many searches it appeared in and how many customers it got. */
     weekly_summaries: async () => {
       const now = svc.now();
@@ -175,7 +138,6 @@ export async function scheduleRecurringJobs(svc: Services): Promise<void> {
     ["retrain_classifier", new Date(svc.now().getTime() + 3600_000)],
     ["report_reminders", new Date(svc.now().getTime() + 3600_000)],
   ];
-  if (svc.priceListBatches) recurring.push(["price_list_batches", new Date(svc.now().getTime() + PRICE_LIST_BATCH_EVERY_MS)]);
   for (const [kind, runAt] of recurring) {
     const queued = await svc.db.query("SELECT 1 FROM jobs WHERE kind = $1 AND status IN ('queued', 'running') LIMIT 1", [kind]);
     if (!queued.length) await svc.jobs.enqueue(kind, {}, runAt);

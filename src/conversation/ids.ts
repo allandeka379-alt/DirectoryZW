@@ -41,9 +41,6 @@ export const Ids = {
   editWhat: "bedit:what",
   editArea: "bedit:area",
   editSave: "bedit:save",
-  priceList: "bprice:start",
-  priceSave: "bprice:save",
-  priceRetry: "bprice:retry",
   // Choosing a category by hand: a page of kinds of business, one kind's categories, one category.
   pickGroupsPage: (page: number) => `bpick:g:${page}`,
   pickGroup: (groupIndex: number) => `bpick:c:${groupIndex}:0`,

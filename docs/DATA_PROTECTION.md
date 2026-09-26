@@ -17,9 +17,9 @@ A working record of what personal data the service holds, where it goes, and how
 | Customers | WhatsApp number, profile name, messages, requests, shared locations | Find businesses for them, follow up, improve the service | Messages 180 days (`MESSAGE_RETENTION_DAYS`). A request's wording, and the local engine's notes on it, 365 days (`REQUEST_RETENTION_DAYS`); after that only its category, area and outcome remain, for statistics. |
 | Customers | "Did you mean…?" questions we asked them and what they picked | Understand them, and answer the same wording directly next time | 365 days (`REQUEST_RETENTION_DAYS`). The wording's key words and category are kept, unlinked from the person, in the phrasebook. |
 | Customers | The team's labels on a sample of requests (what the customer wanted) | Measure and tune how well requests are understood | With the request: deleted with the customer's data. The eval export (`evals/real*.jsonl`) holds request wording, so keep it private and delete it after use. |
-| Customers | Voice notes and photos | Understand the request | Not stored. Only the transcript or a short description is saved with the message. |
+| Customers | Voice notes and photos they send | None: they're asked to type instead | Never downloaded or read. Only the fact that one arrived is logged with the message. |
 | Customers | Ratings, follow-up answers ("sorted", "didn't reply", "didn't have it") and reports about businesses | Rank businesses, show track records, send businesses back for a re-check, stop scams | Until the customer deletes their data. Reports stay after that, with the link to the customer removed. Track records show counts only, never who answered. |
-| Businesses | Name, WhatsApp number, location, description, photos, price list, ratings, the field team's re-check notes | The listing | While listed. Deleting their data removes the listing, photos and re-checks. |
+| Businesses | Name, WhatsApp number, location, description, field agents' photos, price list, ratings, the field team's re-check notes | The listing | While listed. Deleting their data removes the listing, photos and re-checks. |
 | Field agents | Name, phone, city, registrations | Quality control | While they work with us. |
 | Ops team | Name, email, password hash, activity log | Accountability | Accounts while active. The activity log holds no message text. |
 
@@ -30,10 +30,9 @@ Idle chat state is deleted after 90 days (except chats waiting for a person). Fi
 | Provider | Receives | Where |
 | --- | --- | --- |
 | Meta (WhatsApp Cloud API) | All messages, numbers and names | Meta's data centres (outside Zimbabwe) |
-| Anthropic (Claude) | Only requests the local engine can't read (and hasn't seen before), customers' photos whose caption isn't enough, and price-list photos. Field agents' price-list photos go through the Batch API, whose results Anthropic keeps for 29 days. | United States |
-| Google Cloud (Speech-to-Text), if enabled | Voice notes | The region in `GOOGLE_STT_LOCATION` (europe-west4 by default) |
+| Anthropic (Claude) | Only typed requests the local engine can't read (and hasn't seen before) | United States |
 | Hosting and database provider | Everything in the database | Your chosen region |
-| Storage provider (S3 or R2) | Business photos | Your chosen region |
+| Storage provider (S3 or R2) | Field agents' photos of businesses | Your chosen region |
 | Alert webhook (Slack, Discord…) | Alert text, without message content or phone numbers | The chat provider |
 
 ## Handling requests
@@ -50,4 +49,4 @@ Idle chat state is deleted after 90 days (except chats waiting for a person). Fi
 - Session tokens, field-agent tokens and opted-out numbers are stored only as hashes.
 - Webhook calls must carry Meta's signature. The ops API needs a signed-in person or the ops token.
 - The photo bucket stays private; photos are served only through the signed-in ops API.
-- Limits per number stop floods: messages per minute and day, photos and voice notes per day, reports per day.
+- Limits per number stop floods: messages per minute and day, reports per day.

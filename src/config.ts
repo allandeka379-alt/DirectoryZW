@@ -31,18 +31,8 @@ const EnvSchema = z.object({
   CLAUDE_CALLS_PER_NUMBER_PER_DAY: z.coerce.number().int().min(0).default(5),
   LEXICON_TRUST_DRAFTS: flag(false),
   TEAM_HOURS: z.string().default("Mon-Sat 08:00-18:00"),
-  PRICE_LIST_BATCH: flag(true),
   LOCAL_UNKNOWN_WORDS: z.string().default("en:1,sn:0,nd:0"),
   LOCAL_CLASSIFIER_MIN: z.coerce.number().min(0).max(1).default(0.4),
-  SPEECH_TO_TEXT_URL: optionalString,
-  SPEECH_TO_TEXT_TOKEN: optionalString,
-  SPEECH_LANGUAGES: z.string().default("sn,nd,en"),
-  MAX_MEDIA_MB: z.coerce.number().positive().max(100).default(16),
-  GOOGLE_STT_PROJECT: optionalString,
-  GOOGLE_STT_LOCATION: z.string().default("europe-west4"),
-  GOOGLE_STT_LANGUAGES: z.string().default("sn-ZW,zu-ZA,en-US"),
-  GOOGLE_APPLICATION_CREDENTIALS: optionalString,
-  GOOGLE_SERVICE_ACCOUNT_JSON: optionalString,
   STORAGE: z.enum(["disk", "s3"]).default("disk"),
   S3_BUCKET: optionalString,
   S3_REGION: z.string().default("auto"),
@@ -54,7 +44,6 @@ const EnvSchema = z.object({
   ALERT_WEBHOOK_URL: optionalString,
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(20),
   RATE_LIMIT_PER_DAY: z.coerce.number().int().min(1).default(300),
-  MEDIA_PER_DAY: z.coerce.number().int().min(0).default(20),
   REPORTS_PER_DAY: z.coerce.number().int().min(1).default(3),
   REPORTS_TO_PAUSE: z.coerce.number().int().min(0).default(3),
   MESSAGE_RETENTION_DAYS: z.coerce.number().int().min(30).default(180),
@@ -96,7 +85,7 @@ export interface Config {
   publicBaseUrl: string;
   seedSampleData: boolean;
   anthropicApiKey?: string;
-  /** Used only when the local engine can't understand a request, and for photos. */
+  /** Used only when the local engine can't understand a request. */
   claudeModel: string;
   /** Claude spending stops for the day at `dailyUsd`; one number can cause `perNumberPerDay` calls. */
   claudeBudget: { dailyUsd: number; perNumberPerDay: number };
@@ -104,17 +93,8 @@ export interface Config {
   lexiconTrustDrafts: boolean;
   /** When a person answers chats handed to the team, so customers are told when to expect a reply. */
   teamHours: TeamHours;
-  /** Read field agents' price-list photos through the Batch API (half price, results within hours). */
-  priceListBatch: boolean;
   /** The local engine's thresholds: unknown words allowed in a straight answer, and the classifier's bar. */
   local: LocalSettings;
-  /** Speech-to-text for voice notes: Google Chirp 2, or any service behind the HTTP contract in src/ai/speech.ts. */
-  speech: {
-    url?: string;
-    token?: string;
-    languages: string[];
-    google?: { projectId: string; location: string; languages: string[]; credentialsFile?: string; credentialsJson?: string };
-  };
   /** Where business photos are kept. */
   storage:
     | { driver: "disk" }
@@ -131,12 +111,10 @@ export interface Config {
   /** Slack, Discord or Google Chat incoming webhook for alerts. Alerts are only logged without it. */
   alertWebhookUrl?: string;
   /** Per-number limits against floods and abuse. */
-  limits: { perMinute: number; perDay: number; mediaPerDay: number; reportsPerDay: number; reportsToPause: number };
+  limits: { perMinute: number; perDay: number; reportsPerDay: number; reportsToPause: number };
   /** How long conversation data is kept. */
   retention: { messageDays: number; requestDays: number };
   opsSessionHours: number;
-  /** Largest photo or voice note we download. */
-  maxMediaBytes: number;
   whatsapp: {
     transport: "simulator" | "cloud";
     graphVersion: string;
@@ -180,23 +158,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     claudeBudget: { dailyUsd: e.CLAUDE_DAILY_BUDGET_USD, perNumberPerDay: e.CLAUDE_CALLS_PER_NUMBER_PER_DAY },
     lexiconTrustDrafts: e.LEXICON_TRUST_DRAFTS,
     teamHours: parseTeamHours(e.TEAM_HOURS),
-    priceListBatch: e.PRICE_LIST_BATCH,
     local: { unknownWords: parseUnknownWords(e.LOCAL_UNKNOWN_WORDS), classifierMin: e.LOCAL_CLASSIFIER_MIN },
-    speech: {
-      url: e.SPEECH_TO_TEXT_URL,
-      token: e.SPEECH_TO_TEXT_TOKEN,
-      languages: list(e.SPEECH_LANGUAGES),
-      google: e.GOOGLE_STT_PROJECT
-        ? {
-            projectId: e.GOOGLE_STT_PROJECT,
-            location: e.GOOGLE_STT_LOCATION,
-            languages: list(e.GOOGLE_STT_LANGUAGES),
-            credentialsFile: e.GOOGLE_APPLICATION_CREDENTIALS,
-            credentialsJson: e.GOOGLE_SERVICE_ACCOUNT_JSON,
-          }
-        : undefined,
-    },
-    maxMediaBytes: Math.round(e.MAX_MEDIA_MB * 1024 * 1024),
     storage:
       e.STORAGE === "s3"
         ? {
@@ -214,7 +176,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     limits: {
       perMinute: e.RATE_LIMIT_PER_MINUTE,
       perDay: e.RATE_LIMIT_PER_DAY,
-      mediaPerDay: e.MEDIA_PER_DAY,
       reportsPerDay: e.REPORTS_PER_DAY,
       reportsToPause: e.REPORTS_TO_PAUSE,
     },
@@ -260,9 +221,6 @@ function validate(c: Config): void {
     }
   }
   if (c.storage.driver === "s3" && !c.storage.bucket) problems.push("S3_BUCKET is required when STORAGE=s3");
-  if (c.speech.google && !c.speech.google.credentialsFile && !c.speech.google.credentialsJson) {
-    problems.push("GOOGLE_STT_PROJECT needs GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON");
-  }
   if (c.env === "production") {
     if (!c.opsToken) problems.push("OPS_TOKEN is required in production");
     if (!c.databaseUrl) problems.push("DATABASE_URL is required in production (embedded PGlite is for development)");

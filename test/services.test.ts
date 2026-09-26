@@ -1,10 +1,8 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { WebhookAlerts } from "../src/alerts.js";
-import { GoogleSpeechToText, shortLanguage } from "../src/ai/google-speech.js";
 import * as copy from "../src/conversation/copy.js";
 import { judge, parseExamples, score } from "../src/eval/score.js";
 import { silentLogger } from "../src/logger.js";
@@ -43,64 +41,6 @@ describe("photo storage", () => {
     await store.delete("photos/b1/p1.jpg");
     expect(sent.map((s) => s.name)).toEqual(["PutObjectCommand", "GetObjectCommand", "GetObjectCommand", "DeleteObjectCommand"]);
     expect(sent[0]!.input).toMatchObject({ Bucket: "photos-bucket", Key: "whatsapp-directory/photos/b1/p1.jpg", ContentType: "image/jpeg" });
-  });
-});
-
-describe("Google speech-to-text (Chirp 2)", () => {
-  const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
-    modulusLength: 2048,
-    privateKeyEncoding: { type: "pkcs8", format: "pem" },
-    publicKeyEncoding: { type: "spki", format: "pem" },
-  });
-
-  function fakeGoogle(transcripts: Record<string, string>) {
-    const calls: { url: string; body: string }[] = [];
-    const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
-      const body = String(init?.body ?? "");
-      calls.push({ url: String(url), body });
-      if (String(url).includes("oauth2")) {
-        const assertion = new URLSearchParams(body).get("assertion")!;
-        const [header, claims, signature] = assertion.split(".");
-        const valid = crypto.verify("RSA-SHA256", Buffer.from(`${header}.${claims}`), publicKey, Buffer.from(signature!, "base64url"));
-        expect(valid).toBe(true);
-        expect(JSON.parse(Buffer.from(claims!, "base64url").toString())).toMatchObject({ iss: "stt@project.iam.gserviceaccount.com" });
-        return Response.json({ access_token: "ya29.test", expires_in: 3600 });
-      }
-      const language = (JSON.parse(body) as { config: { languageCodes: string[] } }).config.languageCodes[0]!;
-      const text = transcripts[language];
-      return Response.json(text ? { results: [{ alternatives: [{ transcript: text }], languageCode: language }] } : {});
-    }) as typeof fetch;
-    return { fetchFn, calls };
-  }
-
-  const make = (fetchFn: typeof fetch) =>
-    new GoogleSpeechToText({
-      projectId: "my-project",
-      location: "europe-west4",
-      languages: ["sn-ZW", "zu-ZA", "en-US"],
-      credentials: { client_email: "stt@project.iam.gserviceaccount.com", private_key: privateKey },
-      fetchFn,
-    });
-  const audio = { data: Buffer.from("ogg opus"), mimeType: "audio/ogg" };
-
-  it("signs in with the service account once, then tries languages in order until one hears something", async () => {
-    const { fetchFn, calls } = fakeGoogle({ "zu-ZA": "ngifuna umakhenikha e Mpopoma" });
-    const stt = make(fetchFn);
-    expect(await stt.transcribe(audio)).toEqual({ text: "ngifuna umakhenikha e Mpopoma", language: "nd" });
-    expect(calls.map((c) => (c.url.includes("oauth2") ? "token" : JSON.parse(c.body).config.languageCodes[0]))).toEqual(["token", "sn-ZW", "zu-ZA"]);
-    expect(calls[1]!.url).toBe("https://europe-west4-speech.googleapis.com/v2/projects/my-project/locations/europe-west4/recognizers/_:recognize");
-    expect(JSON.parse(calls[1]!.body).config.model).toBe("chirp_2");
-
-    // The language of their last request goes first; the token is reused.
-    calls.length = 0;
-    await stt.transcribe(audio, { language: "nd" });
-    expect(calls.map((c) => JSON.parse(c.body).config.languageCodes[0])).toEqual(["zu-ZA"]);
-  });
-
-  it("returns null when no language hears anything", async () => {
-    const { fetchFn } = fakeGoogle({});
-    expect(await make(fetchFn).transcribe(audio)).toBeNull();
-    expect(shortLanguage("sn-ZW")).toBe("sn");
   });
 });
 

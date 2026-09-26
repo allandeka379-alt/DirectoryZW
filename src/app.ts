@@ -2,14 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { WebhookAlerts, type Alerts } from "./alerts.js";
 import { ClaudeBudget } from "./ai/budget.js";
 import { ClaudeInterpreter } from "./ai/claude-interpreter.js";
-import { GoogleSpeechToText, loadServiceAccount } from "./ai/google-speech.js";
 import { KeywordInterpreter } from "./ai/keyword-interpreter.js";
 import { trainClassifier } from "./ai/learning.js";
 import { Lexicon } from "./ai/lexicon.js";
-import { ClaudePriceListBatches, type PriceListBatches } from "./ai/price-list-batch.js";
-import { HttpSpeechToText, SimulatorSpeechToText, type SpeechToText } from "./ai/speech.js";
 import { Understander, type RequestReader } from "./ai/understanding.js";
-import { ClaudeVision, type Vision } from "./ai/vision.js";
 import type { Config } from "./config.js";
 import type { Services } from "./conversation/context.js";
 import { ConversationEngine } from "./conversation/engine.js";
@@ -23,7 +19,6 @@ import { Taxonomy } from "./directory/taxonomy.js";
 import { JobQueue } from "./jobs/queue.js";
 import { consoleLogger, type Logger } from "./logger.js";
 import { DiskStore, S3Store, type FileStore } from "./storage.js";
-import { CloudMediaSource, SimulatorMediaSource, type MediaSource } from "./whatsapp/media.js";
 import { CloudApiTransport, SimulatorTransport, type Transport } from "./whatsapp/transport.js";
 
 export interface App {
@@ -34,8 +29,6 @@ export interface App {
   transport: Transport;
   /** Present when messages stay local instead of going to Meta. */
   simulator?: SimulatorTransport;
-  /** Present when photos and voice notes come from the simulator. */
-  simulatorMedia?: SimulatorMediaSource;
   /** Field photos and other uploads. */
   store: FileStore;
   runJobs(): Promise<number>;
@@ -52,13 +45,9 @@ export interface AppOptions {
   db?: Db;
   transport?: Transport;
   store?: FileStore;
-  media?: MediaSource;
   alerts?: Alerts;
-  /** Pass null to switch a feature off even when it is configured. */
+  /** Pass null to switch Claude off even when it is configured. */
   claude?: RequestReader | null;
-  vision?: Vision | null;
-  priceListBatches?: PriceListBatches | null;
-  speech?: SpeechToText | null;
   log?: Logger;
   now?: () => Date;
 }
@@ -86,16 +75,6 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
           log,
         })
       : new SimulatorTransport());
-  const media =
-    opts.media ??
-    (cloud
-      ? new CloudMediaSource({
-          graphVersion: config.whatsapp.graphVersion,
-          accessToken: config.whatsapp.accessToken!,
-          maxBytes: config.maxMediaBytes,
-        })
-      : new SimulatorMediaSource());
-  const simulatorMedia = media instanceof SimulatorMediaSource ? media : undefined;
 
   const alerts = opts.alerts ?? new WebhookAlerts({ webhookUrl: config.alertWebhookUrl, brand: config.brandName, log, now });
   const budget = new ClaudeBudget({ db, ...config.claudeBudget, alerts, log, now });
@@ -104,24 +83,6 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
   const keywords = new KeywordInterpreter();
   const claude = pick(opts.claude, () => (claudeOpts ? new ClaudeInterpreter(claudeOpts) : undefined));
   const understanding = new Understander({ db, local: keywords, claude, budget, log, settings: config.local });
-  const vision = pick(opts.vision, () => (claudeOpts ? new ClaudeVision(claudeOpts) : undefined));
-  const priceListBatches = pick(opts.priceListBatches, () =>
-    client && config.priceListBatch ? new ClaudePriceListBatches({ client, model: config.claudeModel, meter: budget }) : undefined,
-  );
-  const speech = pick(opts.speech, () => {
-    const google = config.speech.google;
-    if (google) {
-      return new GoogleSpeechToText({
-        projectId: google.projectId,
-        location: google.location,
-        languages: google.languages,
-        credentials: loadServiceAccount(google.credentialsFile, google.credentialsJson),
-      });
-    }
-    if (config.speech.url) return new HttpSpeechToText({ url: config.speech.url, token: config.speech.token, languages: config.speech.languages });
-    // In the simulator, a voice note carries the words typed when it was sent.
-    return simulatorMedia ? new SimulatorSpeechToText(simulatorMedia) : undefined;
-  });
   const store = opts.store ?? (config.storage.driver === "s3" ? await S3Store.create(config.storage) : new DiskStore(config.uploadsDir));
   if (config.env === "production" && store.name === "disk") {
     log.warn({ dir: config.uploadsDir }, "Photos are stored on local disk; make sure it survives redeploys, or set STORAGE=s3");
@@ -142,11 +103,7 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     budget,
     messenger,
     jobs,
-    media,
     store,
-    vision,
-    priceListBatches,
-    speech,
     alerts,
     log,
     now,
@@ -166,7 +123,6 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     engine,
     transport,
     simulator: transport instanceof SimulatorTransport ? transport : undefined,
-    simulatorMedia,
     store,
     runJobs: () => jobs.runDue(handlers),
     reloadTaxonomy: async () => {

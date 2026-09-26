@@ -113,13 +113,12 @@ export function askWhatYouNeed(name?: string | null): OutboundMessage {
   };
 }
 
-export function help(brand: string, can: { photos?: boolean; voice?: boolean } = {}): OutboundMessage {
-  const ways = [can.voice ? "send a voice note" : null, can.photos ? "send a photo of what you want" : null].filter(Boolean);
+export function help(brand: string): OutboundMessage {
   return {
     kind: "text",
     text:
       `*How ${brand} works*\n` +
-      `1. Tell me what you need and where.${ways.length ? ` You can also ${ways.join(" or ")}.` : ""}\n` +
+      "1. Type what you need and where, for example *plumber in Mabelreign*.\n" +
       "2. I show businesses that can help. ✅ means our team checked them in person.\n" +
       "3. Pick one and tap *Connect me* to chat with them directly on WhatsApp.\n\n" +
       "Type *recommend* to tell us about a good business we should list, *agent* to talk to a person, or *menu* to start again.",
@@ -260,12 +259,11 @@ export function prefilledMessage(brand: string, businessName: string, refCode: s
   return `Hi ${businessName}, I found you on ${brand} (ref ${refCode}). I'm looking for: ${summary}`;
 }
 
-export function connectLink(b: BusinessView, url: string, refCode: string, fromPhoto = false): OutboundMessage {
+export function connectLink(b: BusinessView, url: string, refCode: string): OutboundMessage {
   return {
     kind: "cta_url",
     body:
       `Tap below to chat with *${b.name}* on WhatsApp. Your message is ready, so just press send.` +
-      (fromPhoto ? " Then send them your photo too." : "") +
       `\n\nReference: *${refCode}*` +
       (b.verification === "verified" ? "" : `\n\n${UNVERIFIED_WARNING}`),
     displayText: "Chat with them",
@@ -417,52 +415,16 @@ export function sayItDifferently(): string {
   return 'OK. Please tell me in other words what you need, for example "fridge repair in Glen View" or "tents to hire".';
 }
 
-export function photosNotYet(): OutboundMessage {
-  return { kind: "text", text: "I can't read photos yet. Please describe what you're looking for in words." };
-}
-
-export function photosBusy(): OutboundMessage {
-  return { kind: "text", text: "I can't look at photos right now. Please describe what you're looking for in words." };
-}
-
-export function photoUnreadable(): OutboundMessage {
+/** Voice notes and photos: the assistant reads typed messages only, for now. */
+export function typeInstead(): OutboundMessage {
   return {
     kind: "text",
-    text: "I couldn't tell what you're looking for from that photo. Please describe it in words, or send a clearer photo with a caption.",
+    text: 'I can only read typed messages for now. Please type what you need, for example "plumber in Mabelreign" or "fridge repair in Glen View".',
   };
-}
-
-export function voiceNotYet(): OutboundMessage {
-  return { kind: "text", text: "I can't listen to voice notes yet. Please type what you're looking for." };
-}
-
-export function voiceFailed(): OutboundMessage {
-  return { kind: "text", text: "Sorry, I couldn't listen to that voice note just now. Please type your message instead." };
-}
-
-export function voiceEmpty(): OutboundMessage {
-  return { kind: "text", text: "I couldn't make out what you said. Please try again somewhere quieter, or type it." };
-}
-
-/** Shown above the reply to a voice note, so a wrong transcript is easy to spot. */
-export function heard(text: string): string {
-  return `🎙️ I heard: “${text.length > 200 ? `${text.slice(0, 199)}…` : text}”`;
-}
-
-export function mediaTooLarge(): OutboundMessage {
-  return { kind: "text", text: "That file is too large for me. Please send a smaller photo or a shorter voice note." };
 }
 
 export function slowDown(): OutboundMessage {
   return { kind: "text", text: "You're sending messages faster than I can answer. Please wait a few minutes, then try again." };
-}
-
-export function tooMuchMedia(): OutboundMessage {
-  return { kind: "text", text: "You've sent a lot of photos and voice notes today. Please type what you need, or try again tomorrow." };
-}
-
-export function mediaFailed(): OutboundMessage {
-  return { kind: "text", text: "Sorry, I couldn't open that. Please try sending it again." };
 }
 
 export function noLongerAvailable(): OutboundMessage {
@@ -725,7 +687,6 @@ export function bizMenu(b: { name: string; status: string; verification: string 
   const rows: { id: string; title: string; description?: string }[] = [
     { id: Ids.summary, title: "My summary", description: "Searches and customers this week" },
     { id: Ids.editWhat, title: "Update what I sell", description: "Description and categories" },
-    { id: Ids.priceList, title: "Add price list photo", description: "Customers see your items and prices" },
     { id: Ids.editArea, title: "Update location", description: "Where customers find you" },
     b.status === "paused"
       ? { id: Ids.resume, title: "Resume listing", description: "Show me to customers again" }
@@ -771,45 +732,9 @@ export function listingUpdated(name: string): OutboundMessage {
   return { kind: "text", text: `Done, *${name}* is updated. Type *menu* for your options.` };
 }
 
-export function askPriceListPhoto(): OutboundMessage {
-  return {
-    kind: "text",
-    text: "Send a photo of your price list, menu or price board. Take it straight on, in good light, so every price is readable. (Type *cancel* to stop.)",
-  };
-}
-
-export function priceListUnreadable(): OutboundMessage {
-  return {
-    kind: "text",
-    text: "I couldn't read items and prices from that photo. Please send a clearer photo, taken straight on in good light, or type *cancel*.",
-  };
-}
-
-export function priceListRead(businessName: string, items: { name: string; price: string | null }[]): OutboundMessage {
-  const shown = items.slice(0, 10).map((i) => `• ${i.name}${i.price ? `: ${i.price}` : ""}`);
-  const more = items.length > shown.length ? `\n…and ${items.length - shown.length} more` : "";
-  return {
-    kind: "buttons",
-    body:
-      `I read ${items.length} item${items.length === 1 ? "" : "s"} from your price list:\n${shown.join("\n")}${more}\n\n` +
-      `Save them to *${businessName}*? Customers searching for these items will find you.`,
-    buttons: [
-      { id: Ids.priceSave, title: "Save prices" },
-      { id: Ids.priceRetry, title: "Try another photo" },
-      { id: Ids.menu, title: "Cancel" },
-    ],
-  };
-}
-
-export function priceListSaved(businessName: string, count: number): OutboundMessage {
-  return {
-    kind: "text",
-    text: `Saved! ${count} item${count === 1 ? "" : "s"} from your price list are now on *${businessName}*. Send a new photo whenever your prices change.`,
-  };
-}
-
-export function bizPhotosUnavailable(): OutboundMessage {
-  return { kind: "text", text: "I can't read photos right now. Please try again later, or type *menu* for your options." };
+/** Voice notes and photos on the business number. */
+export function bizTypeInstead(): OutboundMessage {
+  return { kind: "text", text: "I can only read typed messages for now. Type *menu* for your options." };
 }
 
 export function weeklySummary(brand: string, name: string, shown: number, intros: number): OutboundMessage {

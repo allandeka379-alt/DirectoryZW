@@ -38,10 +38,10 @@ The Batch API halves every price, and web search adds $10 per 1,000 searches.
 | --- | --- | --- | --- |
 | Customer text message (anything that isn't a button, command or answer to our question) | Always Claude | ~$0.005 (2,900-token cached prompt, ~100-token answer, plus thinking tokens: thinking isn't switched off) | ~$0.002 |
 | Business description at registration or edit; customer tips | Always Claude | ~$0.005 | ~$0.002 |
-| Customer photo | Always Claude | ~$0.012 (~1,600 image tokens) | ~$0.005 |
-| Price-list photo | Always Claude | ~$0.05 (long output) | ~$0.02; ~$0.01 with the Batch API |
+| Customer photo (removed in Milestone 11) | Always Claude | ~$0.012 (~1,600 image tokens) | ~$0.005 |
+| Price-list photo (removed in Milestone 11) | Always Claude | ~$0.05 (long output) | ~$0.02; ~$0.01 with the Batch API |
 | "Found online" web search (removed) | When nothing was listed | ~$0.15 (3 searches plus 10–30k tokens of results) | ~$0.08 |
-| For comparison: one WhatsApp reply | | ~$0.004 from 1 Oct 2026 (our September research; re-check) | |
+| For comparison: one WhatsApp message | | Free inside the 24-hour window a customer's message opens; about $0.004 for a template outside it (Meta's pricing page, checked 25 Sep 2026) | |
 
 Haiku 4.5 is cheapest per token, but it only caches prompts of 4,096 tokens or more. Our request prompt is about 2,900 tokens, so on Haiku every call pays full price (about $0.0035). Sonnet 5 caches it and costs about $0.0017. Model choice should come from the eval (`npm run eval -- --claude --model …`), not from list prices.
 
@@ -162,7 +162,7 @@ The target is **98% or better precision for HIGH answers**, checked weekly on a 
   - over either limit, ask the customer or go to a person instead
 - **Metering:** every call's `usage` (input, cached and output tokens) is saved with its feature, so the System screen shows Claude spend per day and per feature.
 
-**Other uses**
+**Other uses** (photos and price lists were removed in Milestone 11: messages are typed only, for now)
 - **Customer photos:** try the caption first. If the local engine understands it with HIGH confidence, skip the photo. Otherwise send a downscaled photo (long side 800px, about 850 tokens instead of about 1,600) to the small model.
 - **Price lists:**
   - Photos agents take in the field go through the Batch API (half price; results within 24 hours, usually much sooner).
@@ -221,12 +221,12 @@ The scenario:
 | | Today | With this design |
 | --- | --- | --- |
 | Text understanding | 15,000 Opus calls, about $75 | About 15% escalated, 2,250 Sonnet calls: about $4 |
-| Photos | 500, about $6 | Caption-first, downscaled, 300 small-model calls: about $1.50 |
-| Price lists | 300, about $15 | Batch and small model: about $3 |
+| Photos | 500, about $6 | Caption-first, downscaled, 300 small-model calls: about $1.50 (none since Milestone 11) |
+| Price lists | 300, about $15 | Batch and small model: about $3 (none since Milestone 11) |
 | Registration and tips | About 1,000 calls, about $5 | None |
 | **Claude total** | **about $100** | **about $10** |
 
-WhatsApp replies are a separate cost. At about $0.004 each (if the October 2026 change applies as researched), 10,000 conversations × about 6 replies is about $240 a month. Once Claude is optimised, messaging is the bigger variable cost, so every extra question has to earn its place. A side benefit: requests handled locally never leave our servers, which means fewer cross-border transfers to record for POTRAZ.
+WhatsApp replies are free: every message sent inside the 24-hour window a customer's own message opens costs nothing (Meta's pricing page, checked 25 September 2026; an earlier note here said replies would be charged from October 2026, which was wrong). Only templates sent outside a window cost money, about $0.004 each. See [HARDENING.md](HARDENING.md) for keeping those near zero. A side benefit: requests handled locally never leave our servers, which means fewer cross-border transfers to record for POTRAZ.
 
 ## 11. Rollout
 
@@ -274,8 +274,8 @@ Each phase ships on its own and must keep the eval at least as accurate as Claud
   - It only offers "Did you mean…?" options, never answers. Its guesses go through the action rules ("fridj repair" → appliance repairs).
   - It's retrained hourly and whenever words change.
   - On 12 misspelled test requests it turned 4 of 10 unanswerable ones into questions with the right option, and made no wrong guesses.
-- **Caption-first photos** (built): a caption the local engine understands on its own is used without sending the photo to Claude.
-- **The Batch API for field price lists** (built): field agents' price-list photos are sent every 20 minutes in one batch, at half price. Results usually come within the hour, and failures are retried up to three times. Owners' own photos are still read straight away. We skipped downscaling photos, which needs an image library; Claude sizes them down anyway.
+- **Caption-first photos** (built, then removed in Milestone 11): a caption the local engine understands on its own is used without sending the photo to Claude.
+- **The Batch API for field price lists** (built, then removed in Milestone 11): field agents' price-list photos are sent every 20 minutes in one batch, at half price. Results usually come within the hour, and failures are retried up to three times. Owners' own photos are still read straight away. We skipped downscaling photos, which needs an image library; Claude sizes them down anyway.
 - **Targets** (built): the System screen shows the targets from §9 against the last 7 days: understood without Claude, Claude calls per 100 requests, handoffs, the weekly check, and labelling progress.
 - **To do once there's traffic:**
   - label about 300 requests

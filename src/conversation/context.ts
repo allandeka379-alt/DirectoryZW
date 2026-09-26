@@ -2,11 +2,8 @@ import type { Alerts } from "../alerts.js";
 import type { ClaudeBudget } from "../ai/budget.js";
 import type { WordShapeClassifier } from "../ai/classifier.js";
 import type { KeywordInterpreter } from "../ai/keyword-interpreter.js";
-import type { PriceListBatches } from "../ai/price-list-batch.js";
 import type { Lexicon } from "../ai/lexicon.js";
-import type { SpeechToText } from "../ai/speech.js";
 import type { Understander } from "../ai/understanding.js";
-import type { Vision } from "../ai/vision.js";
 import type { Config } from "../config.js";
 import type { Db } from "../db/client.js";
 import type { Gazetteer } from "../directory/gazetteer.js";
@@ -14,7 +11,6 @@ import type { Taxonomy } from "../directory/taxonomy.js";
 import type { JobQueue } from "../jobs/queue.js";
 import type { Logger } from "../logger.js";
 import type { FileStore } from "../storage.js";
-import type { MediaSource } from "../whatsapp/media.js";
 import type { OutboundMessage } from "../whatsapp/outbound.js";
 import type { InboundMessage } from "../whatsapp/types.js";
 import type { Messenger } from "./messenger.js";
@@ -33,20 +29,12 @@ export interface Services {
   understanding: Understander;
   /** The local keyword engine, for classifying business descriptions and tips (never Claude). */
   keywords: KeywordInterpreter;
-  /** Daily limit on Claude spending, checked before photos and price lists too. */
+  /** Daily limit on Claude spending. */
   budget: ClaudeBudget;
   messenger: Messenger;
   jobs: JobQueue;
-  /** Photos and voice notes people send. */
-  media: MediaSource;
-  /** Business photos and other uploads. */
+  /** Field agents' photos of businesses. */
   store: FileStore;
-  /** Optional: reading photos needs Claude. */
-  vision?: Vision;
-  /** Optional: field agents' price-list photos read through the Batch API, at half price. */
-  priceListBatches?: PriceListBatches;
-  /** Optional: voice notes need a speech-to-text service. */
-  speech?: SpeechToText;
   /** Tells the team when something needs a person. */
   alerts: Alerts;
   log: Logger;
@@ -60,8 +48,6 @@ export interface Turn<S> {
   inbound: InboundMessage;
   state: S;
   reply(msg: OutboundMessage): Promise<void>;
-  /** Put a line at the top of the next reply, instead of paying for a separate message. */
-  prefixNext(line: string): void;
   /** Run after the turn is saved, e.g. deleting everything about this person at their request. */
   defer(fn: () => Promise<void>): void;
 }

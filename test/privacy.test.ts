@@ -2,17 +2,15 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, registerRoutes } from "../src/http/server.js";
 import { applyRetention } from "../src/privacy.js";
-import { FakeVision } from "./fakes.js";
 import { testApp, textOf, type TestApp } from "./helpers.js";
 
-const vision = new FakeVision();
 let app: TestApp;
 let server: FastifyInstance;
 let n = 0;
 const newCustomer = () => `26377555${String(++n).padStart(4, "0")}`;
 
 beforeAll(async () => {
-  app = await testApp({}, { vision });
+  app = await testApp();
   server = createServer({ logger: false });
   registerRoutes(server, app);
   await server.ready();
@@ -65,11 +63,15 @@ describe("business owners deleting their data", () => {
     await b("Avondale");
     await app.tap("This number", "business", owner);
     await app.tap("I agree", "business", owner);
-    vision.priceListAnswer = { is_price_list: true, items: [{ name: "Wedding cake, 3 tier", price_usd: 120, price_text: "$120" }] };
-    await app.send("business", owner, { type: "image", mediaId: app.simulatorMedia!.put({ data: Buffer.from("menu"), mimeType: "image/jpeg" }), mimeType: "image/jpeg" });
-    await app.tap("Save prices", "business", owner);
-    expect(app.files.files.size).toBeGreaterThan(0);
     const [biz] = await app.db.query<{ id: string }>("SELECT id FROM businesses WHERE name = $1", ["Chipo's Cakes"]);
+    // A field agent's photo of the shop, and a price-list item, as a visit would leave them.
+    const key = `photos/${biz!.id}/shop.jpg`;
+    await app.files.put(key, Buffer.from("jpeg"));
+    await app.db.query(
+      "INSERT INTO business_photos (business_id, kind, storage_key, content_type, bytes) VALUES ($1, 'shopfront', $2, 'image/jpeg', 4)",
+      [biz!.id, key],
+    );
+    await app.db.query("INSERT INTO offerings (business_id, name, price_usd, price_text) VALUES ($1, 'Wedding cake, 3 tier', 120, '$120')", [biz!.id]);
 
     await b("delete my data");
     expect(textOf(app.last("business", owner))).toContain("*Chipo's Cakes*");

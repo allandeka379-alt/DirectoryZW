@@ -133,21 +133,27 @@ describe("simulator API", () => {
     expect(page.body).toContain("TestDir");
   });
 
-  it("accepts photo and voice-note uploads", async () => {
-    const upload = await server.inject({
+  it("asks for a typed message when a voice note arrives, and takes no uploads", async () => {
+    const customer = "263774444445";
+    await server.inject({
       method: "POST",
-      url: "/simulator/api/media",
-      payload: { mimeType: "audio/ogg", dataBase64: Buffer.from("voice").toString("base64"), transcript: "I need a plumber in Mabelreign" },
+      url: "/simulator/api/send",
+      payload: { channel: "customer", from: customer, content: { type: "text", text: "hi" } },
     });
-    expect(upload.statusCode).toBe(200);
-    const { mediaId } = upload.json();
+    await server.inject({
+      method: "POST",
+      url: "/simulator/api/send",
+      payload: { channel: "customer", from: customer, content: { type: "button_reply", id: "consent:yes", title: "I agree" } },
+    });
     const sent = await server.inject({
       method: "POST",
       url: "/simulator/api/send",
-      payload: { channel: "customer", from: "263774444445", content: { type: "audio", mediaId, voice: true, mimeType: "audio/ogg" } },
+      payload: { channel: "customer", from: customer, content: { type: "audio", mediaId: "voice-1", voice: true, mimeType: "audio/ogg" } },
     });
     expect(sent.statusCode).toBe(200);
-    const bad = await server.inject({ method: "POST", url: "/simulator/api/media", payload: { mimeType: "text/html", dataBase64: "PGgxPg==" } });
-    expect(bad.statusCode).toBe(400);
+    const replies = (await server.inject({ url: `/simulator/api/messages?channel=customer&to=${customer}&after=0` })).json();
+    expect(JSON.stringify(replies.items.at(-1))).toContain("I can only read typed messages for now");
+    const upload = await server.inject({ method: "POST", url: "/simulator/api/media", payload: { mimeType: "audio/ogg", dataBase64: "b2dn" } });
+    expect(upload.statusCode).toBe(404);
   });
 });

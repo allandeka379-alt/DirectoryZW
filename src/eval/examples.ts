@@ -4,7 +4,7 @@ import type { EvalExample } from "./score.js";
 /**
  * Real requests as eval examples. Those the team labelled (ops console: Label requests) carry the
  * label and count as reviewed; the rest carry what the app decided at the time, for someone to check.
- * Photo requests are left out: their words are our description of the photo.
+ * Requests from photos (before typed messages only) are left out: their words are our description of the photo.
  */
 export async function realExamples(db: Db, opts: { labelled: boolean; days: number; limit: number }): Promise<EvalExample[]> {
   const rows = await db.query<{

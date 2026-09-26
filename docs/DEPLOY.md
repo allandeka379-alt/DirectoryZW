@@ -8,10 +8,9 @@ The app is one Node.js process with a web server, a background job loop and the 
 | --- | --- | --- |
 | A host that runs Node 22+ or Docker, with HTTPS | The app, the webhook Meta calls, the ops console and field app (GPS and offline mode need HTTPS) | Render, Railway, Fly.io, a VPS behind Caddy |
 | Managed PostgreSQL 15+ with daily backups and point-in-time recovery | Everything except photos | Neon, Supabase, AWS RDS, DigitalOcean |
-| S3-compatible bucket, private | Business photos and price lists | Cloudflare R2, AWS S3, Backblaze B2 |
+| S3-compatible bucket, private | Field agents' photos of businesses | Cloudflare R2, AWS S3, Backblaze B2 |
 | Meta WhatsApp Business account with two numbers | Customer number and business number | See [LAUNCH.md](LAUNCH.md) |
-| Anthropic API key | Wording the local engine can't read, and photos (within `CLAUDE_DAILY_BUDGET_USD`) | console.anthropic.com |
-| Google Cloud project (optional) | Voice notes in Shona (Chirp 2) | Enable the Speech-to-Text API, create a service account |
+| Anthropic API key (optional) | Wording the local engine can't read (within `CLAUDE_DAILY_BUDGET_USD`) | console.anthropic.com |
 | Chat webhook (optional) | Alerts | Slack, Discord or Google Chat incoming webhook |
 
 Where the data lives matters for POTRAZ: every provider above stores or processes data outside Zimbabwe. Record each one (see [DATA_PROTECTION.md](DATA_PROTECTION.md)). Hosting in South Africa (for example AWS Cape Town, Azure South Africa North or Google Cloud Johannesburg) keeps latency low for customers in Zimbabwe.
@@ -40,8 +39,6 @@ S3_BUCKET=… S3_ENDPOINT=… S3_ACCESS_KEY_ID=… S3_SECRET_ACCESS_KEY=…
 ALERT_WEBHOOK_URL=…
 SEED_SAMPLE_DATA=false
 ```
-
-For voice notes, also set `GOOGLE_STT_PROJECT` and either `GOOGLE_SERVICE_ACCOUNT_JSON` (the key file's contents) or `GOOGLE_APPLICATION_CREDENTIALS` (a path). Keep `GOOGLE_STT_LOCATION=europe-west4`: Chirp 2 serves Shona from there.
 
 The app refuses to start in production without `OPS_TOKEN`, `DATABASE_URL` and the WhatsApp settings.
 

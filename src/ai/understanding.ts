@@ -19,8 +19,6 @@ export interface ReaderContext extends InterpretContext {
   noAsk?: boolean;
   /** Categories the customer ruled out by tapping "Something else". */
   exclude?: string[];
-  /** Only the local engine and the phrasebook: no question and no Claude (e.g. a photo's caption). */
-  localOnly?: boolean;
 }
 
 /** Something that reads requests the local engine couldn't: Claude. Null means it couldn't either. */
@@ -103,7 +101,6 @@ export class Understander {
     if (usable?.source === "team") return remembered(usable);
     if (local.band === "high" && allowed(local.interpretation.category_slug)) return answer(local.interpretation, "local");
     if (usable) return remembered(usable);
-    if (ctx.localOnly) return answer(local.interpretation, "fallback");
 
     const options = local.options.filter(allowed);
     if (local.band === "medium" && options.length && !ctx.noAsk) return answer(local.interpretation, "local", local.reasons, options);

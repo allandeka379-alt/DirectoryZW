@@ -10,15 +10,12 @@ import {
 } from "../directory/businesses.js";
 import type { Area } from "../directory/gazetteer.js";
 import type { Taxonomy } from "../directory/taxonomy.js";
-import { priceLabel, replaceOfferings, saveBusinessPhoto } from "../directory/offerings.js";
 import { eraseBusiness, eraseContact } from "../privacy.js";
-import type { PriceListItem } from "../ai/vision.js";
 import { normalizeText, normalizeZimPhone } from "../text.js";
 import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
 import { ERASE_WORDS } from "./customer.js";
-import { fetchMedia, hearVoiceNote } from "./media.js";
 import { setConsent } from "./store.js";
 
 type Stage =
@@ -31,9 +28,7 @@ type Stage =
   | "reg_consent"
   | "edit_what"
   | "edit_confirm"
-  | "edit_area"
-  | "price_photo"
-  | "price_confirm";
+  | "edit_area";
 
 export interface BusinessState {
   stage?: Stage;
@@ -49,8 +44,6 @@ export interface BusinessState {
   };
   /** Which listing the owner is managing, when they have more than one. */
   selectedBusinessId?: string;
-  /** Items read from a price-list photo, waiting for the owner to save them. */
-  priceDraft?: { businessId: string; businessName: string; photoId: string; items: PriceListItem[] };
 }
 
 type T = Turn<BusinessState>;
@@ -64,25 +57,19 @@ export async function handleBusinessTurn(t: T): Promise<void> {
   // Businesses a field agent registered become manageable once their number messages us.
   if (contact.phone) await claimBusinessesByPhone(svc.db, contact.id, contact.phone);
 
-  let c = inbound.content;
+  const c = inbound.content;
   if (c.type === "button_reply" || c.type === "list_reply") return onAction(t, c.id);
   if (c.type === "location" && (state.stage === "reg_area" || state.stage === "edit_area")) {
     return setArea(t, svc.gazetteer.nearest(c.lat, c.lng), c.lat, c.lng);
   }
-  // Price lists arrive as photos; any photo from an owner is read as one.
-  if (c.type === "image") return onPriceListPhoto(t, c.mediaId);
-  if (c.type === "audio") {
-    const heard = await hearVoiceNote(t, c.mediaId);
-    if (!heard) return;
-    c = { type: "text", text: heard };
-  }
+  // Typed messages only, for now: voice notes and photos aren't read.
+  if (c.type === "image" || c.type === "audio") return t.reply(copy.bizTypeInstead());
   if (c.type === "text") {
     const cmd = normalizeText(c.text);
     if (state.stage && ["cancel", "stop"].includes(cmd)) {
       const wasEditing = !state.stage.startsWith("reg_");
       state.stage = undefined;
       state.draft = undefined;
-      state.priceDraft = undefined;
       return wasEditing ? showMenu(t) : t.reply(copy.regCancelled());
     }
     if (ERASE_WORDS.includes(cmd)) {
@@ -91,7 +78,6 @@ export async function handleBusinessTurn(t: T): Promise<void> {
     }
     if (state.stage) return continueStage(t, c.text);
     if (REGISTER_WORDS.includes(cmd)) return startRegistration(t);
-    if (["prices", "price list", "pricelist", "menu photo"].includes(cmd)) return withBusiness(t, () => askForPriceList(t));
     if (["summary", "stats"].includes(cmd)) return withBusiness(t, (b) => sendSummary(t, b));
     if (cmd === "pause") return withBusiness(t, (b) => setPaused(t, b, true));
     if (cmd === "resume") return withBusiness(t, (b) => setPaused(t, b, false));
@@ -157,16 +143,12 @@ async function onAction(t: T, id: string): Promise<void> {
       return withBusiness(t, (b) => (args[0] === "yes" ? removeListing(t, b) : t.reply(copy.bizConfirmRemove())));
     case "bpick":
       return pickCategoryStep(t, args);
-    case "bprice":
-      if (args[0] === "save") return savePriceList(t);
-      return withBusiness(t, () => askForPriceList(t));
     case "erase":
       if (args[0] !== "yes") return showMenu(t);
       return eraseEverything(t);
     case "bmenu":
       state.stage = undefined;
       state.draft = undefined;
-      state.priceDraft = undefined;
       return showMenu(t);
     default:
       return showMenu(t);
@@ -250,11 +232,6 @@ async function continueStage(t: T, text: string): Promise<void> {
     }
     case "reg_consent":
       if (YES.includes(normalizeText(value))) return finishRegistration(t);
-      return askCurrent(t);
-    case "price_confirm":
-      if (YES.includes(normalizeText(value))) return savePriceList(t);
-      return askCurrent(t);
-    case "price_photo":
       return askCurrent(t);
     default:
       return showMenu(t);
@@ -345,10 +322,6 @@ async function askCurrent(t: T): Promise<void> {
       return t.reply(copy.regAskOtherPhone());
     case "reg_consent":
       return t.reply(copy.regConsent(t.svc.config.businessTermsUrl));
-    case "price_photo":
-      return t.reply(copy.askPriceListPhoto());
-    case "price_confirm":
-      return t.state.priceDraft ? t.reply(priceListMessage(t.state.priceDraft.items, t.state.priceDraft.businessName)) : showMenu(t);
     default:
       return showMenu(t);
   }
@@ -365,51 +338,6 @@ async function eraseEverything(t: T): Promise<void> {
     for (const b of owned) await eraseBusiness(svc.db, svc.store, b.id);
     const result = await eraseContact(svc.db, contact.id);
     svc.log.info({ ...result, listings: owned.length }, "Business owner deleted their data");
-  });
-}
-
-// ---------- Price lists ----------
-
-async function askForPriceList(t: T): Promise<void> {
-  t.state.stage = "price_photo";
-  t.state.draft = undefined;
-  t.state.priceDraft = undefined;
-  return t.reply(copy.askPriceListPhoto());
-}
-
-/** Read a price-list photo and show the owner what we read before saving anything. */
-async function onPriceListPhoto(t: T, mediaId: string): Promise<void> {
-  const { svc, state } = t;
-  if (state.stage && state.stage !== "price_photo" && state.stage !== "price_confirm") return askCurrent(t);
-  return withBusiness(t, async (b) => {
-    if (!svc.vision) return t.reply(copy.bizPhotosUnavailable());
-    const image = await fetchMedia(t, mediaId);
-    if (!image) return;
-    const list = await svc.vision.readPriceList(image);
-    if (!list?.is_price_list || !list.items.length) {
-      state.stage = "price_photo";
-      return t.reply(copy.priceListUnreadable());
-    }
-    const photoId = await saveBusinessPhoto(svc.db, svc.store, b.id, "price_list", image);
-    state.stage = "price_confirm";
-    state.priceDraft = { businessId: b.id, businessName: b.name, photoId, items: list.items };
-    return t.reply(priceListMessage(list.items, b.name));
-  });
-}
-
-function priceListMessage(items: PriceListItem[], businessName: string) {
-  return copy.priceListRead(businessName, items.map((i) => ({ name: i.name, price: priceLabel(i) })));
-}
-
-async function savePriceList(t: T): Promise<void> {
-  const draft = t.state.priceDraft;
-  if (t.state.stage !== "price_confirm" || !draft) return showMenu(t);
-  return withBusiness(t, async (b) => {
-    if (b.id !== draft.businessId) return showMenu(t);
-    await replaceOfferings(t.svc.db, b.id, draft.items, draft.photoId);
-    t.state.stage = undefined;
-    t.state.priceDraft = undefined;
-    return t.reply(copy.priceListSaved(b.name, draft.items.length));
   });
 }
 

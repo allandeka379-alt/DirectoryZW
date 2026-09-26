@@ -1,6 +1,6 @@
 # WhatsApp Directory (working name: Directory ZW)
 
-One WhatsApp number where people in Zimbabwe ask for anything they want to buy or hire, by typing, sending a voice note or sending a photo. The service replies with local businesses that can help, verified ones first, and connects the customer to them directly. When nobody lists exactly what they want, it offers suppliers in related categories; when there's nothing at all, a person from the team takes over. It is free for customers and businesses at launch. Businesses self-register on a second WhatsApp number or are registered by field teams, and they can send a photo of their price list so customers see what they sell.
+One WhatsApp number where people in Zimbabwe type what they want to buy or hire. For now it reads typed messages only: voice notes and photos get a polite "please type" reply. The service replies with local businesses that can help, verified ones first, and connects the customer to them directly. When nobody lists exactly what they want, it offers suppliers in related categories; when there's nothing at all, a person from the team takes over. It is free for customers and businesses at launch. Businesses self-register on a second WhatsApp number or are registered by field teams.
 
 ## Run it locally
 
@@ -27,14 +27,12 @@ Things to try:
 3. **Run follow-ups now** (top right) sends the follow-up that normally goes out 72 hours later.
 4. **Business pane, new number:** type `register` and list a business.
 5. **Customer:** `I need a wedding venue in Avondale`. No venue is listed, so it offers the events businesses nearby. Then try `I need a lawyer in Avondale`: nothing fits, so the chat goes straight to a person (see **Handoffs** in the ops console).
-6. **Customer, voice note:** tap 🎙️ and type what the voice note says, for example `ndoda plumber ku Mabelreign`. The simulator stands in for speech-to-text.
+6. **Customer, in Shona:** `ndoda plumber ku Mabelreign`. The reply is in English.
 7. **Customer:** type `recommend` and describe a business you know. It appears under **Tips** in the ops console.
 
 With `ANTHROPIC_API_KEY` set you can also:
 
-8. **Customer, photo:** tap 📷 to send a photo of something you want. Type a caption first if you like, such as `like this in Glen View`.
-9. **Business pane:** switch to Siyaso Hardware, type `menu`, choose **Add price list photo** and send a photo of a price list. Then search as a customer for `cement in Mbare` and open Siyaso to see the matching prices.
-10. **Customer:** write something the local engine doesn't know, such as `ndoda keke remuchato ku Avondale`. Claude works it out once, and the next person who writes it is answered from the phrasebook, without Claude. The **System** screen shows how requests were understood and what Claude cost today.
+8. **Customer:** write something the local engine doesn't know, such as `ndoda keke remuchato ku Avondale`. Claude works it out once, and the next person who writes it is answered from the phrasebook, without Claude. The **System** screen shows how requests were understood and what Claude cost today.
 
 The ops console is at http://localhost:3000/ops. Locally it's open until the first account exists; after that everyone signs in (see [Ops console accounts](#ops-console-accounts)). To try the field app, go to **Agents** in the ops console, add an agent and open the setup link it gives you. On a phone on the same network, use `PUBLIC_BASE_URL` with this computer's address, because GPS and offline mode need a secure page, so over a network the app needs HTTPS. Only localhost works without it.
 
@@ -42,12 +40,12 @@ The ops console is at http://localhost:3000/ops. Locally it's open until the fir
 
 | Folder | What it does |
 | --- | --- |
-| `src/whatsapp` | Webhook signature checks and parsing, message builders that enforce WhatsApp's limits, two transports (Meta's Cloud API and the local simulator), and downloads of the photos and voice notes people send |
+| `src/whatsapp` | Webhook signature checks and parsing, message builders that enforce WhatsApp's limits, and two transports (Meta's Cloud API and the local simulator) |
 | `src/conversation` | The engine (messages from one person handled in order, duplicates ignored), the customer and business flows, and the messenger, which switches to approved templates once the 24-hour window has closed |
-| `src/ai` | Understanding requests: the local engine (the lexicon with word roles, Shona prefixes and verb roots, action rules, spelling guesses) and its confidence bands, the phrasebook, Claude for wording the engine can't read (within a daily budget), photo reading, speech-to-text |
+| `src/ai` | Understanding requests: the local engine (the lexicon with word roles, Shona prefixes and verb roots, action rules, spelling guesses) and its confidence bands, the phrasebook, and Claude for wording the engine can't read (within a daily budget) |
 | `src/directory` | Category taxonomy (with related categories), place names, search and ranking, businesses, price-list items, customer recommendations, introductions with reference codes |
 | `src/field` | Field agents (setup links), in-person registration with duplicate checks, call-back audits |
-| `src/jobs` | A job queue stored in Postgres: follow-ups, weekly summaries, resending failed replies, the daily clean-ups, reading field price-list photos |
+| `src/jobs` | A job queue stored in Postgres: follow-ups, weekly summaries, report reminders, resending failed replies, the daily clean-ups |
 | `src/http` | Fastify server: WhatsApp webhook, health checks, simulator, ops API (with sign-in), field API, static pages |
 | `src/ops` | Ops console accounts, sessions and the activity log |
 | `src/privacy.ts` | Export and deletion on request, and the retention clean-up |
@@ -66,20 +64,17 @@ Rules the code enforces:
 - **No ID copies.** Field agents tick that they checked the owner's ID or registration; the app never accepts a photo of one. Verified means an agent saw the premises and checked ID.
 - **Our suppliers, then people.** A request is answered from suppliers in its category. When none are nearby, the customer gets suppliers in related categories: a gadget nobody lists goes to the electronics shops. Related categories are a deliberate list in `src/db/seed-data/categories.ts`, and trades and professional services aren't cross-referred. When nothing fits, a person takes over straight away. Both kinds show up in supply gaps for the field team.
 - **Local first.** Greetings, help, "agent", blocked items and clear requests, in English or Shona, are understood without Claude. When one to three categories fit, or the request rests on Shona words nobody has checked yet, the customer taps "Did you mean…?" instead. Claude is asked only about wording the engine can't read at all, and only within the daily budget. Taps, Claude's answers and the team's corrections are remembered, so the same wording is never asked about twice. What nobody understands after one "please say it differently" goes to a person.
-- **Photos and voice notes only after consent.** A customer's photo or voice note is processed only once they've agreed to the privacy notice, and isn't stored. Only the transcript or a short description is saved with the message. Price-list photos that owners send are kept with their listing.
+- **Typed messages only, for now.** Voice notes and photos aren't downloaded or read: customers and owners are asked to type instead. It keeps running costs down (no speech-to-text, no Claude for images). Items on price lists read before this change still show on business cards.
 - **We keep our promise.** The follow-up asks customers how it went, and "didn't reply" or "didn't have it" answers count against the business. Business cards show when our team checked them and, once five customers have answered, how many got what they needed. Verified businesses that keep letting customers down, have open reports or were verified over a year ago go on the Re-checks screen for the field team. Reports left open for a day raise an alert.
 - **Nothing is lost.** Every incoming message is saved before WhatsApp is told it arrived. Anything a crash leaves unhandled is picked up again. Replies that fail for a temporary reason are resent.
-- **Limits per number.** Floods of messages, photos, voice notes or reports from one number are cut off politely. A listing is paused automatically only after several customers who contacted it report it.
+- **Limits per number.** Floods of messages or reports from one number are cut off politely. A listing is paused automatically only after several customers who contacted it report it.
 - **People can leave.** "delete my data" on either number deletes everything about that person (and an owner's listings) once they confirm. Old chats are cleaned up on a schedule.
 
 ## Claude
 
 Claude is the backup, not the first reader. The design and its reasoning are in [docs/UNDERSTANDING.md](docs/UNDERSTANDING.md).
 
-- **When it's used:**
-  - wording the local engine isn't confident about, and hasn't seen before
-  - customers' photos
-  - price-list photos
+- **When it's used:** only for typed wording the local engine isn't confident about, and hasn't seen before. Voice notes and photos aren't read, so nothing else reaches Claude.
 - **How:**
   - the model is set by `CLAUDE_MODEL`, default `claude-sonnet-5`
   - thinking is off and effort low
@@ -92,8 +87,6 @@ Claude is the backup, not the first reader. The design and its reasoning are in 
   - `CLAUDE_CALLS_PER_NUMBER_PER_DAY` (default 5) caps what one number can cause.
   - Every call's cost is recorded, and the **System** screen shows today's spend and how requests were understood.
 - **Business sign-up never uses Claude:** the local engine reads the description, and when it can't, the owner picks the category from a list.
-- **Photos:** a customer's "find me this" photo becomes a request, unless its caption says clearly what they want; then the photo isn't sent to Claude at all. An owner's price-list photo becomes items and prices, and the owner confirms before anything is saved.
-- **Field agents' price-list photos** go through the Batch API at half price (`PRICE_LIST_BATCH`, on by default). Every 20 minutes the waiting photos go in one batch, and results are saved when it ends, usually within the hour. They wait when the day's budget is spent.
 
 Measure before changing models: `npm run eval -- --claude --model …` compares models on labelled requests. Plain `npm run eval` shows how many requests the local engine answers on its own, and whether any of those confident answers were wrong.
 
@@ -134,21 +127,6 @@ The **System** screen tracks the targets: understood without Claude, Claude call
 
 The **word-shape classifier** is a second opinion for words the rules don't know. It finds the known word most like a misspelling ("fotographer" → "photographer"), and only ever offers it as a "Did you mean…?" option.
 
-## Voice notes
-
-Voice notes need a speech-to-text service. Whisper handles Shona poorly. Two options are built in:
-
-- **Google Chirp 2** (set `GOOGLE_STT_PROJECT` and a service-account key).
-  - Chirp 2 transcribes Shona (`sn-ZW`) from the `europe-west4` and `asia-southeast1` regions.
-  - Ndebele isn't supported, so Zulu (`zu-ZA`), a close relative, stands in for it.
-  - Languages are tried in order until one hears something, starting with the language of the person's last request.
-  - Voice notes up to a minute are supported.
-- **Any other engine** (for example Meta's Omnilingual ASR) behind a small HTTP contract:
-  - `POST $SPEECH_TO_TEXT_URL` with the audio as the body, its `Content-Type` (usually `audio/ogg`), `X-Language-Hints: sn,nd,en` (the last request's language first) and `Authorization: Bearer $SPEECH_TO_TEXT_TOKEN`.
-  - The service answers `{ "text": "…", "language": "sn" }`, with an empty `text` when nothing intelligible was said.
-
-The reply starts with "🎙️ I heard: …" so a wrong transcript is easy to spot. That line goes at the top of the answer rather than in a separate message, because WhatsApp starts charging for replies inside the 24-hour window on 1 October 2026. When the service can't make anything out, the customer is asked to type instead. With neither option set, the simulator fakes transcription and the live number asks people to type.
-
 ## Going live
 
 Step by step in [docs/LAUNCH.md](docs/LAUNCH.md); hosting, backups and monitoring in [docs/DEPLOY.md](docs/DEPLOY.md); personal data in [docs/DATA_PROTECTION.md](docs/DATA_PROTECTION.md). In short:
@@ -170,7 +148,7 @@ Step by step in [docs/LAUNCH.md](docs/LAUNCH.md); hosting, backups and monitorin
    - `OPS_TOKEN`
    - `PUBLIC_BASE_URL`: your HTTPS address, used in agents' setup links
    - `STORAGE=s3` with the `S3_*` settings (or `UPLOADS_DIR` on a disk that survives redeploys)
-   - `ANTHROPIC_API_KEY` for Claude (wording the local engine can't read, and photos) with `CLAUDE_DAILY_BUDGET_USD`, and `GOOGLE_STT_PROJECT` or `SPEECH_TO_TEXT_URL` for voice notes
+   - `ANTHROPIC_API_KEY` for Claude (wording the local engine can't read), with `CLAUDE_DAILY_BUDGET_USD`
    - `ALERT_WEBHOOK_URL` for alerts
    - `SEED_SAMPLE_DATA=false`
    - `NODE_ENV=production`

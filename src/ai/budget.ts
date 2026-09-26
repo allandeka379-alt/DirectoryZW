@@ -4,7 +4,8 @@ import type { Logger } from "../logger.js";
 import { harareStartOfDay } from "../time.js";
 import { costOf, type Usage } from "./pricing.js";
 
-export type AiFeature = "request" | "photo" | "price_list" | "price_list_batch";
+/** What Claude was used for. Photos and price lists were read too, before typed messages only. */
+export type AiFeature = "request";
 
 /** Records what each Claude call cost. */
 export interface UsageMeter {

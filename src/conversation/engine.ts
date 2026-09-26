@@ -1,4 +1,3 @@
-import type { OutboundMessage } from "../whatsapp/outbound.js";
 import type { Channel, InboundContent, InboundMessage } from "../whatsapp/types.js";
 import { handleBusinessTurn, type BusinessState } from "./business.js";
 import type { Services, Turn } from "./context.js";
@@ -123,21 +122,13 @@ export class ConversationEngine {
     await attachMessage(db, id, contact.id);
     if (contact.is_blocked) return;
     const state = await loadState<Record<string, unknown>>(db, contact.id);
-    let prefix: string | undefined;
     const deferred: (() => Promise<void>)[] = [];
     const turn: Turn<Record<string, unknown>> = {
       svc: this.svc,
       contact,
       inbound: msg,
       state,
-      reply: (m) => {
-        const merged = prefix ? withPrefix(m, prefix) : undefined;
-        if (merged) prefix = undefined;
-        return messenger.reply(contact, merged ?? m);
-      },
-      prefixNext: (line) => {
-        prefix = prefix ? `${prefix}\n${line}` : line;
-      },
+      reply: (m) => messenger.reply(contact, m),
       defer: (fn) => {
         deferred.push(fn);
       },
@@ -146,36 +137,30 @@ export class ConversationEngine {
       if (msg.channel === "customer") await handleCustomerTurn(turn as Turn<CustomerState>);
       else await handleBusinessTurn(turn as Turn<BusinessState>);
     }
-    if (prefix) await messenger.reply(contact, { kind: "text", text: prefix });
     await saveState(db, contact.id, turn.state);
     for (const fn of deferred) await fn();
   }
 
   /**
-   * Floods from one number (a stuck script, someone tapping wildly, or photos sent to run up our
+   * Floods from one number (a stuck script, someone tapping wildly, or messages sent to run up our
    * Claude bill) are dropped. The sender hears why once in a while, not on every message.
    */
   private async overLimit(t: Turn<Record<string, unknown>>): Promise<boolean> {
     const { db, config, now } = this.svc;
-    const [counts] = await db.query<{ minute: number; day: number; media: number }>(
+    const [counts] = await db.query<{ minute: number; day: number }>(
       `SELECT count(*) FILTER (WHERE created_at > now() - interval '1 minute')::int AS minute,
-              count(*)::int AS day,
-              count(*) FILTER (WHERE kind IN ('image', 'audio'))::int AS media
+              count(*)::int AS day
          FROM messages
         WHERE contact_id = $1 AND direction = 'in' AND created_at > now() - interval '1 day'`,
       [t.contact.id],
     );
     if (!counts) return false;
-    const { perMinute, perDay, mediaPerDay } = config.limits;
-    const isMedia = t.inbound.content.type === "image" || t.inbound.content.type === "audio";
-    let notice: OutboundMessage | undefined;
-    if (counts.minute > perMinute || counts.day > perDay) notice = copy.slowDown();
-    else if (isMedia && counts.media > mediaPerDay) notice = copy.tooMuchMedia();
-    if (!notice) return false;
+    const { perMinute, perDay } = config.limits;
+    if (counts.minute <= perMinute && counts.day <= perDay) return false;
     const last = Number(t.state._limitNoticeAt ?? 0);
     if (now().getTime() - last >= LIMIT_NOTICE_EVERY_MS) {
       t.state._limitNoticeAt = now().getTime();
-      await t.reply(notice);
+      await t.reply(copy.slowDown());
     }
     this.svc.log.warn({ contactId: t.contact.id, ...counts }, "Message over the per-number limit ignored");
     return true;
@@ -196,17 +181,3 @@ function toInbound(row: SavedMessage): InboundMessage | undefined {
   };
 }
 
-/** The message with a line added at the top of its text, or undefined when it has no text to add to. */
-function withPrefix(m: OutboundMessage, line: string): OutboundMessage | undefined {
-  switch (m.kind) {
-    case "text":
-      return { ...m, text: `${line}\n\n${m.text}` };
-    case "buttons":
-    case "list":
-    case "cta_url":
-    case "location_request":
-      return { ...m, body: `${line}\n\n${m.body}` };
-    default:
-      return undefined;
-  }
-}

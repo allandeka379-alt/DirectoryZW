@@ -15,13 +15,6 @@ const Content = z.discriminatedUnion("type", [
   z.object({ type: z.literal("audio"), mediaId: z.string().max(100), voice: z.boolean(), mimeType: z.string().max(60).optional() }),
 ]);
 
-const MediaBody = z.object({
-  mimeType: z.string().regex(/^(image|audio)\/[a-z0-9.+-]+$/),
-  dataBase64: z.string().max(11_000_000),
-  /** For voice notes: the words it stands for, since the simulator has no speech-to-text. */
-  transcript: z.string().max(1000).optional(),
-});
-
 const SendBody = z.object({
   channel: z.enum(["customer", "business"]),
   from: z.string().regex(/^\d{7,15}$/),
@@ -43,16 +36,6 @@ export function registerSimulator(server: FastifyInstance, app: App, sim: Simula
       "SELECT name, phone, verification, status FROM businesses WHERE status <> 'removed' ORDER BY name LIMIT 300",
     ),
   );
-
-  // Upload a photo or voice note; the chat then sends its media ID, as WhatsApp does.
-  server.post("/simulator/api/media", { bodyLimit: 12 * 1024 * 1024 }, async (req, reply) => {
-    if (!app.simulatorMedia) return reply.code(404).send({ error: "Media uploads need the simulator" });
-    const parsed = MediaBody.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
-    const data = Buffer.from(parsed.data.dataBase64, "base64");
-    if (!data.length) return reply.code(400).send({ error: "Empty file" });
-    return { mediaId: app.simulatorMedia.put({ data, mimeType: parsed.data.mimeType }, parsed.data.transcript) };
-  });
 
   server.post("/simulator/api/send", async (req, reply) => {
     const parsed = SendBody.safeParse(req.body);

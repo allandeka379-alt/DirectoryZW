@@ -3,18 +3,16 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebhookAlerts } from "../src/alerts.js";
 import { createServer, registerRoutes } from "../src/http/server.js";
 import { silentLogger } from "../src/logger.js";
-import { FakeVision, interpretation } from "./fakes.js";
 import { testApp, textOf, type TestApp } from "./helpers.js";
 
 const alerts = new WebhookAlerts({ brand: "TestDir", log: silentLogger });
-const vision = new FakeVision();
 let app: TestApp;
 let server: FastifyInstance;
 let n = 0;
 const newCustomer = () => `26377444${String(++n).padStart(4, "0")}`;
 
 beforeAll(async () => {
-  app = await testApp({ RATE_LIMIT_PER_MINUTE: "15", MEDIA_PER_DAY: "1", REPORTS_PER_DAY: "2", REPORTS_TO_PAUSE: "2" }, { alerts, vision });
+  app = await testApp({ RATE_LIMIT_PER_MINUTE: "15", REPORTS_PER_DAY: "2", REPORTS_TO_PAUSE: "2" }, { alerts });
   server = createServer({ logger: false });
   registerRoutes(server, app);
   await server.ready();
@@ -44,18 +42,6 @@ describe("floods from one number", () => {
     const texts = c.texts();
     expect(texts.filter((t) => t.includes("faster than I can answer"))).toHaveLength(1);
     expect(texts.filter((t) => t.startsWith("We have"))).toHaveLength(13); // messages 3 to 15 of the minute
-  });
-
-  it("caps photos and voice notes per day", async () => {
-    vision.photoAnswer = () => interpretation({ category_slug: "furniture", query: "couch", area: "Glen View" });
-    const customer = newCustomer();
-    const c = as(customer);
-    await c.consented();
-    const photo = () => app.simulatorMedia!.put({ data: Buffer.from("jpeg"), mimeType: "image/jpeg" });
-    await app.send("customer", customer, { type: "image", mediaId: photo(), mimeType: "image/jpeg" });
-    await app.send("customer", customer, { type: "image", mediaId: photo(), mimeType: "image/jpeg" });
-    expect(vision.photos).toHaveLength(1);
-    expect(c.texts().at(-1)).toContain("a lot of photos and voice notes today");
   });
 });
 

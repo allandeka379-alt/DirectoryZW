@@ -19,9 +19,7 @@ import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
 import type { BusinessView, Need, PriceView } from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
-import { fetchMedia, hearVoiceNote } from "./media.js";
 import {
-  annotateInbound,
   createRequest,
   flagRequest,
   getRequest,
@@ -57,10 +55,8 @@ export interface CustomerState {
     | "rec_phone";
   /** First message, kept while we ask for consent. */
   pendingText?: string;
-  /** A photo or voice note sent before consent; handled once they agree. */
-  pendingMedia?: { type: "image" | "audio"; mediaId: string; caption?: string; waMessageId: string };
   /** A request waiting for the customer's location. */
-  pending?: { raw: string; interpretation: RequestInterpretation; by: UnderstoodBy | "photo"; reading?: ReadingSummary };
+  pending?: { raw: string; interpretation: RequestInterpretation; by: UnderstoodBy; reading?: ReadingSummary };
   /** A request waiting for the customer to say which category they mean. */
   choice?: Choice;
   lastRequestId?: string;
@@ -69,8 +65,6 @@ export interface CustomerState {
   reportBusinessId?: string;
   /** A recommendation being written. */
   rec?: { name?: string; what?: string; areaText?: string | null; areaId?: number | null };
-  /** Language of their last request, a hint for reading their next voice note. */
-  lang?: "sn" | "nd" | "en";
   /** We already asked them to say it differently; next time a person takes over. */
   unclear?: boolean;
 }
@@ -84,8 +78,6 @@ interface Place {
   label: string;
 }
 
-/** Requests that came from a photo start with this, so the business can be asked to look at it. */
-const PHOTO_MARK = "📷 ";
 const RECOMMEND_WORDS = ["recommend", "recommend a business", "suggest a business", "recommendation"];
 /**
  * Clear signs the assistant keeps getting it wrong, in English, Shona and Ndebele: a person takes
@@ -140,12 +132,12 @@ export async function handleCustomerTurn(t: T): Promise<void> {
       return onAction(t, c.id);
     case "location":
       return onLocation(t, c.lat, c.lng);
+    // Typed messages only, for now: voice notes and photos aren't read.
     case "image":
-      return onPhoto(t, c.mediaId, c.caption);
     case "audio":
-      return onVoice(t, c.mediaId);
+      return t.reply(copy.typeInstead());
     default:
-      return t.reply(copy.help(t.svc.config.brandName, features(t)));
+      return t.reply(copy.help(t.svc.config.brandName));
   }
 }
 
@@ -155,21 +147,13 @@ async function consentGate(t: T): Promise<void> {
   if (c.type === "button_reply" && c.id === Ids.consent) {
     await setConsent(svc.db, contact.id);
     contact.consent_at = svc.now();
-    const { pendingText, pendingMedia } = state;
+    const { pendingText } = state;
     state.stage = undefined;
     state.pendingText = undefined;
-    state.pendingMedia = undefined;
-    // Photos and voice notes are only processed once the customer has agreed.
-    if (pendingMedia?.type === "image") return onPhoto(t, pendingMedia.mediaId, pendingMedia.caption);
-    if (pendingMedia?.type === "audio") return onVoice(t, pendingMedia.mediaId, pendingMedia.waMessageId);
     if (pendingText) return onText(t, pendingText);
     return t.reply(copy.askWhatYouNeed(contact.profile_name));
   }
-  if (!state.pendingText && !state.pendingMedia) {
-    if (c.type === "text") state.pendingText = c.text.slice(0, 500);
-    if (c.type === "image") state.pendingMedia = { type: "image", mediaId: c.mediaId, caption: c.caption, waMessageId: inbound.waMessageId };
-    if (c.type === "audio") state.pendingMedia = { type: "audio", mediaId: c.mediaId, waMessageId: inbound.waMessageId };
-  }
+  if (!state.pendingText && c.type === "text") state.pendingText = c.text.slice(0, 500);
   state.stage = "awaiting_consent";
   await t.reply(copy.consent(svc.config.brandName, svc.config.privacyUrl, contact.profile_name));
 }
@@ -187,7 +171,7 @@ async function onText(t: T, text: string): Promise<void> {
     resetSearch(state);
     return t.reply(copy.askWhatYouNeed(contact.profile_name));
   }
-  if (isCommand(raw, ["help"])) return t.reply(copy.help(svc.config.brandName, features(t)));
+  if (isCommand(raw, ["help"])) return t.reply(copy.help(svc.config.brandName));
   if (isCommand(raw, RECOMMEND_WORDS)) {
     resetSearch(state);
     state.stage = "rec_name";
@@ -267,7 +251,6 @@ async function askWhichOne(t: T, raw: string, understood: Understanding): Promis
   if (!options.length) return handleInterpretation(t, raw, understood.interpretation, understood.by, understood.reading);
   const slugs = options.map((c) => c.slug);
   const id = await recordQuestion(svc.db, { contactId: contact.id, signature: understood.signature, options: slugs });
-  if (understood.interpretation.language !== "other") state.lang = understood.interpretation.language;
   state.stage = "awaiting_choice";
   state.choice = { id, raw, interpretation: understood.interpretation, options: slugs, signature: understood.signature, reading: understood.reading };
   return t.reply(copy.didYouMean(options.map((c) => ({ slug: c.slug, name: c.name, short: c.short }))));
@@ -323,21 +306,20 @@ async function somethingElse(t: T, choice: Choice): Promise<void> {
   return notUnderstood(t, choice.raw, interpretation, "fallback", understood.reading);
 }
 
-/** What to do with a request once we know what it means, whether it came as text, a voice note or a photo. */
+/** What to do with a request once we know what it means, whether they typed it or picked it from our question. */
 async function handleInterpretation(
   t: T,
   raw: string,
   interpretation: RequestInterpretation,
-  by: UnderstoodBy | "photo",
+  by: UnderstoodBy,
   reading?: ReadingSummary,
 ): Promise<void> {
   const { svc, state, contact } = t;
-  if (interpretation.language !== "other") state.lang = interpretation.language;
   switch (interpretation.intent) {
     case "greeting":
       return t.reply(copy.askWhatYouNeed(contact.profile_name));
     case "help":
-      return t.reply(copy.help(svc.config.brandName, features(t)));
+      return t.reply(copy.help(svc.config.brandName));
     case "human":
       return startHandoff(t, null, raw);
     case "blocked":
@@ -385,7 +367,7 @@ async function notUnderstood(
   t: T,
   raw: string,
   interpretation: RequestInterpretation,
-  by: UnderstoodBy | "photo",
+  by: UnderstoodBy,
   reading?: ReadingSummary,
 ): Promise<void> {
   const { svc, state, contact } = t;
@@ -410,41 +392,6 @@ async function notUnderstood(
   await setRequestStatus(svc.db, request.id, "handoff", 0, "none");
   svc.log.info({ contactId: contact.id, requestId: request.id }, "Not understood twice; handed over to a person");
   return t.reply(copy.notUnderstoodHandoff(whenTeamReplies(svc.now(), svc.config.teamHours)));
-}
-
-async function onPhoto(t: T, mediaId: string, caption?: string): Promise<void> {
-  const { svc, state, contact } = t;
-  // A clear caption says what they want: no need to pay Claude to look at the photo.
-  const words = caption?.trim();
-  if (words) {
-    const understood = await svc.understanding.understand(words, { ...readerContext(t), localOnly: true });
-    const { interpretation, by, band } = understood;
-    if (interpretation.intent === "search" && interpretation.category_slug && (by === "phrasebook" || (by === "local" && band === "high"))) {
-      resetSearch(state);
-      svc.log.info({ contactId: contact.id }, "Understood a photo from its caption, without reading the photo");
-      return handleInterpretation(t, `${PHOTO_MARK}${words}`, interpretation, by, understood.reading);
-    }
-  }
-  if (!svc.vision) return t.reply(copy.photosNotYet());
-  if (!(await svc.budget.allows(contact.id))) return t.reply(copy.photosBusy());
-  const image = await fetchMedia(t, mediaId);
-  if (!image) return;
-  const interpretation = await svc.vision.interpretPhoto(image, caption, {
-    taxonomy: svc.taxonomy,
-    gazetteer: svc.gazetteer,
-    previousRequest: state.lastQuery,
-    contactId: contact.id,
-  });
-  if (!interpretation) return t.reply(copy.photoUnreadable());
-  await annotateInbound(svc.db, t.inbound.waMessageId, { seen: interpretation.query });
-  resetSearch(state);
-  const raw = `${PHOTO_MARK}${caption?.trim() ? `${caption.trim()} (${interpretation.query})` : interpretation.query}`;
-  return handleInterpretation(t, raw, interpretation, "photo");
-}
-
-async function onVoice(t: T, mediaId: string, waMessageId?: string): Promise<void> {
-  const text = await hearVoiceNote(t, mediaId, { waMessageId, language: t.state.lang });
-  if (text) return onText(t, text);
 }
 
 async function onLocation(t: T, lat: number, lng: number): Promise<void> {
@@ -472,7 +419,7 @@ async function runSearch(
   t: T,
   raw: string,
   interpretation: RequestInterpretation,
-  by: UnderstoodBy | "photo",
+  by: UnderstoodBy,
   place?: Place,
   reading?: ReadingSummary,
 ): Promise<void> {
@@ -552,7 +499,7 @@ async function onAction(t: T, id: string): Promise<void> {
     case "rate":
       return rate(t, args[0] ?? "", Number(args[1]));
     default:
-      return t.reply(copy.help(svc.config.brandName, features(t)));
+      return t.reply(copy.help(svc.config.brandName));
   }
 }
 
@@ -569,7 +516,7 @@ async function showBusiness(t: T, requestId: string, businessId: string): Promis
 
 /** Price-list items matching what the customer asked for. */
 async function pricesFor(t: T, businessId: string, request: RequestRow): Promise<PriceView | undefined> {
-  const text = [request.query, request.raw_text.replace(PHOTO_MARK, "")].filter(Boolean).join(" ");
+  const text = [request.query, request.raw_text].filter(Boolean).join(" ");
   const matches = await matchingOfferings(t.svc.db, businessId, text, 3);
   if (!matches.length) return undefined;
   return {
@@ -590,7 +537,7 @@ async function connect(t: T, requestId: string, businessId: string): Promise<voi
   const brand = svc.config.brandName;
   const view = viewOf(t, business, request);
   const link = waMeLink(business.phone, copy.prefilledMessage(brand, business.name, intro.ref_code, summary));
-  await t.reply(copy.connectLink(view, link, intro.ref_code, fromPhoto(request)));
+  await t.reply(copy.connectLink(view, link, intro.ref_code));
 
   const place = request?.area_id != null ? svc.gazetteer.get(request.area_id)?.name : null;
   const neededBy = request?.interpretation?.needed_by ?? null;
@@ -843,14 +790,6 @@ function relatedLabel(t: T, category: Category): string {
   return groups.size === 1 && group ? `${group.toLowerCase()} businesses` : "businesses that sell or do similar things";
 }
 
-function fromPhoto(request?: RequestRow): boolean {
-  return request?.raw_text.startsWith(PHOTO_MARK) ?? false;
-}
-
-function features(t: T): { photos: boolean; voice: boolean } {
-  return { photos: !!t.svc.vision, voice: !!t.svc.speech };
-}
-
 /** Words that name a kind of shop rather than an item: "a phone shop" has phones. */
 const SHOP_WORDS = new Set(
   (
@@ -869,7 +808,7 @@ const SHOP_WORDS = new Set(
  *   shop") or a request in Shona or Ndebele use what the category's stores have ("meat").
  */
 function need(i: RequestInterpretation | undefined, category: Category | undefined, by: string | null | undefined): Need {
-  const english = i?.language === "en" || by === "claude" || by === "photo";
+  const english = i?.language === "en" || by === "claude";
   const words = english && i?.query ? normalizeText(i.query).split(" ").filter((w) => w && !SHOP_WORDS.has(w)) : [];
   if (!category) return { kind: "other", text: words.length ? i!.query : "what you asked for" };
   if (!category.goods) return { kind: "service", text: category.phrase };
@@ -881,7 +820,6 @@ function resetSearch(state: CustomerState): void {
   state.pending = undefined;
   state.choice = undefined;
   state.pendingText = undefined;
-  state.pendingMedia = undefined;
   state.reportBusinessId = undefined;
   state.rec = undefined;
   state.unclear = undefined;

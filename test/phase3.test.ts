@@ -7,18 +7,15 @@ import { analyzeLocally, DEFAULT_LOCAL_SETTINGS, parseUnknownWords } from "../sr
 import { costOf } from "../src/ai/pricing.js";
 import { realExamples } from "../src/eval/examples.js";
 import { createServer, registerRoutes } from "../src/http/server.js";
-import { FakePriceListBatches, FakeVision } from "./fakes.js";
 import { testApp, textOf, type TestApp } from "./helpers.js";
 
-const vision = new FakeVision();
-const batches = new FakePriceListBatches();
 let app: TestApp;
 let server: FastifyInstance;
 let n = 0;
 const newCustomer = () => `26377444${String(++n).padStart(4, "0")}`;
 
 beforeAll(async () => {
-  app = await testApp({}, { vision, priceListBatches: batches });
+  app = await testApp();
   server = createServer({ logger: false });
   registerRoutes(server, app);
   await server.ready();
@@ -107,94 +104,6 @@ describe("the thresholds", () => {
   it("prices batch calls at half", () => {
     const usage = { input_tokens: 1000, output_tokens: 1000 };
     expect(costOf("claude-sonnet-5", usage, { batch: true })).toBeCloseTo(costOf("claude-sonnet-5", usage) / 2, 10);
-  });
-});
-
-describe("photos with a clear caption", () => {
-  it("are understood from the caption alone, without paying to read the photo", async () => {
-    const customer = newCustomer();
-    const c = as(customer);
-    await c.consented();
-    const before = vision.photos.length;
-    const mediaId = app.simulatorMedia!.put({ data: Buffer.from("jpeg"), mimeType: "image/jpeg" });
-    await app.send("customer", customer, { type: "image", mediaId, caption: "I need a plumber in Mabelreign" });
-    expect(vision.photos.length).toBe(before);
-    expect(rows(c.last())[0]).toMatch(/^QuickFix/);
-    const [row] = await app.db.query<{ raw_text: string; understood_by: string }>(
-      "SELECT raw_text, understood_by FROM requests ORDER BY created_at DESC LIMIT 1",
-    );
-    expect(row).toMatchObject({ raw_text: "📷 I need a plumber in Mabelreign", understood_by: "local" });
-  });
-
-  it("still go to Claude when the caption isn't enough", async () => {
-    const customer = newCustomer();
-    await as(customer).consented();
-    vision.photoAnswer = () => null;
-    const before = vision.photos.length;
-    const mediaId = app.simulatorMedia!.put({ data: Buffer.from("jpeg"), mimeType: "image/jpeg" });
-    await app.send("customer", customer, { type: "image", mediaId, caption: "how much for this one?" });
-    expect(vision.photos.length).toBe(before + 1);
-  });
-});
-
-describe("field price lists through the Batch API", () => {
-  async function registerWithPriceList(ref: string, name: string, phone: string): Promise<string> {
-    const created = await ops("POST", "/agents", { name: `Agent ${ref}` });
-    const token = new URL(created.json().setupUrl).hash.replace("#token=", "");
-    const avondale = app.services.gazetteer.match("Avondale")!;
-    const res = await server.inject({
-      method: "POST",
-      url: "/field/api/businesses",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        clientRef: ref,
-        name,
-        phone,
-        categories: ["salons"],
-        areaId: avondale.id,
-        checks: { premisesSeen: true, idChecked: true },
-        consent: true,
-        photos: [{ kind: "price_list", contentType: "image/jpeg", dataBase64: Buffer.from("price list").toString("base64") }],
-      },
-    });
-    expect(res.statusCode).toBe(201);
-    return res.json().id as string;
-  }
-
-  it("queues them, sends them in a batch, and saves the results when it ends", async () => {
-    const before = vision.priceLists.length;
-    const businessId = await registerWithPriceList("batch-ref-1", "Rudo's Salon", "0771239881");
-    await app.runJobs(); // read_price_list: queued for the next batch
-    expect(vision.priceLists.length).toBe(before); // not read interactively
-    app.advanceHours(0.5);
-    await app.runJobs(); // price_list_batches: sent off
-    expect(batches.submitted).toHaveLength(1);
-    const [batch] = batches.submitted;
-    batches.answer = (photoId) => ({ photoId, list: { is_price_list: true, items: [{ name: "Cornrows", price_usd: 15, price_text: "$15" }] } });
-    batches.finish(batch!.batchId);
-    app.advanceHours(0.5);
-    await app.runJobs(); // collected
-    const detail = (await ops("GET", `/businesses/${businessId}`)).json();
-    expect(detail.offerings).toMatchObject([{ name: "Cornrows", price_text: "$15" }]);
-    const system = (await ops("GET", "/system")).json();
-    expect(system.priceLists).toMatchObject({ batch: true, queued: 0, submitted: 0, done_7d: 1 });
-  });
-
-  it("retries a photo that failed, and gives up after three tries", async () => {
-    await registerWithPriceList("batch-ref-2", "Tafadzwa's Barber", "0771239882");
-    batches.answer = (photoId) => ({ photoId, list: null, error: "overloaded" });
-    await app.runJobs();
-    for (let i = 0; i < 3; i++) {
-      app.advanceHours(0.5);
-      await app.runJobs(); // sent off
-      batches.finish(batches.submitted.at(-1)!.batchId);
-      app.advanceHours(0.5);
-      await app.runJobs(); // collected: failed
-    }
-    const [read] = await app.db.query<{ status: string; attempts: number; error: string }>(
-      "SELECT status, attempts, error FROM price_list_reads ORDER BY created_at DESC LIMIT 1",
-    );
-    expect(read).toMatchObject({ status: "failed", attempts: 3, error: "overloaded" });
   });
 });
 

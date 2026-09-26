@@ -243,7 +243,7 @@ export function registerWordRoutes(ops: FastifyInstance, app: App): void {
     );
     if (!request) return undefined;
     await app.db.query("UPDATE requests SET category_slug = $2 WHERE id = $1", [request.id, categorySlug]);
-    // Photo requests hold our description of the photo, not the customer's words.
+    // Requests from photos (before typed messages only) hold our description of the photo, not the customer's words.
     if (request.raw_text.startsWith("📷")) return { signature: null };
     const { keywords, taxonomy, gazetteer, lexicon } = app.services;
     const signature = signatureOf(keywords.read(request.raw_text, { taxonomy, gazetteer, lexicon }));

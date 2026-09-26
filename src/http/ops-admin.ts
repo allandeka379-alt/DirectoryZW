@@ -83,7 +83,7 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
   ops.get("/system", async () => {
     const { services, config } = app;
     const now = services.now();
-    const [claudeToday, claudeWeek, understood, matched, questions, precision, words, priceLists, targets] = await Promise.all([
+    const [claudeToday, claudeWeek, understood, matched, questions, precision, words, targets] = await Promise.all([
       app.db.query<{ feature: string; calls: number; usd: number }>(
         `SELECT feature, count(*)::int AS calls, COALESCE(sum(cost_usd), 0)::float8 AS usd
            FROM ai_usage WHERE created_at >= $1 GROUP BY feature ORDER BY feature`,
@@ -125,15 +125,6 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
       ),
       app.db.query<{ language: string; status: string; words: number }>(
         "SELECT language, status, count(*)::int AS words FROM lexicon GROUP BY 1, 2 ORDER BY 1, 2",
-      ),
-      // Field price lists going through the Batch API.
-      one<{ queued: number; submitted: number; failed: number; done_7d: number }>(
-        app.db,
-        `SELECT count(*) FILTER (WHERE status = 'queued')::int AS queued,
-                count(*) FILTER (WHERE status = 'submitted')::int AS submitted,
-                count(*) FILTER (WHERE status = 'failed')::int AS failed,
-                count(*) FILTER (WHERE status = 'done' AND updated_at > now() - interval '7 days')::int AS done_7d
-           FROM price_list_reads`,
       ),
       // The Phase 3 targets (docs/UNDERSTANDING.md): the last 7 days, and the labels so far.
       one<{
@@ -178,8 +169,6 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
       storage: app.store.name,
       features: {
         understanding: services.understanding.description,
-        photos: !!services.vision,
-        voiceNotes: services.speech?.name ?? null,
         alertsTo: config.alertWebhookUrl ? "webhook" : "log only",
       },
       claude: {
@@ -193,7 +182,6 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
       questions7d: questions,
       precision28d: precision,
       lexicon: { trustDrafts: config.lexiconTrustDrafts, words },
-      priceLists: { batch: !!services.priceListBatches, ...priceLists },
       targets,
       local: config.local,
       limits: config.limits,
