@@ -39,6 +39,7 @@ In order. The code is ready for each step; most of the work here is accounts, ap
 ## 5. Soft launch in Harare
 
 - [ ] Field teams register and verify at least 2,000 businesses, led by the supply-gaps screen.
+- [ ] Mark wholesalers as they're registered ("Who they sell to" in the field app), and recruit wholesalers where the supply gaps show businesses searching.
 - [ ] Call back a share of each agent's registrations (Call-backs screen) every week.
 - [ ] Work through the **Re-checks** screen every week: visit or phone each business, then record what you found. Customers are told verified businesses are genuine and reliable, and this list is how that stays true.
 - [ ] Answer every report within a day. The team is alerted about any report left open longer, and customers are told "we look into every report".

@@ -5,6 +5,8 @@ export interface SampleBusiness {
   description: string;
   keywords?: string;
   verified: boolean;
+  /** Who it sells to; the public when left out. */
+  trade?: "retail" | "wholesale" | "both";
 }
 
 /**
@@ -46,4 +48,8 @@ export const sampleBusinesses: SampleBusiness[] = [
   { name: "Hillside Borehole Drillers (sample)", area: "Burnside", categories: ["borehole"], description: "Borehole siting, drilling and pumps in Bulawayo.", verified: true },
   { name: "Mutare Gas Refills (sample)", area: "Mutare", categories: ["gas_lpg"], description: "LPG gas refills and cylinders.", verified: false },
   { name: "Chisipite Pest Control (sample)", area: "Chisipite", categories: ["pest_control"], description: "Fumigation for termites, cockroaches and rats.", verified: true },
+  // Wholesalers, for businesses looking for suppliers. Last, so earlier samples keep their numbers.
+  { name: "Harare Cement Distributors (sample)", area: "Workington", categories: ["building_materials"], description: "Cement, roofing sheets and steel by the truckload, for hardware shops and builders.", keywords: "cement ppc roofing ibr steel", verified: true, trade: "wholesale" },
+  { name: "Mbare Wholesale Groceries (sample)", area: "Mbare", categories: ["groceries"], description: "Cooking oil, sugar, rice and mealie-meal by the case and bag, for tuckshops and supermarkets.", keywords: "cooking oil sugar rice mealie meal", verified: true, trade: "wholesale" },
+  { name: "Gulf Phone Accessories (sample)", area: "Harare CBD", categories: ["phones"], description: "Chargers, cables, covers and screen protectors, by the box for phone shops, or one at a time.", keywords: "chargers cables covers screen protectors", verified: false, trade: "both" },
 ];

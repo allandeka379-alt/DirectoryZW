@@ -68,8 +68,8 @@ export async function seedSampleBusinesses(db: Db): Promise<number> {
       const phone = `26377000${String(1000 + i).padStart(4, "0")}`;
       const rows = await tx.query<{ id: string }>(
         `INSERT INTO businesses (name, description, keywords, phone, area_id, lat, lng, verification,
-           verified_at, verified_by, source, opted_in_at, is_sample)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'field', now(), true) RETURNING id`,
+           verified_at, verified_by, source, opted_in_at, is_sample, trade)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'field', now(), true, $11) RETURNING id`,
         [
           b.name,
           b.description,
@@ -81,6 +81,7 @@ export async function seedSampleBusinesses(db: Db): Promise<number> {
           b.verified ? "verified" : "registered",
           b.verified ? new Date() : null,
           b.verified ? "sample-seed" : null,
+          b.trade ?? "retail",
         ],
       );
       const id = rows[0]!.id;

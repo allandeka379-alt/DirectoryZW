@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { z } from "zod";
 import type { Db } from "../db/client.js";
 import { one } from "../db/client.js";
-import { createBusiness } from "../directory/businesses.js";
+import { createBusiness, TRADES } from "../directory/businesses.js";
 import { haversineKm, type Gazetteer } from "../directory/gazetteer.js";
 import type { Taxonomy } from "../directory/taxonomy.js";
 import type { FileStore } from "../storage.js";
@@ -20,6 +20,8 @@ export const FieldRegistrationSchema = z.object({
   categories: z.array(z.string()).min(1).max(3),
   description: z.string().trim().max(300).optional(),
   keywords: z.string().trim().max(200).optional(),
+  /** Who they sell to: the public (default), other businesses (wholesale), or both. */
+  trade: z.enum(TRADES).optional(),
   areaId: z.number().int().positive().optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
@@ -107,6 +109,7 @@ export async function registerFromField(deps: FieldDeps, agent: Agent, input: Fi
     lat: input.lat ?? area.lat,
     lng: input.lng ?? area.lng,
     categories: input.categories,
+    trade: input.trade,
     source: "field",
     verified,
     verifiedBy: agent.name,

@@ -33,6 +33,10 @@ export const Ids = {
   menu: "bmenu",
   summary: "bsum",
   myCustomers: "bleads",
+  /** Looking for supplies for the owner's own business. */
+  findSupplier: "bbuy",
+  sellsTo: "btrade",
+  setTrade: (trade: "retail" | "wholesale" | "both") => `btrade:${trade}`,
   pause: "bpause",
   resume: "bresume",
   remove: "bremove",

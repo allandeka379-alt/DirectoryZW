@@ -112,6 +112,11 @@ export const englishWords: LexiconSeed[] = [
 
   // ----- Details that don't change what's wanted -----
   ...spec(
+    "wholesale or bulk: a business buying for its own shop",
+    "wholesale", "wholesaler", "wholesalers", "bulk", "in bulk", "distributor", "distributors", "supplier", "suppliers",
+    "stockist", "stockists", "for resale", "resale",
+  ),
+  ...spec(
     "size, amount or kind",
     "inch", "inches", "kva", "kw", "kwh", "watt", "watts", "volt", "volts", "ah", "amp", "amps", "litre", "litres", "liter", "liters",
     "ml", "kg", "kgs", "tonne", "tonnes", "ton", "tons", "bag", "bags", "metre", "metres", "meter", "meters", "cm", "mm", "ft", "feet",

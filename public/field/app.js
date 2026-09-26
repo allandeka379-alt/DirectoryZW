@@ -254,6 +254,9 @@ function renderForm(existing) {
   const dupBox = h("div");
   const description = h("textarea", { placeholder: "What they sell or do, in the owner's words" }, p.description ?? "");
   const keywords = h("input", { type: "text", value: p.keywords ?? "", placeholder: "Brands, products, specialities" });
+  const trade = h("select", {},
+    ...[["retail", "The public"], ["wholesale", "Other businesses (wholesale only)"], ["both", "Both"]]
+      .map(([v, l]) => h("option", { value: v, selected: (p.trade ?? "retail") === v || null }, l)));
   const chips = h("div", { class: "chips" });
   const filter = h("input", { type: "search", placeholder: "Search categories" });
   const catList = h("div", { class: "cats" });
@@ -370,6 +373,7 @@ function renderForm(existing) {
         categories: [...selected],
         description: description.value.trim() || undefined,
         keywords: keywords.value.trim() || undefined,
+        trade: trade.value,
         areaId,
         lat: gps?.lat,
         lng: gps?.lng,
@@ -399,6 +403,7 @@ function renderForm(existing) {
       h("label", {}, "What they sell or do"), description,
       h("label", {}, "Categories ", h("small", {}, "up to 3")), chips, filter, catList,
       h("label", {}, "Brands and specialities ", h("small", {}, "optional")), keywords,
+      h("label", {}, "Who they sell to ", h("small", {}, "wholesalers show up when shops look for suppliers")), trade,
     ),
     h("div", { class: "card" },
       h("label", {}, "Location"),

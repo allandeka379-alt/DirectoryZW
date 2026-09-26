@@ -120,12 +120,14 @@ export interface RequestRow {
   result_count: number;
   /** local, phrasebook, customer, claude or fallback ("photo" on requests from before typed messages only) */
   understood_by: string | null;
-  /** exact, related or none */
-  match: "exact" | "related" | "none" | null;
+  /** exact, related, none, or retail (a business given retail stores because no wholesaler had it) */
+  match: "exact" | "related" | "none" | "retail" | null;
   /** What the local engine made of it. */
   reading: ReadingSummary | null;
   /** When the customer said the results weren't what they asked for. */
   flagged_at: Date | null;
+  /** Set when a business was looking for supplies: which of the owner's businesses it was for. */
+  buyer_business_id: string | null;
   created_at: Date;
 }
 
@@ -143,12 +145,13 @@ export async function createRequest(
     status?: RequestStatus;
     understoodBy?: string | null;
     reading?: ReadingSummary | null;
+    buyerBusinessId?: string | null;
   },
 ): Promise<RequestRow> {
   const row = await one<RequestRow>(
     db,
-    `INSERT INTO requests (contact_id, raw_text, interpretation, category_slug, query, area_id, lat, lng, status, understood_by, reading)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    `INSERT INTO requests (contact_id, raw_text, interpretation, category_slug, query, area_id, lat, lng, status, understood_by, reading, buyer_business_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
     [
       r.contactId,
       r.rawText.slice(0, 1000),
@@ -161,6 +164,7 @@ export async function createRequest(
       r.status ?? "open",
       r.understoodBy ?? null,
       r.reading ? JSON.stringify(r.reading) : null,
+      r.buyerBusinessId ?? null,
     ],
   );
   return row!;

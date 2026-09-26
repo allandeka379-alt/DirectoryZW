@@ -11,6 +11,8 @@ import {
   getBusiness,
   isUuid,
   setBusinessStatus,
+  setBusinessTrade,
+  TRADES,
   verifyBusiness,
 } from "../directory/businesses.js";
 import { RECOMMENDATION_STATUSES, setRecommendationStatus } from "../directory/recommendations.js";
@@ -31,6 +33,8 @@ const FieldRegistration = z.object({
   categories: z.array(z.string()).min(1).max(3),
   description: z.string().max(300).optional(),
   keywords: z.string().max(200).optional(),
+  /** Who they sell to: the public (default), other businesses (wholesale), or both. */
+  trade: z.enum(TRADES).optional(),
   area: z.string().max(60).optional(),
   lat: z.number().optional(),
   lng: z.number().optional(),
@@ -98,9 +102,12 @@ export function registerOps(server: FastifyInstance, app: App): void {
         const days = Math.min(Number((req.query as { days?: string }).days) || 7, 90);
         return app.db.query(
           `SELECT COALESCE(r.category_slug, '(unknown)') AS category, COALESCE(a.name, '(no area)') AS area,
-                  count(*)::int AS requests, (array_agg(r.raw_text ORDER BY r.created_at DESC))[1:3] AS examples
+                  count(*)::int AS requests,
+                  -- businesses looking for suppliers: gaps for wholesalers
+                  count(*) FILTER (WHERE r.buyer_business_id IS NOT NULL)::int AS from_businesses,
+                  (array_agg(r.raw_text ORDER BY r.created_at DESC))[1:3] AS examples
              FROM requests r LEFT JOIN areas a ON a.id = r.area_id
-            WHERE (r.status IN ('no_results', 'asked_around', 'handoff') OR r.match IN ('related', 'none'))
+            WHERE (r.status IN ('no_results', 'asked_around', 'handoff') OR r.match IN ('related', 'none', 'retail'))
               AND r.created_at > now() - make_interval(days => $1)
             GROUP BY 1, 2 ORDER BY requests DESC LIMIT 100`,
           [days],
@@ -272,6 +279,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
           lat: b.lat ?? area?.lat ?? null,
           lng: b.lng ?? area?.lng ?? null,
           categories: b.categories,
+          trade: b.trade,
           source: "field",
           verified: b.verified,
           verifiedBy: b.agent ?? actorOf(req).name,
@@ -279,6 +287,16 @@ export function registerOps(server: FastifyInstance, app: App): void {
         });
         await logAction(app.db, actorOf(req), "business.create", id, { verified: b.verified });
         return reply.code(201).send({ id });
+      });
+
+      ops.post("/businesses/:id/trade", async (req, reply) => {
+        const params = Id.safeParse(req.params);
+        const body = z.object({ trade: z.enum(TRADES) }).safeParse(req.body);
+        if (!params.success || !body.success) return reply.code(400).send({ error: "Give a business ID and who it sells to" });
+        if (!(await getBusiness(app.db, params.data.id))) return reply.code(404).send({ error: "Business not found" });
+        await setBusinessTrade(app.db, params.data.id, body.data.trade);
+        await logAction(app.db, actorOf(req), "business.trade", params.data.id, { trade: body.data.trade });
+        return { ok: true };
       });
 
       ops.post("/businesses/:id/verify", async (req, reply) => {

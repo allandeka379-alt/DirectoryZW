@@ -14,6 +14,11 @@ export interface SearchQuery {
   /** Ignore businesses further away than this when we know where the customer is. */
   maxKm?: number;
   excludeIds?: string[];
+  /**
+   * Who is asking: the public ("retail", the default) sees businesses that sell to the public;
+   * a business looking for supplies ("wholesale") sees those that sell to other businesses.
+   */
+  trade?: "retail" | "wholesale";
 }
 
 export interface BusinessHit {
@@ -69,6 +74,8 @@ export async function searchBusinesses(db: Db, taxonomy: Taxonomy, q: SearchQuer
        CROSS JOIN q
       WHERE b.status = 'active'
         AND NOT (b.id::text = ANY($3::text[]))
+        -- the public doesn't see wholesale-only businesses; a business looking for supplies doesn't see retail-only ones
+        AND b.trade <> $4
         AND (
           ($1::text IS NOT NULL AND EXISTS (
             SELECT 1 FROM business_categories bc WHERE bc.business_id = b.id AND bc.category_slug = $1))
@@ -78,7 +85,7 @@ export async function searchBusinesses(db: Db, taxonomy: Taxonomy, q: SearchQuer
           SELECT 1 FROM business_categories bc JOIN categories c ON c.slug = bc.category_slug
            WHERE bc.business_id = b.id AND c.risk IN ('blocked', 'restricted'))
       LIMIT 300`,
-    [category?.slug ?? null, tsquery, q.excludeIds ?? []],
+    [category?.slug ?? null, tsquery, q.excludeIds ?? [], q.trade === "wholesale" ? "retail" : "wholesale"],
   );
 
   const located = q.lat != null && q.lng != null;
@@ -124,7 +131,16 @@ export async function searchBusinesses(db: Db, taxonomy: Taxonomy, q: SearchQuer
 export async function searchRelated(
   db: Db,
   taxonomy: Taxonomy,
-  q: { categorySlug: string; lat?: number; lng?: number; limit: number; minVerified: number; maxKm?: number },
+  q: {
+    categorySlug: string;
+    lat?: number;
+    lng?: number;
+    limit: number;
+    minVerified: number;
+    maxKm?: number;
+    excludeIds?: string[];
+    trade?: "retail" | "wholesale";
+  },
 ): Promise<BusinessHit[]> {
   const category = taxonomy.get(q.categorySlug);
   if (!category) return [];

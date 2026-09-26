@@ -541,4 +541,16 @@ CREATE INDEX rechecks_business_idx ON rechecks (business_id, created_at);
 ALTER TABLE reports ADD COLUMN reminded_at timestamptz;
 `,
   },
+  {
+    id: "012_business_to_business",
+    sql: /* sql */ `
+-- Who a business sells to. Wholesale-only businesses don't show in the public's searches;
+-- businesses looking for suppliers see those that sell wholesale.
+ALTER TABLE businesses ADD COLUMN trade text NOT NULL DEFAULT 'retail' CHECK (trade IN ('retail', 'wholesale', 'both'));
+CREATE INDEX businesses_trade_idx ON businesses (trade) WHERE trade <> 'retail';
+
+-- A request a business made for its own supplies, and which of the owner's businesses it was for.
+ALTER TABLE requests ADD COLUMN buyer_business_id uuid REFERENCES businesses(id) ON DELETE SET NULL;
+`,
+  },
 ];

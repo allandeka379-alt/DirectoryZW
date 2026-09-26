@@ -13,6 +13,8 @@ export interface Business {
   verification: "verified" | "registered";
   /** When our team last checked it in person. */
   verified_at: Date | null;
+  /** Who it sells to: the public ("retail"), other businesses ("wholesale"), or both. */
+  trade: Trade;
   status: "active" | "paused" | "removed";
   source: "field" | "self" | "import";
   owner_contact_id: string | null;
@@ -21,6 +23,9 @@ export interface Business {
   rating_sum: number;
   rating_count: number;
 }
+
+export const TRADES = ["retail", "wholesale", "both"] as const;
+export type Trade = (typeof TRADES)[number];
 
 export interface NewBusiness {
   name: string;
@@ -31,6 +36,7 @@ export interface NewBusiness {
   lat?: number | null;
   lng?: number | null;
   categories: string[];
+  trade?: Trade;
   source: Business["source"];
   verified?: boolean;
   verifiedBy?: string;
@@ -73,6 +79,7 @@ export async function createBusiness(db: Db, b: NewBusiness): Promise<string> {
     for (const slug of new Set(b.categories)) {
       await tx.query("INSERT INTO business_categories (business_id, category_slug) VALUES ($1, $2)", [row!.id, slug]);
     }
+    if (b.trade && b.trade !== "retail") await tx.query("UPDATE businesses SET trade = $2 WHERE id = $1", [row!.id, b.trade]);
     return row!.id;
   });
 }
@@ -161,4 +168,9 @@ export async function categoriesOf(db: Db, businessId: string): Promise<string[]
 
 export function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+/** Set who a business sells to. */
+export async function setBusinessTrade(db: Db, id: string, trade: Trade): Promise<void> {
+  await db.query("UPDATE businesses SET trade = $2, updated_at = now() WHERE id = $1", [id, trade]);
 }

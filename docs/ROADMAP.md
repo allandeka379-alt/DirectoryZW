@@ -237,7 +237,30 @@ The welcome message says verified businesses are genuine and reliable and that w
   - Removed: speech-to-text (Google Chirp 2 and the HTTP adapter), Claude reading photos and price lists, the Batch API for field price lists, WhatsApp media downloads, and the daily cap on photos and voice notes.
   - Kept: field agents' photos of businesses (evidence for the team, never read by AI), and price-list items read before this change, which still show on business cards.
   - Claude is now used for one thing only: typed wording the local engine can't read.
-- [ ] **Hardening, so the system is very cheap to run:** see [HARDENING.md](HARDENING.md).
+- [x] **Hardening, phase 1, so the system is very cheap to run** (the owner's four decisions, 26 September 2026; details in [HARDENING.md](HARDENING.md)):
+  - WhatsApp messages stay inside conversations people started, which makes them free:
+    - the follow-up goes out 20 hours after "Connect me"
+    - lead notices go only while the business's own window is open
+    - owners see their week at the top of the menu, and their customers under **My customers**, instead of a Monday summary
+  - Paid templates are off unless switched on, and capped per day.
+  - Claude: $1 a day and 3 calls per number, a 6-second timeout with one retry, a five-minute break after three failures, and caching only when calls come close together.
+  - The handoff inbox shows each chat's reply window and won't send a reply WhatsApp would refuse.
+  - **Running costs** on the System screen.
+- [ ] Hardening, phase 2: see [HARDENING.md](HARDENING.md).
+
+## Milestone 12: businesses finding suppliers
+
+- [x] **Who a business sells to:** the public, other businesses (wholesale), or both. Owners set it under **Who I sell to**, field agents in the field app, and the team on the business page. Wholesale is for registered businesses only: wholesale-only businesses never show in the public's searches.
+- [x] **Find a supplier**, on the business number:
+  - An owner types what their business needs ("cement wholesale", "cooking oil in bulk").
+  - They get suppliers near their own business that sell to businesses, never their own listings: "We have two suppliers near Mbare that our team has verified, and they have *cement*".
+  - The rest works as it does for the public: "Did you mean…?", related suppliers, a person when nothing fits, "Connect me", the follow-up, ratings and reports.
+  - The owner's message to the supplier, and the supplier's lead notice, name the business that's asking.
+  - When no wholesaler has it, the business gets the retail stores in that line of business instead: "No wholesaler we list has *fridges* yet, so here are retail stores that do." It still counts as a wholesale gap.
+- [x] **Supply gaps** show how many requests came from businesses, so field teams can recruit wholesalers.
+- [x] Three sample wholesalers for trying it in the simulator.
+- [x] Migration 012; tests (172)
+- [ ] Field teams mark wholesalers as they register them, and recruit wholesalers where the supply gaps show businesses searching
 
 ## Later: monetization (only after traction)
 

@@ -4,6 +4,8 @@ import {
   claimBusinessesByPhone,
   createBusiness,
   setBusinessStatus,
+  setBusinessTrade,
+  TRADES,
   updateBusinessLocation,
   updateBusinessOffer,
   type Business,
@@ -15,7 +17,7 @@ import { normalizeText, normalizeZimPhone } from "../text.js";
 import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
-import { ERASE_WORDS } from "./customer.js";
+import { ERASE_WORDS, handleCustomerTurn, type CustomerState } from "./customer.js";
 import { setConsent } from "./store.js";
 
 type Stage =
@@ -44,11 +46,21 @@ export interface BusinessState {
   };
   /** Which listing the owner is managing, when they have more than one. */
   selectedBusinessId?: string;
+  /**
+   * The owner is looking for supplies for this business. Their messages then go through the
+   * customer flow (which shares this state), searching businesses that sell wholesale.
+   */
+  buying?: { businessId: string; name: string };
 }
 
 type T = Turn<BusinessState>;
 
 const REGISTER_WORDS = ["register", "list my business", "join", "sign up", "signup", "list", "add my business"];
+const SUPPLIER_WORDS = ["find a supplier", "find supplier", "suppliers", "supplier", "wholesale", "wholesalers", "buy stock", "restock"];
+/** Leave a supplier search for the business menu. */
+const LEAVE_BUYING = ["menu", "cancel", "stop", "back", "exit"];
+/** Taps on supplier results, cards and follow-ups: the customer flow's actions, on this number. */
+const BUYER_ACTIONS = new Set(["biz", "con", "list", "human", "new", "rep", "fb", "rate", "notit", "mean"]);
 const YES = ["yes", "y", "yebo", "ehe", "hongu", "correct", "i agree", "agree", "ok", "okay", "save"];
 
 export async function handleBusinessTurn(t: T): Promise<void> {
@@ -58,6 +70,19 @@ export async function handleBusinessTurn(t: T): Promise<void> {
   if (contact.phone) await claimBusinessesByPhone(svc.db, contact.id, contact.phone);
 
   const c = inbound.content;
+  // Looking for supplies: the customer flow runs on this number, for the owner's business.
+  if ((c.type === "button_reply" || c.type === "list_reply") && BUYER_ACTIONS.has(parseAction(c.id).action)) return asBuyer(t);
+  if (state.buying) {
+    const said = c.type === "text" ? normalizeText(c.text) : "";
+    if (LEAVE_BUYING.includes(said)) {
+      stopBuying(t);
+      return showMenu(t);
+    }
+    if (c.type === "text" && !ERASE_WORDS.includes(said)) return asBuyer(t);
+    if (c.type === "location") return asBuyer(t);
+    // Anything else (a business menu button, "delete my data") ends the search and is handled below.
+    stopBuying(t);
+  }
   if (c.type === "button_reply" || c.type === "list_reply") return onAction(t, c.id);
   if (c.type === "location" && (state.stage === "reg_area" || state.stage === "edit_area")) {
     return setArea(t, svc.gazetteer.nearest(c.lat, c.lng), c.lat, c.lng);
@@ -80,6 +105,7 @@ export async function handleBusinessTurn(t: T): Promise<void> {
     if (REGISTER_WORDS.includes(cmd)) return startRegistration(t);
     if (["summary", "stats"].includes(cmd)) return withBusiness(t, (b) => sendSummary(t, b));
     if (["customers", "my customers", "leads"].includes(cmd)) return withBusiness(t, (b) => showCustomers(t, b));
+    if (SUPPLIER_WORDS.includes(cmd)) return withBusiness(t, (b) => startBuying(t, b));
     if (cmd === "pause") return withBusiness(t, (b) => setPaused(t, b, true));
     if (cmd === "resume") return withBusiness(t, (b) => setPaused(t, b, false));
     if (cmd === "remove") return withBusiness(t, () => t.reply(copy.bizConfirmRemove()));
@@ -138,6 +164,15 @@ async function onAction(t: T, id: string): Promise<void> {
       return withBusiness(t, (b) => sendSummary(t, b));
     case "bleads":
       return withBusiness(t, (b) => showCustomers(t, b));
+    case "bbuy":
+      return withBusiness(t, (b) => startBuying(t, b));
+    case "btrade":
+      return withBusiness(t, async (b) => {
+        const trade = TRADES.find((x) => x === args[0]);
+        if (!trade) return t.reply(copy.askTrade(b.trade));
+        await setBusinessTrade(t.svc.db, b.id, trade);
+        return t.reply(copy.tradeSaved(b.name, trade));
+      });
     case "bpause":
       return withBusiness(t, (b) => setPaused(t, b, true));
     case "bresume":
@@ -198,6 +233,64 @@ async function showCustomers(t: T, b: Business): Promise<void> {
     [b.id],
   );
   return t.reply(copy.myCustomers(b.name, leads.map((l) => ({ ...l, at: new Date(l.at) }))));
+}
+
+// ---------- Looking for suppliers ----------
+
+/** The shared state, seen as the customer flow sees it. */
+function asCustomerState(t: T): CustomerState {
+  return t.state as unknown as CustomerState;
+}
+
+/** Start a supplier search for this business, near where it is. */
+async function startBuying(t: T, b: Business): Promise<void> {
+  beginBuying(t, b);
+  return t.reply(copy.askWhatToBuy(b.name, t.svc.gazetteer.get(b.area_id)?.name ?? null));
+}
+
+function beginBuying(t: T, b: Business): void {
+  t.state.stage = undefined;
+  t.state.draft = undefined;
+  const s = asCustomerState(t);
+  s.stage = undefined;
+  s.pending = undefined;
+  s.choice = undefined;
+  s.unclear = undefined;
+  s.buying = { businessId: b.id, name: b.name };
+  // Suppliers near the business, without asking where.
+  if (b.lat != null && b.lng != null) {
+    s.location = { areaId: b.area_id, lat: b.lat, lng: b.lng, label: t.svc.gazetteer.get(b.area_id)?.name ?? "your business" };
+  }
+}
+
+function stopBuying(t: T): void {
+  const s = asCustomerState(t);
+  s.buying = undefined;
+  s.stage = undefined;
+  s.pending = undefined;
+  s.choice = undefined;
+  s.unclear = undefined;
+  s.location = undefined;
+}
+
+/**
+ * Hand the message to the customer flow, as the owner's business. A tap on an older supplier
+ * result or follow-up starts the search mode again for the business they're managing.
+ */
+async function asBuyer(t: T): Promise<void> {
+  const { svc, contact } = t;
+  if (!t.state.buying) {
+    const owned = await businessesOwnedBy(svc.db, contact.id);
+    const b = owned.find((x) => x.id === t.state.selectedBusinessId) ?? owned[0];
+    if (!b) return t.reply(copy.bizNoListing());
+    beginBuying(t, b);
+  }
+  // Owners agreed to the listing terms when they registered (or with the field agent).
+  if (!contact.consent_at) {
+    await setConsent(svc.db, contact.id);
+    contact.consent_at = svc.now();
+  }
+  return handleCustomerTurn(t as unknown as Turn<CustomerState>);
 }
 
 // ---------- Registration and edits ----------

@@ -154,6 +154,7 @@ const screens = {
         { label: "Category", key: "category" },
         { label: "Area", key: "area" },
         { label: "Requests", key: "requests", num: true },
+        { label: "From businesses", render: (r) => (r.from_businesses ? h("span", { class: "tag", title: "Businesses looking for suppliers: invite wholesalers" }, `${r.from_businesses} wholesale`) : "") },
         { label: "Recent examples", render: (r) => (r.examples || []).join(" · ") },
       ], rows),
     ];
@@ -582,7 +583,7 @@ const screens = {
     const questions = s.questions7d || { asked: 0, picked: 0, something_else: 0 };
     const check = s.precision28d || { reviewed: 0, right: 0 };
     const wordCount = (lang, st) => s.lexicon?.words.find((w) => w.language === lang && w.status === st)?.words ?? 0;
-    const matchLabel = { exact: "Suppliers in their category", related: "Related suppliers only", none: "Handed to a person" };
+    const matchLabel = { exact: "Suppliers in their category", related: "Related suppliers only", retail: "Businesses given retail stores (no wholesaler)", none: "Handed to a person" };
     const shares = (rows, labels, key) => {
       const total = rows.reduce((sum, r) => sum + r.requests, 0);
       return rows.length
@@ -840,6 +841,9 @@ async function businessDetail(id) {
       h("span", { class: `tag ${b.verification === "verified" ? "ok" : ""}` }, b.verification),
       h("span", { class: "tag" }, b.status),
       h("span", { class: "tag" }, `source: ${b.source}`),
+      h("select", { title: "Who they sell to", onchange: async (e) => { await post(`/businesses/${b.id}/trade`, { trade: e.target.value }); render(); } },
+        ...[["retail", "Sells to the public"], ["wholesale", "Sells to businesses (wholesale)"], ["both", "Sells to both"]]
+          .map(([v, l]) => h("option", { value: v, selected: b.trade === v || null }, l))),
       checks.length ? h("span", { class: "muted" }, checks.join(" · ")) : null),
     b.audits.length ? h("p", { class: "muted" }, "Call-backs: ", b.audits.map((a) => `${a.outcome} by ${a.audited_by} on ${day(a.created_at)}${a.note ? ` (${a.note})` : ""}`).join("; ")) : null,
     b.record.answered ? h("p", { class: "muted" }, `Customers' follow-up answers, last 90 days: ${b.record.sorted} sorted, ${b.record.couldntHelp} couldn't help, ${b.record.noReply} didn't reply.`) : null,

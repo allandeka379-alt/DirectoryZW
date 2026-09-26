@@ -19,7 +19,7 @@ A working record of what personal data the service holds, where it goes, and how
 | Customers | The team's labels on a sample of requests (what the customer wanted) | Measure and tune how well requests are understood | With the request: deleted with the customer's data. The eval export (`evals/real*.jsonl`) holds request wording, so keep it private and delete it after use. |
 | Customers | Voice notes and photos they send | None: they're asked to type instead | Never downloaded or read. Only the fact that one arrived is logged with the message. |
 | Customers | Ratings, follow-up answers ("sorted", "didn't reply", "didn't have it") and reports about businesses | Rank businesses, show track records, send businesses back for a re-check, stop scams | Until the customer deletes their data. Reports stay after that, with the link to the customer removed. Track records show counts only, never who answered. |
-| Businesses | Name, WhatsApp number, location, description, field agents' photos, price list, ratings, the field team's re-check notes | The listing | While listed. Deleting their data removes the listing, photos and re-checks. |
+| Businesses | Name, WhatsApp number, location, description, who they sell to, field agents' photos, price list, ratings, the field team's re-check notes, and what they searched for as buyers (the supplier is told which business asked) | The listing | While listed. Deleting their data removes the listing, photos and re-checks. |
 | Field agents | Name, phone, city, registrations | Quality control | While they work with us. |
 | Ops team | Name, email, password hash, activity log | Accountability | Accounts while active. The activity log holds no message text. |
 

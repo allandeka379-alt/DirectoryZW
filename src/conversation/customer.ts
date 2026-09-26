@@ -2,7 +2,7 @@ import { remember } from "../ai/phrasebook.js";
 import type { RequestInterpretation } from "../ai/types.js";
 import type { ReaderContext, ReadingSummary, Understanding, UnderstoodBy } from "../ai/understanding.js";
 import { one } from "../db/client.js";
-import { adjustResponseScore, getBusiness, recordRating, type Business } from "../directory/businesses.js";
+import { adjustResponseScore, businessesOwnedBy, getBusiness, recordRating, type Business } from "../directory/businesses.js";
 import { haversineKm } from "../directory/gazetteer.js";
 import { createIntroduction, getIntroduction, waMeLink } from "../directory/introductions.js";
 import { matchingOfferings, priceLabel } from "../directory/offerings.js";
@@ -67,6 +67,11 @@ export interface CustomerState {
   rec?: { name?: string; what?: string; areaText?: string | null; areaId?: number | null };
   /** We already asked them to say it differently; next time a person takes over. */
   unclear?: boolean;
+  /**
+   * A business owner looking for supplies, on the business number (see business.ts): searches
+   * find businesses that sell wholesale, and suppliers are told which business is asking.
+   */
+  buying?: { businessId: string; name: string };
 }
 
 type T = Turn<CustomerState>;
@@ -425,6 +430,7 @@ async function runSearch(
 ): Promise<void> {
   const { svc, state, contact } = t;
   const category = svc.taxonomy.get(interpretation.category_slug);
+  const buyer = state.buying;
   const request = await createRequest(svc.db, {
     contactId: contact.id,
     rawText: raw,
@@ -436,15 +442,19 @@ async function runSearch(
     lng: place?.lng ?? null,
     understoodBy: by,
     reading,
+    buyerBusinessId: buyer?.businessId ?? null,
   });
   state.lastRequestId = request.id;
   state.lastQuery = raw;
-  const what = need(interpretation, category, by);
+  const what: Need = { ...need(interpretation, category, by), trade: !!buyer };
   const search = {
     lat: place?.lat,
     lng: place?.lng,
     limit: svc.config.maxResults,
     minVerified: svc.config.minVerifiedResults,
+    // A business looking for supplies sees wholesalers, and never its own listings.
+    trade: buyer ? ("wholesale" as const) : ("retail" as const),
+    excludeIds: buyer ? (await businessesOwnedBy(svc.db, contact.id)).map((b) => b.id) : [],
   };
 
   const hits = await searchBusinesses(svc.db, svc.taxonomy, {
@@ -456,6 +466,21 @@ async function runSearch(
     await saveResults(svc.db, request.id, hits.map((h) => h.id));
     await setRequestStatus(svc.db, request.id, "answered", hits.length, "exact");
     return t.reply(copy.results(request.id, hits, what, place?.label));
+  }
+
+  // No wholesaler has it: a business gets the retail stores in that line of business instead.
+  if (buyer) {
+    const retail = await searchBusinesses(svc.db, svc.taxonomy, {
+      ...search,
+      trade: "retail",
+      categorySlug: category?.slug ?? null,
+      text: interpretation.query || raw,
+    });
+    if (retail.length) {
+      await saveResults(svc.db, request.id, retail.map((h) => h.id));
+      await setRequestStatus(svc.db, request.id, "answered", retail.length, "retail");
+      return t.reply(copy.results(request.id, retail, what, place?.label, { retailInstead: true }));
+    }
   }
 
   const related = category ? await searchRelated(svc.db, svc.taxonomy, { ...search, categorySlug: category.slug }) : [];
@@ -536,7 +561,12 @@ async function connect(t: T, requestId: string, businessId: string): Promise<voi
   const summary = truncate(request?.raw_text ?? "your products or services", 160);
   const brand = svc.config.brandName;
   const view = viewOf(t, business, request);
-  const link = waMeLink(business.phone, copy.prefilledMessage(brand, business.name, intro.ref_code, summary));
+  // A business looking for supplies says which business is asking.
+  const buyer = request?.buyer_business_id ? await getBusiness(svc.db, request.buyer_business_id) : undefined;
+  const prefilled = buyer
+    ? copy.prefilledTradeMessage(brand, business.name, buyer.name, intro.ref_code, summary)
+    : copy.prefilledMessage(brand, business.name, intro.ref_code, summary);
+  const link = waMeLink(business.phone, prefilled);
   await t.reply(copy.connectLink(view, link, intro.ref_code));
 
   const place = request?.area_id != null ? svc.gazetteer.get(request.area_id)?.name : null;
@@ -546,8 +576,8 @@ async function connect(t: T, requestId: string, businessId: string): Promise<voi
   await svc.messenger.notify(
     "business",
     business.phone,
-    copy.leadNotification(brand, intro.ref_code, summary, place, neededBy),
-    { name: svc.config.whatsapp.templates.leadNotification, params: [intro.ref_code, summary] },
+    copy.leadNotification(brand, intro.ref_code, summary, place, neededBy, buyer),
+    { name: svc.config.whatsapp.templates.leadNotification, params: [intro.ref_code, buyer ? `${buyer.name}: ${summary}` : summary] },
     { freeOnly: svc.config.leadNotices === "free_only" },
   );
   const runAt = new Date(svc.now().getTime() + svc.config.followUpDelayHours * 3600_000);
@@ -569,11 +599,11 @@ async function reshowResults(t: T, requestId: string): Promise<void> {
   );
   const category = svc.taxonomy.get(request.category_slug);
   const place = request.area_id != null ? svc.gazetteer.get(request.area_id)?.name : undefined;
-  const what = need(request.interpretation, category, request.understood_by);
+  const what: Need = { ...need(request.interpretation, category, request.understood_by), trade: !!request.buyer_business_id };
   if (!rows.length) return t.reply(copy.noOtherOptions(request.id));
   const views = rows.map((b) => viewOf(t, b, request));
   if (request.match === "related" && category) return t.reply(copy.relatedResults(request.id, views, what, relatedLabel(t, category), place));
-  return t.reply(copy.results(request.id, views, what, place));
+  return t.reply(copy.results(request.id, views, what, place, { retailInstead: request.match === "retail" }));
 }
 
 /**
@@ -795,12 +825,14 @@ function relatedLabel(t: T, category: Category): string {
   return groups.size === 1 && group ? `${group.toLowerCase()} businesses` : "businesses that sell or do similar things";
 }
 
-/** Words that name a kind of shop rather than an item: "a phone shop" has phones. */
+/** Words that name a kind of shop or supplier rather than an item: "a phone shop" has phones. */
 const SHOP_WORDS = new Set(
   (
     "shop shops store stores supermarket supermarkets dealer dealers supplier suppliers seller sellers vendor vendors " +
     "outlet outlets boutique boutiques wholesaler wholesalers retailer retailers butcher butchers butchery baker bakers " +
-    "bakery pharmacy pharmacies chemist chemists company companies business businesses place places"
+    "bakery pharmacy pharmacies chemist chemists company companies business businesses place places " +
+    // and kinds of supplier, for businesses buying stock: "cement wholesale" has cement
+    "wholesale wholesaler wholesalers bulk supplier suppliers distributor distributors stockist stockists"
   ).split(" "),
 );
 

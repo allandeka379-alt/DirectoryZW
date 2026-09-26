@@ -37,6 +37,13 @@ const UNVERIFIED_WARNING = "⚠️ Not yet checked by our team. Don't pay a depo
 export interface Need {
   kind: "goods" | "service" | "other";
   text: string;
+  /** A business looking for supplies: results are "suppliers". */
+  trade?: boolean;
+}
+
+/** One place that has or does what they asked for: "a store", "a business", or "a supplier" for a business. */
+function aPlace(need: Need): string {
+  return need.trade ? "a supplier" : need.kind === "goods" ? "a store" : "a business";
 }
 
 const NUMBERS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
@@ -159,13 +166,22 @@ function unverifiedNote(hits: BusinessView[]): string {
  * offer *plumbing services*, and our team has verified them". Businesses that listed themselves
  * only fill gaps (see searchBusinesses); they're counted apart, with a warning.
  */
-export function results(requestId: string, hits: BusinessView[], need: Need, place?: string): OutboundMessage {
+export function results(
+  requestId: string,
+  hits: BusinessView[],
+  need: Need,
+  place?: string,
+  /** A business looking for supplies that no wholesaler has: these are retail stores in that line. */
+  opts: { retailInstead?: boolean } = {},
+): OutboundMessage {
   const shown = hits.slice(0, 9);
   const verified = shown.filter((h) => h.verification === "verified");
   const unchecked = shown.filter((h) => h.verification !== "verified");
   const near = place ? ` near ${place}` : "";
   const goods = need.kind === "goods";
-  const noun = (n: number) => (goods ? (n === 1 ? "store" : "stores") : n === 1 ? "business" : "businesses");
+  const suppliers = need.trade && !opts.retailInstead;
+  const noun = (n: number) =>
+    suppliers ? (n === 1 ? "supplier" : "suppliers") : goods ? (n === 1 ? "store" : "stores") : n === 1 ? "business" : "businesses";
   const some = (n: number) => (n === 1 ? `a ${noun(1)}` : `${inWords(n)} ${noun(n)}`);
   const them = (n: number) => (n === 1 ? "it" : "them");
 
@@ -187,17 +203,24 @@ export function results(requestId: string, hits: BusinessView[], need: Need, pla
   }
   body += ` Tap ${shown.length === 1 ? "it" : "one"} to connect with them.`;
   if (unchecked.length) body += "\n\n⚠️ Don't pay a deposit before you see the item or the work.";
+  if (opts.retailInstead) {
+    body =
+      (goods
+        ? `No wholesaler we list has *${need.text}* yet, so here are retail stores that do.\n\n`
+        : `No wholesaler we list offers *${need.text}* yet, so here are businesses that do.\n\n`) + body;
+  }
 
   return {
     kind: "list",
     body,
-    button: goods ? "See stores" : "See businesses",
+    button: suppliers ? "See suppliers" : goods ? "See stores" : "See businesses",
     sections: [
       { title: "Verified by our team", rows: businessRows(requestId, verified) },
       { title: "Not checked yet", rows: businessRows(requestId, unchecked) },
       { title: "Not right?", rows: [notWhatIAskedRow(requestId)] },
     ].filter((s) => s.rows.length),
-    footer: "Type menu to start a new search",
+    // On the business number, "menu" goes back to the business menu.
+    footer: need.trade ? "Type menu for your business menu" : "Type menu to start a new search",
   };
 }
 
@@ -207,7 +230,7 @@ export function results(requestId: string, hits: BusinessView[], need: Need, pla
  */
 export function relatedResults(requestId: string, hits: BusinessView[], need: Need, label: string, place?: string): OutboundMessage {
   const near = place ? ` near ${place}` : "";
-  const missing = need.kind === "goods" ? `a store${whatTheyDo(need, 1, near)}` : `a business${whatTheyDo(need, 1, near)}`;
+  const missing = `${aPlace(need)}${whatTheyDo(need, 1, near)}`;
   const maybe = need.kind === "goods" ? "may have it or know where to get it" : "may be able to help";
   return {
     kind: "list",
@@ -222,7 +245,8 @@ export function relatedResults(requestId: string, hits: BusinessView[], need: Ne
         rows: [{ id: Ids.human(requestId), title: "Talk to a person", description: "Someone from our team helps you find it" }, notWhatIAskedRow(requestId)],
       },
     ],
-    footer: "Type menu to start a new search",
+    // On the business number, "menu" goes back to the business menu.
+    footer: need.trade ? "Type menu for your business menu" : "Type menu to start a new search",
   };
 }
 
@@ -255,6 +279,11 @@ export function businessCard(requestId: string, b: BusinessView, prices?: PriceV
   };
 }
 
+/** A business contacting a supplier: it says which business is asking. */
+export function prefilledTradeMessage(brand: string, supplierName: string, buyerName: string, refCode: string, summary: string): string {
+  return `Hi ${supplierName}, this is ${buyerName}. We found you on ${brand} (ref ${refCode}). We're looking for: ${summary}`;
+}
+
 export function prefilledMessage(brand: string, businessName: string, refCode: string, summary: string): string {
   return `Hi ${businessName}, I found you on ${brand} (ref ${refCode}). I'm looking for: ${summary}`;
 }
@@ -277,7 +306,7 @@ export function connectLink(b: BusinessView, url: string, refCode: string): Outb
  */
 export function noSupplierHandoff(need: Need, place: string | undefined, when: string): OutboundMessage {
   const near = place ? ` near ${place}` : "";
-  const missing = need.kind === "goods" ? `a store${whatTheyDo(need, 1, near)}` : `a business${whatTheyDo(need, 1, near)}`;
+  const missing = `${aPlace(need)}${whatTheyDo(need, 1, near)}`;
   return {
     kind: "text",
     text:
@@ -551,11 +580,21 @@ export function stopped(): OutboundMessage {
 
 // ---------- Business number ----------
 
-export function leadNotification(brand: string, refCode: string, summary: string, place?: string | null, neededBy?: string | null): OutboundMessage {
+/** `buyer`: another business looking for supplies, named so the supplier knows who's asking. */
+export function leadNotification(
+  brand: string,
+  refCode: string,
+  summary: string,
+  place?: string | null,
+  neededBy?: string | null,
+  buyer?: { name: string } | null,
+): OutboundMessage {
   return {
     kind: "text",
     text:
-      `🔔 *New customer from ${brand}* (ref ${refCode})\nLooking for: ${summary}` +
+      (buyer
+        ? `🔔 *New trade customer from ${brand}* (ref ${refCode})\n*${buyer.name}* is looking for: ${summary}`
+        : `🔔 *New customer from ${brand}* (ref ${refCode})\nLooking for: ${summary}`) +
       (place ? `\nArea: ${place}` : "") +
       (neededBy ? `\nNeeded: ${neededBy}` : "") +
       "\n\nThey'll message you on WhatsApp shortly. Businesses that reply quickly show higher in results.",
@@ -675,8 +714,45 @@ export function regConsent(termsUrl?: string): OutboundMessage {
 export function regDone(name: string): OutboundMessage {
   return {
     kind: "text",
-    text: `You're listed! Customers can now find *${name}*.\n\nA field agent may visit to verify you, and verified businesses show first. Type *menu* any time for your options.`,
+    text:
+      `You're listed! Customers can now find *${name}*.\n\nA field agent may visit to verify you, and verified businesses show first. ` +
+      "Do you also sell wholesale to other businesses? Choose *Who I sell to* in the menu. Type *menu* any time for your options.",
   };
+}
+
+// ---------- Businesses buying from suppliers ----------
+
+export function askWhatToBuy(businessName: string, area: string | null): OutboundMessage {
+  return {
+    kind: "text",
+    text:
+      `What does *${businessName}* need to buy? Type it the way you'd ask a supplier, for example *cement, 100 bags* or *cooking oil wholesale*.\n\n` +
+      `I'll find wholesalers and suppliers${area ? ` near ${area}` : ""}, the ones our team has verified first. Type *menu* to go back.`,
+  };
+}
+
+const TRADE_LABELS: Record<string, string> = {
+  retail: "the public",
+  wholesale: "other businesses (wholesale)",
+  both: "the public and other businesses",
+};
+
+export function askTrade(current: string): OutboundMessage {
+  return {
+    kind: "buttons",
+    body:
+      `Right now you sell to ${TRADE_LABELS[current] ?? "the public"}.\n\n` +
+      "Who do you sell to? Businesses that sell wholesale show up when other businesses look for suppliers. Wholesale-only businesses don't show in the public's searches.",
+    buttons: [
+      { id: Ids.setTrade("retail"), title: "The public" },
+      { id: Ids.setTrade("wholesale"), title: "Other businesses" },
+      { id: Ids.setTrade("both"), title: "Both" },
+    ],
+  };
+}
+
+export function tradeSaved(name: string, trade: string): OutboundMessage {
+  return { kind: "text", text: `Saved: *${name}* sells to ${TRADE_LABELS[trade] ?? trade}. Type *menu* for your options.` };
 }
 
 export function regCancelled(): OutboundMessage {
@@ -692,8 +768,10 @@ export function bizMenu(
   const rows: { id: string; title: string; description?: string }[] = [
     { id: Ids.summary, title: "My summary", description: "Searches, customers and rating" },
     { id: Ids.myCustomers, title: "My customers", description: "Who contacted you through us" },
+    { id: Ids.findSupplier, title: "Find a supplier", description: "Wholesalers for your own stock" },
     { id: Ids.editWhat, title: "Update what I sell", description: "Description and categories" },
     { id: Ids.editArea, title: "Update location", description: "Where customers find you" },
+    { id: Ids.sellsTo, title: "Who I sell to", description: "The public, businesses (wholesale) or both" },
     b.status === "paused"
       ? { id: Ids.resume, title: "Resume listing", description: "Show me to customers again" }
       : { id: Ids.pause, title: "Pause listing", description: "Hide me from customers for now" },
