@@ -80,7 +80,27 @@ export function registerOps(server: FastifyInstance, app: App): void {
              (SELECT count(*)::int FROM reports WHERE status = 'open') AS open_reports,
              (SELECT count(*)::int FROM reports WHERE status = 'open' AND created_at < now() - interval '1 day') AS reports_over_a_day,
              (SELECT count(*)::int FROM agents WHERE active) AS active_agents,
-             (SELECT count(*)::int FROM recommendations WHERE status = 'new') AS new_recommendations`,
+             (SELECT count(*)::int FROM recommendations WHERE status = 'new') AS new_recommendations,
+             -- Launch measures (docs/LAUNCH.md), the last 30 days. Final answers leave out "not yet", as track records do.
+             (SELECT count(*)::int FROM introductions
+                WHERE outcome IN ('sorted', 'couldnt_help', 'no_reply') AND created_at > now() - interval '30 days') AS answered_30d,
+             (SELECT count(*)::int FROM introductions
+                WHERE outcome = 'sorted' AND created_at > now() - interval '30 days') AS sorted_30d,
+             (SELECT count(DISTINCT r.contact_id)::int FROM requests r JOIN contacts c ON c.id = r.contact_id AND c.channel = 'customer'
+                WHERE r.created_at > now() - interval '30 days') AS customers_30d,
+             -- Customers who searched on two or more days (Harare time, UTC+2 all year).
+             (SELECT count(*)::int FROM (
+                SELECT r.contact_id FROM requests r JOIN contacts c ON c.id = r.contact_id AND c.channel = 'customer'
+                 WHERE r.created_at > now() - interval '30 days'
+                 GROUP BY r.contact_id
+                HAVING count(DISTINCT ((r.created_at AT TIME ZONE 'UTC') + interval '2 hours')::date) > 1) returning_customers) AS returning_30d,
+             (SELECT count(DISTINCT owner_contact_id)::int FROM businesses WHERE status = 'active') AS owners,
+             (SELECT count(DISTINCT b.owner_contact_id)::int FROM businesses b JOIN contacts c ON c.id = b.owner_contact_id
+                WHERE b.status = 'active' AND c.last_inbound_at > now() - interval '30 days') AS owners_active_30d,
+             (SELECT count(*)::int FROM introductions i JOIN businesses b ON b.id = i.business_id
+                WHERE b.status = 'active' AND b.verification = 'verified' AND i.created_at > now() - interval '30 days') AS connections_verified_30d,
+             (SELECT count(DISTINCT i.business_id)::int FROM introductions i JOIN businesses b ON b.id = i.business_id
+                WHERE b.status = 'active' AND b.verification = 'verified' AND i.created_at > now() - interval '30 days') AS verified_connected_30d`,
         ),
       );
 

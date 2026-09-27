@@ -184,7 +184,7 @@ The ops console at `/ops` is built on these JSON endpoints. They live under `/op
 | `GET /contacts/:id/export`, `POST /contacts/:id/erase` (admin) | A person's data as JSON; delete it |
 | `POST /businesses/:id/erase` (admin) | Delete a listing completely, with photos and price list |
 | `GET /system` | Queues, failed sends, what's switched on, Claude spend today and this week, how requests were understood and matched, recent alerts |
-| `GET /summary` | Businesses, requests, introductions, open handoffs, reports, active agents |
+| `GET /summary` | Businesses, requests, introductions, open handoffs, reports, active agents, and the launch measures for the last 30 days: final follow-up answers and "Yes, sorted", customers who came back, owners who wrote in, connections with verified businesses |
 | `GET /requests?status=no_results` | Recent requests, filterable by status |
 | `GET /supply-gaps?days=7` | Requests no supplier in their category could answer (given related suppliers, or handed to a person), grouped by category and area: where field teams go next |
 | `GET /handoffs` | Chats waiting for a person, with recent messages |

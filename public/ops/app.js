@@ -131,6 +131,7 @@ const screens = {
         tile(s.active_agents, "Active field agents"),
         tile(s.new_recommendations, "New customer tips"),
       ),
+      launchCard(s),
     ];
   },
 
@@ -702,6 +703,35 @@ function costsCard(c) {
       `follow-ups ${set.paidFollowUps ? "when the window has closed" : "never (sent free, " + set.followUpDelayHours + " hours after connecting)"} · ` +
       `weekly summaries ${set.weeklySummaries === "always" ? "every Monday" : set.weeklySummaries === "window_only" ? "never (only free ones)" : "off"} · ` +
       `at most ${set.templateDailyCap} a day.`));
+}
+
+/** How the soft launch is going (docs/LAUNCH.md): the measures the System screen doesn't show. */
+function launchCard(s) {
+  const rate = (n, of) => (of ? Math.round((100 * n) / of) : null);
+  const ratio = s.verified_businesses ? s.connections_verified_30d / s.verified_businesses : null;
+  const perBusiness = ratio == null ? null : ratio >= 10 ? Math.round(ratio) : ratio.toFixed(ratio >= 1 ? 1 : 2);
+  const rows = [
+    ["Follow-up answers that say \"Yes, sorted\"", rate(s.sorted_30d, s.answered_30d), "%", "60% or more", (v) => v >= 60,
+      `${s.sorted_30d} of ${s.answered_30d} final answers`],
+    ["Customers who came back on another day", rate(s.returning_30d, s.customers_30d), "%", "25% or more", (v) => v >= 25,
+      `${s.returning_30d} of ${s.customers_30d} customers`],
+    ["Owners who used the business number", rate(s.owners_active_30d, s.owners), "%", "half or more", (v) => v >= 50,
+      `${s.owners_active_30d} of ${s.owners} owners`],
+    ["Connections per verified business", perBusiness, "", "no target yet", null,
+      `${s.verified_connected_30d} of ${s.verified_businesses} verified businesses got at least one`],
+  ];
+  return h("div", { class: "card" },
+    h("h2", {}, "Launch measures, last 30 days"),
+    table([
+      { label: "Measure", render: (r) => r[0] },
+      { label: "Now", num: true, render: (r) => (r[1] == null ? "no data yet" : `${r[1]}${r[2]}`) },
+      { label: "Target", render: (r) => r[3] },
+      { label: "", render: (r) => (r[1] == null || !r[4] ? "" : h("span", { class: `tag ${r[4](r[1]) ? "ok" : "warn"}` }, r[4](r[1]) ? "on target" : "not yet")) },
+      { label: "Based on", render: (r) => h("span", { class: "muted" }, r[5]) },
+    ], rows),
+    h("p", { class: "muted" },
+      "Final answers leave out \"Not yet\". An owner counts once they've written to the business number in the last 30 days. " +
+      "Connections per business shows what a listing is worth to its owner."));
 }
 
 /** Where the assistant stands against the targets in docs/UNDERSTANDING.md. */

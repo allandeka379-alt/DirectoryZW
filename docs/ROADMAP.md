@@ -262,6 +262,17 @@ The welcome message says verified businesses are genuine and reliable and that w
 - [x] Migration 012; tests (172)
 - [ ] Field teams mark wholesalers as they register them, and recruit wholesalers where the supply gaps show businesses searching
 
+## Launch measures
+
+The executive review of 26 September 2026 found four soft-launch measures that no screen showed.
+
+- [x] **Launch measures** on the Overview, for the last 30 days, each with its target:
+  - follow-up answers that say "Yes, sorted", counting final answers only, as track records do (aim: 60% or more)
+  - customers who came back on another day (aim: 25% or more)
+  - owners who used the business number (aim: half or more)
+  - connections per verified business, and how many verified businesses got at least one
+- [x] Tests (174)
+
 ## Later: monetization (only after traction)
 
 - [ ] Featured placement, lead credits and sponsored slots, as priced in the feasibility study

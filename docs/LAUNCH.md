@@ -44,11 +44,12 @@ In order. The code is ready for each step; most of the work here is accounts, ap
 - [ ] Work through the **Re-checks** screen every week: visit or phone each business, then record what you found. Customers are told verified businesses are genuine and reliable, and this list is how that stays true.
 - [ ] Answer every report within a day. The team is alerted about any report left open longer, and customers are told "we look into every report".
 - [ ] Open the customer number to a first group (friends, family, one suburb) before any advertising.
-- [ ] Watch weekly:
+- [ ] Watch weekly (the Overview's **Launch measures** and the System screen's **Targets** and **Running costs** show most of these):
   - the share of requests with results
   - the share connected with a business
-  - the share rated "sorted"
-  - repeat customers
+  - follow-up answers that say "Yes, sorted" (aim: 60% or more of final answers)
+  - customers who come back on another day (aim: 25% or more)
+  - owners who use the business number (aim: half or more), and connections per verified business
   - top supply gaps
   - reports
   - time to answer handoffs
