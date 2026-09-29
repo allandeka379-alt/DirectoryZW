@@ -696,4 +696,26 @@ CREATE TABLE catalog_batches (
 );
 `,
   },
+  {
+    id: "015_photo_links",
+    sql: /* sql */ `
+-- Photos from the links in a product upload, fetched in the background. One row per product: its
+-- latest link, whether it's waiting, done or failed, and why.
+CREATE TABLE photo_fetches (
+  offering_id uuid PRIMARY KEY REFERENCES offerings(id) ON DELETE CASCADE,
+  business_id uuid NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  url text NOT NULL,
+  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'fetching', 'done', 'failed')),
+  attempts integer NOT NULL DEFAULT 0,
+  error text,
+  next_try_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+CREATE INDEX photo_fetches_queue_idx ON photo_fetches (next_try_at) WHERE status = 'queued';
+CREATE INDEX photo_fetches_business_idx ON photo_fetches (business_id, status);
+-- The link a product's photo came from, so uploading the same list again doesn't fetch it again.
+ALTER TABLE offerings ADD COLUMN photo_source_url text;
+`,
+  },
 ];

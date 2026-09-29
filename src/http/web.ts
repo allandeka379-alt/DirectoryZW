@@ -19,6 +19,7 @@ import {
   getProduct,
   ImportRequest,
   importProducts,
+  productIndex,
   listProducts,
   PhotoUpload,
   PriceAdjustment,
@@ -44,6 +45,7 @@ import {
   useLoginLink,
   type Owner,
 } from "../web/owner-auth.js";
+import { clearFailedPhotoLinks, photoLinkStatus, retryPhotoLinks } from "../web/photo-links.js";
 import { REGISTRATION_HOURS, startWebRegistration, WebRegistration } from "../web/registration.js";
 import { productsChanged } from "../conversation/alerts.js";
 import * as copy from "../conversation/copy.js";
@@ -118,6 +120,7 @@ export function registerWeb(server: FastifyInstance, app: App): void {
   serveFile(server, "/app/app.js", "app/app.js");
   serveFile(server, "/app/charts.js", "app/charts.js");
   serveFile(server, "/app/sheets.js", "app/sheets.js");
+  serveFile(server, "/app/photos.js", "app/photos.js");
   serveFile(server, "/app/products-template.csv", "app/products-template.csv", {
     "Content-Disposition": 'attachment; filename="products-template.csv"',
   });
@@ -506,7 +509,38 @@ function registerOwnerRoutes(api: FastifyInstance, app: App): void {
     if (!b) return;
     const body = ImportRequest.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: problem(body.error) });
-    return importProducts(db, b.id, body.data, now());
+    const result = await importProducts(db, b.id, body.data, now());
+    // Photos from links arrive in the background, a few at a time.
+    if (!body.data.dryRun && result.photos.fetch) await app.services.jobs.enqueueOnce("photo_fetches", "all", {}, now());
+    return result;
+  });
+
+  // Photos from the links in uploads: how many are still coming, and which links didn't work.
+  api.get("/businesses/:id/photo-links", async (req, reply) => {
+    const b = await mine(req, reply);
+    if (!b) return;
+    return photoLinkStatus(db, b.id);
+  });
+
+  api.post("/businesses/:id/photo-links/retry", async (req, reply) => {
+    const b = await mine(req, reply);
+    if (!b) return;
+    const retrying = await retryPhotoLinks(db, b.id, now());
+    if (retrying) await app.services.jobs.enqueueOnce("photo_fetches", "all", {}, now());
+    return { retrying };
+  });
+
+  api.post("/businesses/:id/photo-links/clear", async (req, reply) => {
+    const b = await mine(req, reply);
+    if (!b) return;
+    return { cleared: await clearFailedPhotoLinks(db, b.id) };
+  });
+
+  // Every product's name and code, to match many photo files to products at once.
+  api.get("/businesses/:id/products/index", async (req, reply) => {
+    const b = await mine(req, reply);
+    if (!b) return;
+    return productIndex(db, b.id);
   });
 
   api.put("/businesses/:id/products/:pid/photo", { bodyLimit: 4 * 1024 * 1024 }, async (req, reply) => {

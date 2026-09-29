@@ -9,6 +9,11 @@ export const FIELDS = [
   { key: "category", label: "Category", aliases: ["category", "department", "group", "type", "section", "range"] },
   { key: "description", label: "Description", aliases: ["description", "details", "notes", "info", "specs", "specification"] },
   { key: "inStock", label: "In stock (yes or no)", aliases: ["in stock", "in_stock", "instock", "stock", "available", "availability", "status"] },
+  {
+    key: "photoUrl",
+    label: "Photo link",
+    aliases: ["photo", "photo url", "photo link", "product photo", "image", "image url", "image link", "product image", "picture", "picture url", "img", "img url", "image src", "main image", "thumbnail", "photos", "images"],
+  },
 ];
 
 const normalize = (s) => s.toLowerCase().replace(/[_\-]+/g, " ").replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();

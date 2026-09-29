@@ -24,6 +24,7 @@ import {
   toast,
 } from "/assets/ui.js";
 import { barChart } from "./charts.js";
+import { matchPhotos } from "./photos.js";
 import { FIELDS, guessMapping, hasHeadings, parseSheet, toImportRows } from "./sheets.js";
 
 const root = document.getElementById("root");
@@ -550,6 +551,7 @@ async function renderProducts(view, params, ticket) {
     "Products",
     null,
     h("button", { class: "btn btn-secondary", type: "button", onclick: () => openAdjust() }, icon("tag"), "Change prices"),
+    h("button", { class: "btn btn-secondary", type: "button", onclick: () => openPhotos() }, icon("image"), "Add photos"),
     h("button", { class: "btn btn-secondary", type: "button", onclick: () => openUpload() }, icon("upload"), "Upload a list"),
     h("button", { class: "btn", type: "button", onclick: () => openProduct() }, icon("plus"), "Add product"),
   );
@@ -577,7 +579,8 @@ async function renderProducts(view, params, ticket) {
   const toolbar = h("div", { class: "toolbar" }, searchBox);
   const list = h("div", { class: "card table-card" }, h("div", { class: "skeleton", style: "height:280px;border-radius:0" }));
   const selectionBar = h("div", { class: "selection", hidden: true, role: "toolbar", "aria-label": "Selected products" });
-  view.replaceChildren(head, toolbar, list, selectionBar);
+  const photoNote = h("div");
+  view.replaceChildren(head, photoNote, toolbar, list, selectionBar);
 
   let loads = 0;
   const load = async (append = false) => {
@@ -777,8 +780,106 @@ async function renderProducts(view, params, ticket) {
     drawSelection();
   };
 
+  // Photos coming from the links in an upload: how many are still on their way, and links that didn't work.
+  let photoTimer;
+  let lastWaiting = null;
+  const drawPhotoNote = async () => {
+    clearTimeout(photoTimer);
+    let s;
+    try {
+      s = await api("GET", `/businesses/${bid()}/photo-links`);
+    } catch {
+      return;
+    }
+    if (stale(ticket)) return;
+    // Some arrived since we last looked: show them on the products.
+    if (lastWaiting != null && s.waiting < lastWaiting) load();
+    lastWaiting = s.waiting;
+    const notes = [];
+    if (s.waiting) {
+      notes.push(
+        h(
+          "div",
+          { class: "callout" },
+          h(
+            "div",
+            {},
+            h("h2", { text: `Fetching ${num(s.waiting)} photo${s.waiting === 1 ? "" : "s"} from your links` }),
+            h("p", { text: "They appear on your products as they arrive. You can leave this page." }),
+          ),
+        ),
+      );
+      photoTimer = setTimeout(() => !stale(ticket) && drawPhotoNote(), 8000);
+    }
+    if (s.failed) {
+      notes.push(
+        h(
+          "div",
+          { class: "callout" },
+          h(
+            "div",
+            {},
+            h("h2", { text: `${num(s.failed)} photo link${s.failed === 1 ? "" : "s"} didn't work` }),
+            h("p", { text: "Those products are listed without a photo for now." }),
+          ),
+          h("div", { class: "actions" }, h("button", { class: "btn btn-secondary", type: "button", onclick: () => openPhotoFailures(drawPhotoNote) }, "See which")),
+        ),
+      );
+    }
+    photoNote.replaceChildren(...notes);
+  };
+  S.refreshPhotoNote = drawPhotoNote;
+
   S.reloadProducts = load;
   await load();
+  drawPhotoNote();
+}
+
+/** The photo links that didn't work, and why: try them again, or clear the list. */
+function openPhotoFailures(onChange) {
+  const sheet = openSheet({ title: "Photo links that didn't work", subtitle: "Fix a link in your list and upload it again, or add the photo on the product." });
+  const act = (label, kind, fn) => h("button", { class: `btn${kind}`, type: "button", onclick: (e) => busy(e.currentTarget, fn) }, label);
+  const draw = async () => {
+    const s = await api("GET", `/businesses/${bid()}/photo-links`);
+    sheet.setBody(
+      s.failures.length
+        ? h(
+            "table",
+            { class: "map-table" },
+            h("thead", {}, h("tr", {}, h("th", { text: "Product" }), h("th", { text: "What happened" }))),
+            h(
+              "tbody",
+              {},
+              s.failures.map((f) =>
+                h(
+                  "tr",
+                  {},
+                  h("td", {}, h("strong", { text: f.name }), h("br"), h("a", { class: "hint link-cell", href: f.url, target: "_blank", rel: "noopener noreferrer", text: f.url })),
+                  h("td", { text: f.error }),
+                ),
+              ),
+            ),
+          )
+        : h("p", { class: "muted", text: "None: every link worked." }),
+      s.failed > s.failures.length ? h("p", { class: "hint", text: `and ${num(s.failed - s.failures.length)} more.` }) : null,
+    );
+    sheet.setFoot(
+      act("Clear the list", " btn-ghost", async () => {
+        const r = await api("POST", `/businesses/${bid()}/photo-links/clear`);
+        toast(`${num(r.cleared)} cleared.`);
+        sheet.close();
+        onChange();
+      }),
+      h("span", { class: "spacer" }),
+      act("Try them again", "", async () => {
+        const r = await api("POST", `/businesses/${bid()}/photo-links/retry`);
+        toast(`Trying ${num(r.retrying)} link${r.retrying === 1 ? "" : "s"} again.`);
+        sheet.close();
+        onChange();
+      }),
+    );
+  };
+  draw().catch((err) => err.status !== 401 && sheet.setBody(h("p", { class: "notice bad", text: err.message })));
 }
 
 function productRow(p, redraw, reload) {
@@ -1208,14 +1309,20 @@ function openUpload() {
   /** Send the list in batches. Row numbers match the spreadsheet (headings are row 1). */
   const runImport = async (dryRun, onProgress) => {
     const all = toImportRows(u.rows, u.mapping);
-    const total = { added: 0, updated: 0, unchanged: 0, errors: 0, problems: [] };
+    const total = { added: 0, updated: 0, unchanged: 0, errors: 0, problems: [], photos: { fetch: 0, keep: 0, problems: [] } };
     for (let start = 0; start < all.length; start += BATCH) {
       const r = await api("POST", `/businesses/${bid()}/products/import`, { rows: all.slice(start, start + BATCH), updateExisting: u.updateExisting, dryRun });
       total.added += r.added;
       total.updated += r.updated;
       total.unchanged += r.unchanged;
       total.errors += r.errors;
-      for (const row of r.rows) if (row.action === "error" && total.problems.length < 200) total.problems.push({ ...row, row: row.row + start + (u.headed ? 1 : 0) });
+      total.photos.fetch += r.photos?.fetch ?? 0;
+      total.photos.keep += r.photos?.keep ?? 0;
+      for (const row of r.rows) {
+        const at = row.row + start + (u.headed ? 1 : 0);
+        if (row.action === "error" && total.problems.length < 200) total.problems.push({ ...row, row: at });
+        if (row.photoError && total.photos.problems.length < 200) total.photos.problems.push({ ...row, row: at });
+      }
       onProgress?.(Math.min(all.length, start + BATCH) / all.length);
     }
     return total;
@@ -1224,6 +1331,7 @@ function openUpload() {
   const stepReview = () => {
     const c = u.check;
     const changes = c.added + c.updated;
+    const photos = c.photos.fetch;
     sheet.setBody(
       h(
         "div",
@@ -1241,7 +1349,21 @@ function openUpload() {
             h("ul", { class: "errors" }, c.problems.map((p) => h("li", { text: `Row ${p.row}${p.name ? ` (${p.name})` : ""}: ${p.error}` }))),
           )
         : null,
-      h("p", { class: "muted", text: changes ? "Nothing has changed yet. Import when you're ready." : "There's nothing new to import." }),
+      photos || c.photos.problems.length
+        ? h(
+            "div",
+            { class: "field" },
+            h("span", {
+              class: "label",
+              text: photos ? `${num(photos)} photo${photos === 1 ? "" : "s"} will be fetched from their links after the import.` : "No photos to fetch.",
+            }),
+            c.photos.keep ? h("span", { class: "hint", text: `${num(c.photos.keep)} product${c.photos.keep === 1 ? "" : "s"} keep the photo they have.` }) : null,
+            c.photos.problems.length
+              ? h("ul", { class: "errors" }, c.photos.problems.map((p) => h("li", { text: `Row ${p.row} (${p.name}): ${p.photoError}. It's imported without a photo.` })))
+              : null,
+          )
+        : null,
+      h("p", { class: "muted", text: changes || photos ? "Nothing has changed yet. Import when you're ready." : "There's nothing new to import." }),
     );
     sheet.setFoot(
       h("button", { class: "btn btn-ghost", type: "button", onclick: stepMap }, "Back"),
@@ -1251,10 +1373,10 @@ function openUpload() {
         {
           class: "btn",
           type: "button",
-          disabled: !changes,
+          disabled: !changes && !photos,
           onclick: () => stepRun(),
         },
-        `Import ${num(changes)} product${changes === 1 ? "" : "s"}`,
+        changes ? `Import ${num(changes)} product${changes === 1 ? "" : "s"}` : `Fetch ${num(photos)} photo${photos === 1 ? "" : "s"}`,
       ),
     );
   };
@@ -1268,16 +1390,201 @@ function openUpload() {
       sheet.setBody(
         h("div", { class: "summary" }, h("div", {}, h("strong", { text: num(done.added) }), "added"), h("div", {}, h("strong", { text: num(done.updated) }), "updated"), h("div", {}, h("strong", { text: num(done.unchanged) }), "unchanged"), h("div", {}, h("strong", { text: num(done.errors) }), "skipped")),
         h("p", { class: "muted", text: "Done. Customers see the new prices in our replies straight away." }),
+        done.photos.fetch
+          ? h("p", {
+              class: "muted",
+              text: `${num(done.photos.fetch)} photo${done.photos.fetch === 1 ? " is" : "s are"} on the way from their links. They appear on your products over the next few minutes, and you can close this.`,
+            })
+          : null,
       );
       sheet.setFoot(h("span", { class: "spacer" }), h("button", { class: "btn", type: "button", onclick: () => sheet.close() }, "Done"));
-      if (route().name === "products") await S.reloadProducts?.();
-      else location.hash = "#/products";
+      if (route().name === "products") {
+        await S.reloadProducts?.();
+        S.refreshPhotoNote?.();
+      } else location.hash = "#/products";
     } catch (err) {
       if (err.status !== 401) {
         sheet.setBody(h("p", { class: "notice bad", text: `${err.message} Part of the list may have been imported: check it, then upload again. Products already listed are updated, not doubled.` }));
         sheet.setFoot(h("span", { class: "spacer" }), h("button", { class: "btn", type: "button", onclick: () => sheet.close() }, "Close"));
       }
     }
+  };
+
+  stepChoose();
+}
+
+// ---------- Adding many photos ----------
+
+const MAX_PHOTO_FILES = 500;
+
+function pickFiles(accept) {
+  return new Promise((resolve) => {
+    const input = h("input", { type: "file", accept, multiple: true, style: "display:none" });
+    const done = (files) => {
+      resolve(files);
+      input.remove();
+    };
+    input.onchange = () => done([...(input.files ?? [])]);
+    input.addEventListener("cancel", () => done([]));
+    document.body.append(input);
+    input.click();
+  });
+}
+
+/**
+ * Many photos at once, matched to products by their file names (the product's code or its name).
+ * The owner chooses the product for any that didn't match; each photo is made smaller here first.
+ */
+function openPhotos() {
+  const st = { matches: [], products: null, replace: false, urls: [] };
+  const sheet = openSheet({
+    title: "Add photos",
+    subtitle: "Choose many at once. Name each photo after the product's code or name, like CEM-50.jpg, and we match them for you.",
+    onClose: () => st.urls.forEach((url) => URL.revokeObjectURL(url)),
+  });
+
+  const useFiles = async (files) => {
+    const chosen = files.filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
+    if (!chosen.length) return toast("Choose photos: JPEG, PNG or WebP.", "bad");
+    if (chosen.length > MAX_PHOTO_FILES) return toast(`Choose up to ${num(MAX_PHOTO_FILES)} photos at a time.`, "bad");
+    try {
+      st.products ??= await api("GET", `/businesses/${bid()}/products/index`);
+    } catch (err) {
+      if (err.status !== 401) toast(err.message, "bad");
+      return;
+    }
+    if (!st.products.length) return toast("Add your products first, then their photos.", "bad");
+    st.matches = matchPhotos(
+      chosen.map((f) => f.name),
+      st.products,
+    ).map((m, i) => ({ ...m, blob: chosen[i] }));
+    stepMatch();
+  };
+
+  const stepChoose = () => {
+    const drop = h("div", { class: "dropzone", role: "button", tabindex: "0" }, icon("image"), h("strong", { text: "Choose photos" }), h("span", { text: "or drop them here. You can pick many at once." }));
+    const choose = async () => useFiles(await pickFiles("image/*"));
+    drop.onclick = choose;
+    drop.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && choose();
+    drop.ondragover = (e) => {
+      e.preventDefault();
+      drop.classList.add("over");
+    };
+    drop.ondragleave = () => drop.classList.remove("over");
+    drop.ondrop = (e) => {
+      e.preventDefault();
+      drop.classList.remove("over");
+      useFiles([...(e.dataTransfer?.files ?? [])]);
+    };
+    sheet.setBody(drop, h("p", { class: "hint", text: "Photos already on your website? Put their links in a Photo link column and upload your list instead." }));
+    sheet.setFoot(h("span", { class: "spacer" }), h("button", { class: "btn btn-secondary", type: "button", onclick: () => sheet.close() }, "Cancel"));
+  };
+
+  /** One photo per product: the first file for a product wins; products with a photo keep it unless replaced. */
+  const toAdd = () => {
+    const seen = new Set();
+    return st.matches.filter((m) => {
+      if (!m.product || seen.has(m.product.id) || (!st.replace && m.product.hasPhoto)) return false;
+      seen.add(m.product.id);
+      return true;
+    });
+  };
+
+  const drawFoot = () => {
+    const n = toAdd().length;
+    sheet.setFoot(
+      h("button", { class: "btn btn-ghost", type: "button", onclick: stepChoose }, "Back"),
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn", type: "button", disabled: !n, onclick: () => stepUpload() }, n ? `Add ${num(n)} photo${n === 1 ? "" : "s"}` : "Nothing to add"),
+    );
+  };
+
+  const stepMatch = () => {
+    const byName = new Map(st.products.map((p) => [p.name.toLowerCase(), p]));
+    const matched = st.matches.filter((m) => m.by === "code" || m.by === "name").length;
+    const unmatched = st.matches.length - matched;
+    const rows = st.matches.map((m) => {
+      const url = URL.createObjectURL(m.blob);
+      st.urls.push(url);
+      const target = h("td");
+      const drawTarget = () =>
+        target.replaceChildren(
+          m.product
+            ? h("span", {}, h("strong", { text: m.product.name }), m.product.hasPhoto ? h("span", { class: "hint", text: " · has a photo" }) : null)
+            : h("input", {
+                class: "input",
+                list: "photo-products",
+                placeholder: "Which product? Type its name",
+                "aria-label": `Product for ${m.file}`,
+                onchange: (e) => {
+                  const typed = e.target.value.trim();
+                  const product = byName.get(typed.toLowerCase());
+                  if (product) {
+                    m.product = product;
+                    drawTarget();
+                    drawFoot();
+                  } else if (typed) toast("Pick a product from the list.", "bad");
+                },
+              }),
+        );
+      drawTarget();
+      return h("tr", {}, h("td", {}, h("img", { class: "thumb", src: url, alt: "", loading: "lazy" })), h("td", { class: "file", text: m.file }), target);
+    });
+    const replace = h("input", {
+      type: "checkbox",
+      checked: st.replace,
+      onchange: (e) => {
+        st.replace = e.target.checked;
+        drawFoot();
+      },
+    });
+    sheet.setBody(
+      h("p", {
+        class: "muted",
+        text: `${num(matched)} of ${num(st.matches.length)} photo${st.matches.length === 1 ? "" : "s"} matched a product by its code or name.${unmatched ? " Choose the product for the rest, or leave them out." : ""}`,
+      }),
+      unmatched ? h("datalist", { id: "photo-products" }, st.products.map((p) => h("option", { value: p.name }))) : null,
+      h("table", { class: "photo-table" }, h("tbody", {}, rows)),
+      h("label", { class: "check" }, replace, h("span", { text: "Replace photos products already have" })),
+    );
+    drawFoot();
+  };
+
+  const stepUpload = async () => {
+    const queue = toAdd();
+    const bar = h("div", { style: "width:0%" });
+    sheet.setBody(h("p", { class: "muted", text: `Adding ${num(queue.length)} photo${queue.length === 1 ? "" : "s"}… keep this window open.` }), h("div", { class: "progress" }, bar));
+    sheet.setFoot();
+    let added = 0;
+    const failed = [];
+    let next = 0;
+    let signedOut = false;
+    // Three at a time: quick on a good connection, gentle on a slow one.
+    const worker = async () => {
+      while (next < queue.length && !signedOut) {
+        const m = queue[next++];
+        try {
+          const small = await shrinkPhoto(m.blob);
+          await api("PUT", `/businesses/${bid()}/products/${m.product.id}/photo`, { contentType: small.contentType, dataBase64: small.dataBase64 });
+          URL.revokeObjectURL(small.url);
+          m.product.hasPhoto = true;
+          added++;
+        } catch (err) {
+          if (err.status === 401) signedOut = true;
+          else failed.push({ file: m.file, error: err.message });
+        }
+        bar.style.width = `${Math.round(((added + failed.length) / queue.length) * 100)}%`;
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    if (signedOut) return;
+    sheet.setBody(
+      h("div", { class: "summary" }, h("div", {}, h("strong", { text: num(added) }), "added"), h("div", {}, h("strong", { text: num(failed.length) }), "didn't work")),
+      failed.length ? h("ul", { class: "errors" }, failed.slice(0, 100).map((f) => h("li", { text: `${f.file}: ${f.error}` }))) : null,
+      h("p", { class: "muted", text: "The photos are on your products now." }),
+    );
+    sheet.setFoot(h("span", { class: "spacer" }), h("button", { class: "btn", type: "button", onclick: () => sheet.close() }, "Done"));
+    if (route().name === "products") await S.reloadProducts?.();
   };
 
   stepChoose();

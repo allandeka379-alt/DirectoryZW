@@ -19,6 +19,7 @@ import { Taxonomy } from "./directory/taxonomy.js";
 import { JobQueue } from "./jobs/queue.js";
 import { consoleLogger, type Logger } from "./logger.js";
 import { DiskStore, S3Store, type FileStore } from "./storage.js";
+import { fetchPhotoLink, type PhotoFetcher } from "./web/photo-links.js";
 import { GraphCatalog, MemoryCatalog, type CatalogClient } from "./whatsapp/catalog.js";
 import { CloudApiTransport, OffTransport, SimulatorTransport, type Transport } from "./whatsapp/transport.js";
 
@@ -51,6 +52,8 @@ export interface AppOptions {
   claude?: RequestReader | null;
   /** The WhatsApp catalog; pass null for none. By default Meta's (WHATSAPP_CATALOG_ID) or the simulator's. */
   catalog?: CatalogClient | null;
+  /** Fetches photos from the links in product uploads; tests pass one that never goes online. */
+  fetchPhoto?: PhotoFetcher;
   log?: Logger;
   now?: () => Date;
 }
@@ -121,6 +124,7 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     jobs,
     store,
     catalog,
+    fetchPhoto: opts.fetchPhoto ?? ((url) => fetchPhotoLink(url)),
     alerts,
     log,
     now,

@@ -628,7 +628,7 @@ describe("the website and app pages", () => {
     }
     const template = await server.inject({ url: "/app/products-template.csv" });
     expect(template.headers["content-disposition"]).toContain("products-template.csv");
-    expect(template.body.split("\n")[0]).toBe("name,price,unit,sku,category,description,in_stock");
+    expect(template.body.split("\n")[0]).toBe("name,price,unit,sku,category,description,in_stock,photo_link");
   });
 
   it("stops sending sign-in links once the owner's free window has closed", async () => {

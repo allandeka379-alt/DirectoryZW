@@ -4,6 +4,7 @@ import { getIntroduction } from "../directory/introductions.js";
 import { reportsWaiting } from "../directory/trust.js";
 import { MAX_JOB_ATTEMPTS, type JobHandler } from "../jobs/queue.js";
 import { applyRetention } from "../privacy.js";
+import { fetchQueuedPhotos } from "../web/photo-links.js";
 import { markAllForCatalog, syncCatalog } from "../whatsapp/catalog.js";
 import type { Channel } from "../whatsapp/types.js";
 import { sendProductAlerts } from "./alerts.js";
@@ -109,6 +110,15 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
         "SELECT count(*)::int AS n FROM catalog_batches WHERE status = 'pending' AND created_at > now() - interval '1 hour'",
       );
       if (checking?.n) await svc.jobs.enqueueOnce("catalog_sync", "all", {}, new Date(svc.now().getTime() + 60_000));
+    },
+
+    /** Photos from the links in product uploads: a few at a time, until none are waiting. */
+    photo_fetches: async () => {
+      const round = await fetchQueuedPhotos({ db: svc.db, store: svc.store, log: svc.log, now: svc.now, fetch: svc.fetchPhoto });
+      if (round.done || round.failed) svc.log.info({ done: round.done, failed: round.failed }, "Photos fetched from links");
+      // New photos go to the WhatsApp catalog too.
+      if (round.businesses.length && svc.catalog) await svc.jobs.enqueueOnce("catalog_sync", "all", {}, new Date(svc.now().getTime() + 10_000));
+      if (round.next) await svc.jobs.enqueueOnce("photo_fetches", "all", {}, new Date(Math.max(round.next.getTime(), svc.now().getTime() + 1_000)));
     },
 
     /** Once a day: check every product against the catalog, so nothing missed stays missed. */

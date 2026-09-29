@@ -278,9 +278,10 @@ export async function archiveProducts(db: Db, store: FileStore, businessId: stri
       WHERE business_id = $1 AND id = ANY($2::uuid[]) AND archived_at IS NULL RETURNING id, photo_id`,
     [businessId, ids.filter(isUuid), now],
   );
+  if (rows.length) await db.query("DELETE FROM photo_fetches WHERE offering_id = ANY($1::uuid[])", [rows.map((r) => r.id)]);
   for (const r of rows) {
     if (!r.photo_id) continue;
-    await db.query("UPDATE offerings SET photo_id = NULL WHERE id = $1", [r.id]);
+    await db.query("UPDATE offerings SET photo_id = NULL, photo_source_url = NULL WHERE id = $1", [r.id]);
     await deletePhoto(db, store, businessId, r.photo_id);
   }
   return rows.length;
@@ -379,6 +380,8 @@ export const ImportRow = z.object({
   category: z.string().max(200).optional(),
   description: z.string().max(2000).optional(),
   inStock: z.string().max(40).optional(),
+  /** A link to the product's photo on the store's website: fetched after the import. */
+  photoUrl: z.string().max(2000).optional(),
 });
 export const ImportRequest = z.object({
   rows: z.array(ImportRow).min(1).max(MAX_IMPORT_ROWS),
@@ -412,6 +415,10 @@ export interface ImportRowResult {
   name: string;
   action: "add" | "update" | "unchanged" | "error";
   error?: string;
+  /** Its photo link: fetched after the import, or the photo it has stays (added by hand, or from this link). */
+  photo?: "fetch" | "keep";
+  /** A photo link we can't use. The product is imported all the same. */
+  photoError?: string;
 }
 
 interface Existing {
@@ -423,11 +430,39 @@ interface Existing {
   category: string | null;
   description: string;
   in_stock: boolean;
+  photo_id: string | null;
+  photo_source_url: string | null;
+}
+
+/** A photo link from a spreadsheet cell, tidied; null when it isn't a web address. */
+export function checkPhotoLink(raw: string): string | null {
+  const s = raw.trim();
+  if (!/^https?:\/\/[^\s]+$/i.test(s) || s.length > 2000) return null;
+  try {
+    const url = new URL(s);
+    return url.hostname.includes(".") ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Queue products' photo links, one per product: the latest link wins, and its tries start again. */
+async function queuePhotoLinks(db: Db, businessId: string, links: { productId: string; url: string }[], now: Date): Promise<void> {
+  for (let i = 0; i < links.length; i += 1000) {
+    const part = links.slice(i, i + 1000);
+    await db.query(
+      `INSERT INTO photo_fetches (offering_id, business_id, url, status, attempts, next_try_at, created_at, updated_at)
+       SELECT id, $1, url, 'queued', 0, $4, $4, $4 FROM unnest($2::uuid[], $3::text[]) AS t(id, url)
+       ON CONFLICT (offering_id) DO UPDATE SET url = excluded.url, status = 'queued', attempts = 0, error = NULL,
+         next_try_at = excluded.next_try_at, updated_at = excluded.updated_at`,
+      [businessId, part.map((l) => l.productId), part.map((l) => l.url), now],
+    );
+  }
 }
 
 export async function importProducts(db: Db, businessId: string, req: z.infer<typeof ImportRequest>, now: Date) {
   const existing = await db.query<Existing>(
-    "SELECT id, name, sku, price_usd, unit, category, description, in_stock FROM offerings WHERE business_id = $1 AND archived_at IS NULL",
+    "SELECT id, name, sku, price_usd, unit, category, description, in_stock, photo_id, photo_source_url FROM offerings WHERE business_id = $1 AND archived_at IS NULL",
     [businessId],
   );
   const bySku = new Map(existing.filter((e) => e.sku).map((e) => [e.sku!.toLowerCase(), e]));
@@ -435,8 +470,10 @@ export async function importProducts(db: Db, businessId: string, req: z.infer<ty
   const seen = new Set<string>();
   let room = MAX_PRODUCTS - existing.length;
   const results: ImportRowResult[] = [];
-  const toAdd: ProductInput[] = [];
+  const toAdd: { product: ProductInput; photo: string | null }[] = [];
   const toUpdate: { id: string; patch: ProductPatch }[] = [];
+  /** Listed products whose photo comes from a link that's new to them. */
+  const photoLinks: { productId: string; url: string }[] = [];
   const has = (v: string | undefined): v is string => v !== undefined;
 
   req.rows.forEach((raw, i) => {
@@ -454,22 +491,36 @@ export async function importProducts(db: Db, businessId: string, req: z.infer<ty
     if (seen.has(key)) return fail(sku ? `The code ${sku} is in the file twice` : "This name is in the file twice");
     seen.add(key);
 
+    // A photo link is checked now and fetched after the import; a bad one doesn't stop the product.
+    const link = blank(raw.photoUrl);
+    const photo = link ? checkPhotoLink(link) : null;
+    const photoError = link && !photo ? "The photo link isn't a web address (it should start with https://)" : undefined;
+    const done = (action: ImportRowResult["action"], photoAction?: "fetch" | "keep") => {
+      results.push({ row, name, action, ...(photoAction ? { photo: photoAction } : {}), ...(photoError ? { photoError } : {}) });
+    };
+
     const match = sku ? bySku.get(sku.toLowerCase()) : byName.get(name.toLowerCase());
     if (!match) {
       if (room <= 0) return fail(`A business can list up to ${MAX_PRODUCTS.toLocaleString("en")} products`);
       room--;
       toAdd.push({
-        name,
-        description: (raw.description ?? "").trim().slice(0, 500),
-        price,
-        unit: blank(raw.unit)?.slice(0, 30) ?? null,
-        sku,
-        category: blank(raw.category)?.slice(0, 60) ?? null,
-        inStock,
+        product: {
+          name,
+          description: (raw.description ?? "").trim().slice(0, 500),
+          price,
+          unit: blank(raw.unit)?.slice(0, 30) ?? null,
+          sku,
+          category: blank(raw.category)?.slice(0, 60) ?? null,
+          inStock,
+        },
+        photo,
       });
-      return results.push({ row, name, action: "add" });
+      return done("add", photo ? "fetch" : undefined);
     }
-    if (!req.updateExisting) return results.push({ row, name, action: "unchanged" });
+    if (!req.updateExisting) return done("unchanged");
+    // A photo the owner added by hand stays, and so does one already from this link.
+    const photoAction = !photo ? undefined : match.photo_id && (!match.photo_source_url || match.photo_source_url === photo) ? "keep" : "fetch";
+    if (photoAction === "fetch") photoLinks.push({ productId: match.id, url: photo! });
 
     // Only the columns the file has; an empty description cell keeps what the owner wrote.
     const patch: ProductPatch = { name };
@@ -485,19 +536,31 @@ export async function importProducts(db: Db, businessId: string, req: z.infer<ty
       (patch.category === undefined || patch.category === match.category) &&
       (patch.description === undefined || patch.description === match.description) &&
       (patch.inStock === undefined || patch.inStock === match.in_stock);
-    if (same) return results.push({ row, name, action: "unchanged" });
+    if (same) return done("unchanged", photoAction);
     toUpdate.push({ id: match.id, patch });
-    results.push({ row, name, action: "update" });
+    done("update", photoAction);
   });
 
-  if (!req.dryRun && (toAdd.length || toUpdate.length)) {
+  if (!req.dryRun && (toAdd.length || toUpdate.length || photoLinks.length)) {
     await db.transaction(async (tx) => {
-      for (const p of toAdd) await insertProduct(tx, businessId, p, now, "import");
+      for (const a of toAdd) {
+        const added = await insertProduct(tx, businessId, a.product, now, "import");
+        if (a.photo) photoLinks.push({ productId: added.id, url: a.photo });
+      }
       for (const u of toUpdate) await applyPatch(tx, businessId, u.id, u.patch, now, "import");
+      await queuePhotoLinks(tx, businessId, photoLinks, now);
     });
-    }
+  }
   const count = (a: ImportRowResult["action"]) => results.filter((r) => r.action === a).length;
-  return { added: count("add"), updated: count("update"), unchanged: count("unchanged"), errors: count("error"), rows: results };
+  const photos = (a: "fetch" | "keep") => results.filter((r) => r.photo === a).length;
+  return {
+    added: count("add"),
+    updated: count("update"),
+    unchanged: count("unchanged"),
+    errors: count("error"),
+    photos: { fetch: photos("fetch"), keep: photos("keep"), problems: results.filter((r) => r.photoError).length },
+    rows: results,
+  };
 }
 
 // ---------- Photos ----------
@@ -517,23 +580,50 @@ function looksLikeImage(b: Buffer): boolean {
 }
 
 async function savePhoto(db: Db, store: FileStore, businessId: string, kind: string, upload: PhotoUpload): Promise<string> {
-  const ext = PHOTO_TYPES[upload.contentType];
-  if (!ext) throw new CatalogError("Photos must be JPEG, PNG or WebP.");
+  if (!PHOTO_TYPES[upload.contentType]) throw new CatalogError("Photos must be JPEG, PNG or WebP.");
   const data = Buffer.from(upload.dataBase64, "base64");
   if (!data.length || data.length > MAX_PHOTO_BYTES) throw new CatalogError("Each photo must be under 2 MB.");
   if (!looksLikeImage(data)) throw new CatalogError("That file isn't a photo.");
+  return storePhoto(db, store, businessId, kind, data, upload.contentType);
+}
+
+async function storePhoto(db: Db, store: FileStore, businessId: string, kind: string, data: Buffer, contentType: string): Promise<string> {
   const id = crypto.randomUUID();
-  const key = `photos/${businessId}/${id}.${ext}`;
-  await store.put(key, data, upload.contentType);
+  const key = `photos/${businessId}/${id}.${PHOTO_TYPES[contentType]}`;
+  await store.put(key, data, contentType);
   await db.query("INSERT INTO business_photos (id, business_id, kind, storage_key, content_type, bytes) VALUES ($1, $2, $3, $4, $5, $6)", [
     id,
     businessId,
     kind,
     key,
-    upload.contentType,
+    contentType,
     data.length,
   ]);
   return id;
+}
+
+/**
+ * A photo fetched from a product's link (a JPEG, already made smaller): on the product in place of any
+ * photo it had. Nothing happens when the product was taken down, or its link changed, meanwhile.
+ */
+export async function attachLinkedPhoto(db: Db, store: FileStore, businessId: string, productId: string, url: string, data: Buffer, now: Date): Promise<boolean> {
+  const product = await one<{ photo_id: string | null }>(
+    db,
+    `SELECT o.photo_id FROM offerings o JOIN photo_fetches f ON f.offering_id = o.id
+      WHERE o.id = $1 AND o.business_id = $2 AND o.archived_at IS NULL AND f.url = $3`,
+    [productId, businessId, url],
+  );
+  if (!product) return false;
+  const photoId = await storePhoto(db, store, businessId, "product", data, "image/jpeg");
+  await db.query("UPDATE offerings SET photo_id = $3, photo_source_url = $4, updated_at = $5, catalog_dirty = true WHERE id = $1 AND business_id = $2", [
+    productId,
+    businessId,
+    photoId,
+    url,
+    now,
+  ]);
+  if (product.photo_id) await deletePhoto(db, store, businessId, product.photo_id);
+  return true;
 }
 
 export async function setProductPhoto(db: Db, store: FileStore, businessId: string, productId: string, upload: PhotoUpload, now: Date): Promise<string> {
@@ -541,12 +631,14 @@ export async function setProductPhoto(db: Db, store: FileStore, businessId: stri
   const product = await one<{ photo_id: string | null }>(db, "SELECT photo_id FROM offerings WHERE id = $1 AND business_id = $2 AND archived_at IS NULL", [productId, businessId]);
   if (!product) throw new CatalogError("Product not found", 404);
   const photoId = await savePhoto(db, store, businessId, "product", upload);
-  await db.query("UPDATE offerings SET photo_id = $3, updated_at = $4, catalog_dirty = true WHERE id = $1 AND business_id = $2", [
+  // Added by hand: it wins over any photo link still waiting for this product.
+  await db.query("UPDATE offerings SET photo_id = $3, photo_source_url = NULL, updated_at = $4, catalog_dirty = true WHERE id = $1 AND business_id = $2", [
     productId,
     businessId,
     photoId,
     now,
   ]);
+  await db.query("DELETE FROM photo_fetches WHERE offering_id = $1", [productId]);
   if (product.photo_id) await deletePhoto(db, store, businessId, product.photo_id);
   return photoId;
 }
@@ -555,13 +647,23 @@ export async function removeProductPhoto(db: Db, store: FileStore, businessId: s
   if (!isUuid(productId)) throw new CatalogError("Product not found", 404);
   const product = await one<{ photo_id: string | null }>(db, "SELECT photo_id FROM offerings WHERE id = $1 AND business_id = $2", [productId, businessId]);
   if (!product) throw new CatalogError("Product not found", 404);
+  await db.query("DELETE FROM photo_fetches WHERE offering_id = $1", [productId]);
   if (!product.photo_id) return;
-  await db.query("UPDATE offerings SET photo_id = NULL, updated_at = $3, catalog_dirty = true WHERE id = $1 AND business_id = $2", [
+  await db.query("UPDATE offerings SET photo_id = NULL, photo_source_url = NULL, updated_at = $3, catalog_dirty = true WHERE id = $1 AND business_id = $2", [
     productId,
     businessId,
     now,
   ]);
   await deletePhoto(db, store, businessId, product.photo_id);
+}
+
+/** Every live product's name and code, for matching photo files to products in the browser. */
+export async function productIndex(db: Db, businessId: string): Promise<{ id: string; name: string; sku: string | null; hasPhoto: boolean }[]> {
+  const rows = await db.query<{ id: string; name: string; sku: string | null; photo_id: string | null }>(
+    "SELECT id, name, sku, photo_id FROM offerings WHERE business_id = $1 AND archived_at IS NULL ORDER BY lower(name) LIMIT 30000",
+    [businessId],
+  );
+  return rows.map((r) => ({ id: r.id, name: r.name, sku: r.sku, hasPhoto: r.photo_id != null }));
 }
 
 export async function addBusinessPhoto(db: Db, store: FileStore, businessId: string, kind: "shopfront" | "inside", upload: PhotoUpload): Promise<string> {

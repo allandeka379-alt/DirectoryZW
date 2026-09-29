@@ -370,6 +370,24 @@ On 29 September 2026 the project was named **FindZim** (`BRAND_NAME`; the GitHub
 - [x] Live before Meta: the app on Railway (positive-love) behind `https://findzim.vercel.app` (see [DEPLOY.md](DEPLOY.md))
 - [ ] Switch to `WHATSAPP_TRANSPORT=cloud` once Meta's settings are in
 
+## Photos in bulk
+
+Requested on 29 September 2026, so that big catalogues like Halsteds' come with their photos.
+
+- [x] **Photo links in the product upload.** The upload has a "Photo link" column, and so does the template:
+  - The check counts the photos to fetch and names any link that isn't a web address. Those products are imported without a photo.
+  - After the import, the server fetches the photos in the background (`src/web/photo-links.ts`). It takes a few at a time, and at most three per business in a round, so one store's big list doesn't hold up another's.
+  - Only from the public internet: never this machine or a private network, whether the link gives an address or a name, and redirects are checked too. At most 15 MB and 20 seconds a step.
+  - Each photo is made 1280 pixels at most, as a JPEG (with `sharp`), like one added by hand. See-through photos go on white.
+  - A link that may work later is tried again after 5, then 10 minutes.
+  - The Products page shows how many photos are on their way, and which links didn't work and why, with **Try them again** and **Clear the list**.
+  - Uploading the same list again doesn't fetch what's already there, and a link never replaces a photo the owner added by hand.
+- [x] **Many photo files at once:** **Add photos** on the Products page.
+  - Photos are matched to products by their file names: the product's code or its name, allowing for a copy number ("CEM-50 (2).jpg").
+  - The owner chooses the product for any that didn't match.
+  - Each photo is made smaller in the browser before it's sent, three at a time.
+- [x] Tests (275)
+
 ## Later: monetization (only after traction)
 
 - [ ] Featured placement, lead credits and sponsored slots, as priced in the feasibility study

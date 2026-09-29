@@ -1318,3 +1318,41 @@ body {
 .outcome {
   display: inline-flex;
 }
+
+/* Adding many photos: each file, and the product it goes on */
+.photo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.photo-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.photo-table .thumb {
+  display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--bg-muted);
+}
+.photo-table .file {
+  max-width: 180px;
+  color: var(--text-2);
+  word-break: break-all;
+}
+.photo-table .input {
+  min-width: 180px;
+  min-height: 36px;
+  font-size: 13.5px;
+}
+.link-cell {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}

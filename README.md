@@ -76,6 +76,7 @@ Rules the code enforces:
   - The matcher reads sizes, plurals, other names, Shona words and typos. It won't pass off another size or an accessory ("TV stand") as the item.
   - With a Meta catalog (`WHATSAPP_CATALOG_ID`), products with a photo and a price also go out as WhatsApp's own product cards after the results. A card, a cart or a product's code brings that store's card. We don't take orders: stores sell directly.
   - When nobody listed what someone asked for and a store near them lists it within a day, they get one alert, free, inside their window. *alerts off* or *stop* ends them.
+- **Photos in bulk.** A "Photo link" column in the product upload brings in photos from the store's website. The server fetches them in the background, only from the public internet, and makes them the size of a photo added by hand. **Add photos** takes many photo files at once and matches them to products by file name (code or name).
 - **Verified first, and said so.** Results tell customers which businesses our team has verified: "We have three stores near Avondale that our team has verified, and they have *iphone 18 pro max*" for categories that sell goods, "We have two businesses near Mabelreign that offer *plumbing services*, and our team has verified them" for services. The welcome message explains what verified means: visited in person, with the owner checked. Unverified businesses appear only when fewer than `MIN_VERIFIED_RESULTS` verified ones match. They're counted apart, listed under "Not checked yet" and shown with a deposit warning. High-scam categories (rentals, cars, visas) show verified businesses only. Blocked and restricted categories are never searchable.
 - **Replies in English.** The assistant reads English, Shona and Ndebele and always answers in English. A Shona or Ndebele request is named by its English category.
 - **The customer contacts the business.** "Connect me" opens a WhatsApp chat with the message typed, including a reference code. Customer numbers are never passed to businesses.
@@ -252,6 +253,8 @@ The website and the business dashboard talk to `/app/api`:
 | `GET`, `POST /businesses/:id/products`, `GET`, `PUT /businesses/:id/products/:pid` | List, search and add products; one product with its price history; change it |
 | `POST /businesses/:id/products/archive`, `/stock`, `/confirm-prices`, `/adjust-prices`, `/import` | Take down, in or out of stock, prices still right, change many prices (with `dryRun` to preview), upload a list (with `dryRun` to check) |
 | `PUT`, `DELETE /businesses/:id/products/:pid/photo` | A product's photo |
+| `GET /businesses/:id/products/index` | Every product's name and code, to match many photo files to products at once |
+| `GET /businesses/:id/photo-links`, `POST /businesses/:id/photo-links/retry`, `/clear` | Photos from the links in an upload: how many are on their way, and which links didn't work; try those again, or forget them |
 | `GET /photos/:id` | A photo, for the business's owner only |
 
 Every call except the public ones needs the owner's session cookie, and changes must come from our own pages.
