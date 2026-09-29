@@ -37,6 +37,7 @@ export async function startWebRegistration(
   deps: { db: Db; taxonomy: Taxonomy; gazetteer: Gazetteer },
   input: WebRegistration,
   now: Date,
+  hours = REGISTRATION_HOURS,
 ): Promise<StartResult> {
   const phone = normalizeZimPhone(input.phone);
   if (!phone) return { ok: false, error: "The phone number doesn't look right. Use a number like 0771 234 567." };
@@ -48,7 +49,7 @@ export async function startWebRegistration(
   if (!deps.gazetteer.get(input.areaId)) return { ok: false, error: "Pick your area from the list." };
   const details: Details = { ...input, phone };
   delete (details as Partial<WebRegistration>).consent;
-  const expiresAt = new Date(now.getTime() + REGISTRATION_HOURS * 3600_000);
+  const expiresAt = new Date(now.getTime() + hours * 3600_000);
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = `REG-${crypto.randomInt(100000, 1000000)}`;
     const row = await one<{ code: string }>(
@@ -65,6 +66,14 @@ export type CompleteResult =
   | { status: "created" | "exists"; businessId: string; name: string }
   | { status: "unknown" | "expired" | "used" };
 
+interface RegistrationRow {
+  id: string;
+  details: Details;
+  expires_at: Date;
+  completed_at: Date | null;
+  business_id: string | null;
+}
+
 /** The owner sent their code from WhatsApp: create the listing, owned by that WhatsApp contact. */
 export async function completeWebRegistration(
   deps: { db: Db; gazetteer: Gazetteer },
@@ -74,7 +83,7 @@ export async function completeWebRegistration(
 ): Promise<CompleteResult> {
   const digits = REGISTRATION_CODE.exec(rawCode)?.[1];
   if (!digits) return { status: "unknown" };
-  const reg = await one<{ id: string; details: Details; expires_at: Date; completed_at: Date | null; business_id: string | null }>(
+  const reg = await one<RegistrationRow>(
     deps.db,
     "SELECT id, details, expires_at, completed_at, business_id FROM web_registrations WHERE code = $1",
     [`REG-${digits}`],
@@ -82,13 +91,40 @@ export async function completeWebRegistration(
   if (!reg) return { status: "unknown" };
   if (reg.completed_at) return { status: "used" };
   if (new Date(reg.expires_at) <= now) return { status: "expired" };
+  return listRegistration(deps, reg, ownerContactId, now);
+}
+
+/**
+ * Before launch, owners can't send their code on WhatsApp: the team calls them and lists the
+ * business from the admin portal. Nobody manages it until its number messages us ("my business").
+ */
+export async function listWebRegistration(deps: { db: Db; gazetteer: Gazetteer }, id: string, now: Date): Promise<CompleteResult> {
+  const reg = await one<RegistrationRow>(
+    deps.db,
+    "SELECT id, details, expires_at, completed_at, business_id FROM web_registrations WHERE id = $1",
+    [id],
+  );
+  if (!reg) return { status: "unknown" };
+  if (reg.completed_at) return { status: "used" };
+  return listRegistration(deps, reg, null, now);
+}
+
+/** Create the listing from a registration's form, and close the registration. */
+async function listRegistration(
+  deps: { db: Db; gazetteer: Gazetteer },
+  reg: RegistrationRow,
+  ownerContactId: string | null,
+  now: Date,
+): Promise<CompleteResult> {
   const d = reg.details;
 
   // Sending the same code twice, or registering the same name again: the listing they already have.
   const existing = await one<{ id: string; name: string }>(
     deps.db,
-    "SELECT id, name FROM businesses WHERE owner_contact_id = $1 AND lower(name) = lower($2) AND status <> 'removed'",
-    [ownerContactId, d.name],
+    ownerContactId
+      ? "SELECT id, name FROM businesses WHERE owner_contact_id = $1 AND lower(name) = lower($2) AND status <> 'removed'"
+      : "SELECT id, name FROM businesses WHERE phone = $1 AND lower(name) = lower($2) AND status <> 'removed'",
+    [ownerContactId ?? d.phone, d.name],
   );
   const area = deps.gazetteer.get(d.areaId);
   const businessId =

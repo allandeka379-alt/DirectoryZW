@@ -44,7 +44,7 @@ import {
   useLoginLink,
   type Owner,
 } from "../web/owner-auth.js";
-import { startWebRegistration, WebRegistration } from "../web/registration.js";
+import { REGISTRATION_HOURS, startWebRegistration, WebRegistration } from "../web/registration.js";
 import { productsChanged } from "../conversation/alerts.js";
 import * as copy from "../conversation/copy.js";
 import type { Contact } from "../conversation/store.js";
@@ -128,6 +128,8 @@ export function registerWeb(server: FastifyInstance, app: App): void {
   const linkByIp = new Limiter(30, 3600_000, now);
   const registerByIp = new Limiter(10, 3600_000, now);
   const waLink = (text: string) => `https://wa.me/${app.config.whatsapp.number}?text=${encodeURIComponent(text)}`;
+  // Before launch WhatsApp is off: sign-ups wait for the team to call, and sign-in links come from the team.
+  const live = app.config.whatsapp.transport !== "off";
 
   server.register(
     async (api) => {
@@ -148,8 +150,10 @@ export function registerWeb(server: FastifyInstance, app: App): void {
         if (!registerByIp.allow(clientIp(req))) return reply.code(429).send({ error: "Too many registrations from here. Try again in an hour." });
         const body = WebRegistration.safeParse(req.body);
         if (!body.success) return reply.code(400).send({ error: problem(body.error) });
-        const result = await startWebRegistration({ db: app.db, taxonomy: app.services.taxonomy, gazetteer: app.services.gazetteer }, body.data, now());
+        const deps = { db: app.db, taxonomy: app.services.taxonomy, gazetteer: app.services.gazetteer };
+        const result = await startWebRegistration(deps, body.data, now(), live ? REGISTRATION_HOURS : PRELAUNCH_REGISTRATION_HOURS);
         if (!result.ok) return reply.code(400).send({ error: result.error });
+        if (!live) return { code: result.code, expiresAt: result.expiresAt.toISOString(), preLaunch: true };
         return {
           code: result.code,
           expiresAt: result.expiresAt.toISOString(),
@@ -166,6 +170,7 @@ export function registerWeb(server: FastifyInstance, app: App): void {
         const body = z.object({ phone: z.string().min(9).max(20) }).safeParse(req.body);
         const phone = body.success ? normalizeZimPhone(body.data.phone) : null;
         if (!phone) return reply.code(400).send({ error: "That doesn't look like a phone number. Use a number like 0771 234 567." });
+        if (!live) return { ok: true, preLaunch: true };
         const answer = { ok: true, whatsappLink: waLink("dashboard") };
         if (!linkByIp.allow(clientIp(req)) || !linkByPhone.allow(phone)) return answer;
         const contact = await one<Contact>(app.db, "SELECT * FROM contacts WHERE channel = 'business' AND (wa_id = $1 OR phone = $1) LIMIT 1", [phone]);
@@ -181,7 +186,10 @@ export function registerWeb(server: FastifyInstance, app: App): void {
       api.post("/auth/exchange", async (req, reply) => {
         const body = z.object({ token: z.string().min(10).max(200) }).safeParse(req.body);
         const contactId = body.success ? await useLoginLink(app.db, body.data.token, now()) : undefined;
-        if (!contactId) return reply.code(401).send({ error: "This sign-in link has expired or was already used. Send *dashboard* to us on WhatsApp for a new one." });
+        if (!contactId) {
+          const again = live ? "Send *dashboard* to us on WhatsApp for a new one." : "Ask our team for a new one.";
+          return reply.code(401).send({ error: `This sign-in link has expired or was already used. ${again}` });
+        }
         const token = await createOwnerSession(app.db, contactId, now());
         return reply.header("Set-Cookie", sessionCookie(token, secure)).send({ ok: true });
       });
@@ -223,6 +231,8 @@ function servePage(server: FastifyInstance, app: App, route: string, file: strin
     const html = await fs.readFile(new URL(file, PUBLIC_DIR), "utf8");
     const values: Record<string, string> = {
       brand: app.config.brandName,
+      // "off" before launch: the pages hide what needs WhatsApp.
+      whatsapp: app.config.whatsapp.transport === "off" ? "off" : "on",
       wa: app.config.whatsapp.number,
       terms: app.config.businessTermsUrl ?? "/#faq",
       privacy: app.config.privacyUrl ?? "/#faq",
@@ -233,10 +243,15 @@ function servePage(server: FastifyInstance, app: App, route: string, file: strin
   });
 }
 
+/** Before launch, a website sign-up waits this long for the team to call and list it. */
+const PRELAUNCH_REGISTRATION_HOURS = 60 * 24;
+
 function options(app: App) {
+  const live = app.config.whatsapp.transport !== "off";
   return {
     brand: app.config.brandName,
-    whatsappNumber: app.config.whatsapp.number,
+    whatsapp: live,
+    whatsappNumber: live ? app.config.whatsapp.number : null,
     termsUrl: app.config.businessTermsUrl ?? null,
     privacyUrl: app.config.privacyUrl ?? null,
     categories: app.services.taxonomy

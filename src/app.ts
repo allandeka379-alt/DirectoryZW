@@ -20,7 +20,7 @@ import { JobQueue } from "./jobs/queue.js";
 import { consoleLogger, type Logger } from "./logger.js";
 import { DiskStore, S3Store, type FileStore } from "./storage.js";
 import { GraphCatalog, MemoryCatalog, type CatalogClient } from "./whatsapp/catalog.js";
-import { CloudApiTransport, SimulatorTransport, type Transport } from "./whatsapp/transport.js";
+import { CloudApiTransport, OffTransport, SimulatorTransport, type Transport } from "./whatsapp/transport.js";
 
 export interface App {
   config: Config;
@@ -77,7 +77,9 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
           phoneNumberId: config.whatsapp.phoneNumberId,
           log,
         })
-      : new SimulatorTransport());
+      : config.whatsapp.transport === "off"
+        ? new OffTransport()
+        : new SimulatorTransport());
 
   const alerts = opts.alerts ?? new WebhookAlerts({ webhookUrl: config.alertWebhookUrl, brand: config.brandName, log, now });
   const budget = new ClaudeBudget({ db, ...config.claudeBudget, alerts, log, now });
@@ -100,7 +102,7 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
   const messenger = new Messenger(db, transport, config, log, { now, jobs, alerts });
   const catalogId = config.whatsapp.catalogId;
   const catalog = pick(opts.catalog, () =>
-    !catalogId
+    !catalogId || config.whatsapp.transport === "off"
       ? undefined
       : cloud
         ? new GraphCatalog({ graphVersion: config.whatsapp.graphVersion, accessToken: config.whatsapp.accessToken!, catalogId, log })

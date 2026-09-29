@@ -91,6 +91,28 @@ async function showSignIn(message, kind = "bad") {
   document.title = `Sign in · ${opts.brand}`;
   const wa = `https://wa.me/${opts.whatsappNumber}?text=${encodeURIComponent("dashboard")}`;
   const status = h("p", { class: `notice${kind === "bad" ? " bad" : ""}`, hidden: !message, role: "status" }, message ?? "");
+  if (opts.whatsapp === false) {
+    // Before launch: links can't come on WhatsApp yet, so the team hands them out.
+    root.replaceChildren(
+      h(
+        "div",
+        { class: "auth" },
+        h(
+          "div",
+          { class: "card auth-card" },
+          brandmark(opts.brand),
+          h("h1", { text: "Sign in to your dashboard" }),
+          status,
+          h("p", {
+            class: "muted",
+            text: "We open on WhatsApp soon. Until then, our team sends you a one-time sign-in link: ask the person who registered your business.",
+          }),
+        ),
+        h("p", { class: "muted", style: "font-size:14px" }, "Not listed yet? ", h("a", { href: "/register" }, "Register your business")),
+      ),
+    );
+    return;
+  }
   const phone = h("input", { class: "input", id: "phone", inputmode: "tel", autocomplete: "tel-national", placeholder: "77 123 4567" });
   const send = h("button", { class: "btn btn-secondary", type: "submit" }, "Send me the link");
   const form = h(

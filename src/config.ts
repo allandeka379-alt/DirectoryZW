@@ -50,7 +50,7 @@ const EnvSchema = z.object({
   MESSAGE_RETENTION_DAYS: z.coerce.number().int().min(30).default(180),
   REQUEST_RETENTION_DAYS: z.coerce.number().int().min(30).default(365),
   OPS_SESSION_HOURS: z.coerce.number().positive().max(24 * 30).default(12),
-  WHATSAPP_TRANSPORT: z.enum(["simulator", "cloud"]).default("simulator"),
+  WHATSAPP_TRANSPORT: z.enum(["simulator", "cloud", "off"]).default("simulator"),
   WHATSAPP_GRAPH_VERSION: z.string().default("v24.0"),
   WHATSAPP_ACCESS_TOKEN: optionalString,
   WHATSAPP_APP_SECRET: optionalString,
@@ -129,7 +129,8 @@ export interface Config {
   retention: { messageDays: number; requestDays: number };
   opsSessionHours: number;
   whatsapp: {
-    transport: "simulator" | "cloud";
+    /** "off" before launch: the website and admin portal run, and nothing is sent on WhatsApp. */
+    transport: "simulator" | "cloud" | "off";
     graphVersion: string;
     accessToken?: string;
     appSecret?: string;
@@ -266,7 +267,7 @@ function validate(c: Config): void {
     if (!c.opsToken) problems.push("OPS_TOKEN is required in production");
     if (!c.databaseUrl) problems.push("DATABASE_URL is required in production (embedded PGlite is for development)");
     if (c.seedSampleData) problems.push("SEED_SAMPLE_DATA must be off in production");
-    if (c.whatsapp.transport !== "cloud") problems.push("Production must use the cloud WhatsApp transport");
+    if (c.whatsapp.transport === "simulator") problems.push("Production must use the cloud WhatsApp transport (or off, before launch)");
   }
   if (problems.length) throw new Error(`Invalid configuration:\n- ${problems.join("\n- ")}`);
 }

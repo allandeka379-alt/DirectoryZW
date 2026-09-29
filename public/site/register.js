@@ -189,6 +189,15 @@ form.addEventListener("submit", async (e) => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return showError(data.error || "Something went wrong. Please try again.");
     form.hidden = true;
+    if (data.preLaunch) {
+      // Before launch: no code to send on WhatsApp yet; the team calls.
+      const n = phoneNumber();
+      $("done-prelaunch").hidden = false;
+      $("prelaunch-code").textContent = data.code;
+      $("prelaunch-phone").textContent = `+${n.slice(0, 3)} ${n.slice(3, 5)} ${n.slice(5, 8)} ${n.slice(8)}`;
+      $("done-prelaunch").scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     $("done").hidden = false;
     $("code").textContent = data.code;
     $("wa").href = data.whatsappLink;

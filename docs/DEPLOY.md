@@ -24,7 +24,7 @@ NODE_ENV=production
 DATABASE_URL=postgres://…
 OPS_TOKEN=<long random string, for scripts and the first sign-in>
 PUBLIC_BASE_URL=https://your-domain
-WHATSAPP_TRANSPORT=cloud
+WHATSAPP_TRANSPORT=cloud             # or off before launch (pre-launch mode, no Meta settings needed)
 WHATSAPP_ACCESS_TOKEN=…            # permanent system-user token
 WHATSAPP_APP_SECRET=…
 WHATSAPP_VERIFY_TOKEN=…
@@ -56,6 +56,17 @@ docker run --env-file .env -p 3000:3000 findzim
 Without Docker: `npm ci`, `npm run build`, then `npm start`. The database schema is created and upgraded automatically at start-up.
 
 Point your host's health check at `/ready` (it checks the database) and uptime monitoring at `/health`.
+
+## Where FindZim runs
+
+- **Railway**, project *positive-love*, runs the app. The service is still named DirectoryZW, and it deploys GitHub `main` with the `Dockerfile`.
+  - Postgres is its own service there; `DATABASE_URL` refers to it.
+  - A volume is mounted at `/data`, and photos are kept in `/data/uploads` (`UPLOADS_DIR`), so they survive redeploys.
+  - Its own address is `https://directoryzw-production.up.railway.app`, pointed at port 3000 (`PORT=3000`).
+- **Vercel**, project *findzim*, gives the public address: `https://findzim.vercel.app` forwards every request to the Railway app (`deploy/vercel/vercel.json`).
+  - The website, the dashboard, the admin portal and WhatsApp's webhook share that one address. `PUBLIC_BASE_URL` is set to it, so links we send use it.
+  - If the Railway address changes, edit `deploy/vercel/vercel.json`, then run `vercel deploy --prod` from `deploy/vercel`.
+- Until Meta approves the number, the app runs in pre-launch mode (`WHATSAPP_TRANSPORT=off`).
 
 ## First sign-in
 

@@ -27,14 +27,36 @@ export function signInUrl(publicBaseUrl: string, token: string): string {
   return `${publicBaseUrl}/app/?signin=${encodeURIComponent(token)}`;
 }
 
-export async function createLoginLink(db: Db, contactId: string, now: Date): Promise<string> {
+export async function createLoginLink(db: Db, contactId: string, now: Date, minutes = LOGIN_LINK_MINUTES): Promise<string> {
   const token = newToken();
   await db.query("INSERT INTO owner_login_links (token_hash, contact_id, expires_at) VALUES ($1, $2, $3)", [
     hash(token),
     contactId,
-    new Date(now.getTime() + LOGIN_LINK_MINUTES * 60_000),
+    new Date(now.getTime() + minutes * 60_000),
   ]);
   return token;
+}
+
+/** How long a sign-in link the team hands to an owner works: long enough to reach them. */
+export const TEAM_LINK_HOURS = 24;
+
+/**
+ * The contact that manages a business: its owner, or, for a listing nobody has claimed yet, a
+ * contact for the business's own number, which becomes its owner. When that number messages us on
+ * WhatsApp, it's the same contact.
+ */
+export async function ownerContactFor(db: Db, b: { id: string; phone: string; owner_contact_id: string | null }): Promise<string> {
+  if (b.owner_contact_id) return b.owner_contact_id;
+  const contact = await one<{ id: string }>(
+    db,
+    `INSERT INTO contacts (channel, wa_id, phone) VALUES ('business', $1, $1)
+     ON CONFLICT (channel, wa_id) DO UPDATE SET phone = COALESCE(contacts.phone, excluded.phone)
+     RETURNING id`,
+    [b.phone],
+  );
+  await db.query("UPDATE businesses SET owner_contact_id = $2 WHERE id = $1 AND owner_contact_id IS NULL", [b.id, contact!.id]);
+  const owner = await one<{ owner_contact_id: string }>(db, "SELECT owner_contact_id FROM businesses WHERE id = $1", [b.id]);
+  return owner!.owner_contact_id;
 }
 
 /** Use a sign-in link: the owner's contact ID, once, while it is fresh. */

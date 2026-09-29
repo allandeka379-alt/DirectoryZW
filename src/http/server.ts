@@ -45,6 +45,7 @@ export function registerRoutes(server: FastifyInstance, app: App): void {
 
   // Meta calls this once when you register the webhook URL.
   server.get("/webhook/whatsapp", async (req, reply) => {
+    if (app.config.whatsapp.transport === "off") return reply.code(503).send("WhatsApp isn't connected yet");
     const q = req.query as Record<string, string | undefined>;
     const token = app.config.whatsapp.verifyToken;
     if (q["hub.mode"] === "subscribe" && token && q["hub.verify_token"] === token) {
@@ -56,6 +57,7 @@ export function registerRoutes(server: FastifyInstance, app: App): void {
   // Every message and delivery status arrives here. Messages are saved before Meta gets its 200
   // (if saving fails, Meta retries), then handled in the background.
   server.post("/webhook/whatsapp", async (req, reply) => {
+    if (app.config.whatsapp.transport === "off") return reply.code(503).send("WhatsApp isn't connected yet");
     const secret = app.config.whatsapp.appSecret;
     if (secret) {
       const signature = req.headers["x-hub-signature-256"];

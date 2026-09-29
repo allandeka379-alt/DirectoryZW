@@ -16,11 +16,20 @@ export class WhatsAppApiError extends Error {
   }
 }
 
+/** WhatsApp isn't connected yet (WHATSAPP_TRANSPORT=off, before launch): nothing goes out. */
+export class WhatsAppOffError extends Error {
+  constructor() {
+    super("WhatsApp isn't connected yet (WHATSAPP_TRANSPORT=off)");
+  }
+}
+
 /**
  * Worth trying again later: network trouble, rate limits, Meta's own errors, and a rejected token
- * (which someone may fix). Other 4xx errors (a closed 24-hour window, a bad number) won't improve.
+ * (which someone may fix). Other 4xx errors (a closed 24-hour window, a bad number) won't improve,
+ * and nor will WhatsApp being off.
  */
 export function isRetryable(err: unknown): boolean {
+  if (err instanceof WhatsAppOffError) return false;
   if (!(err instanceof WhatsAppApiError)) return true;
   return err.status === 429 || err.status >= 500 || isAuthError(err);
 }
@@ -36,6 +45,13 @@ export interface CloudApiOptions {
   phoneNumberId: string;
   log: Logger;
   fetchFn?: typeof fetch;
+}
+
+/** Before launch, with WhatsApp not connected yet: every send fails at once, and isn't tried again. */
+export class OffTransport implements Transport {
+  async send(): Promise<string> {
+    throw new WhatsAppOffError();
+  }
 }
 
 /** Sends through Meta's WhatsApp Cloud API. */

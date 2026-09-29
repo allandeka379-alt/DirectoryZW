@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-whatsapp="{{whatsapp}}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -32,7 +32,8 @@
         <section class="card reg-card" aria-live="polite">
           <form id="form" novalidate>
             <h1>Register your business</h1>
-            <p class="muted">It takes two minutes. You'll confirm on WhatsApp at the end.</p>
+            <p class="muted needs-whatsapp">It takes two minutes. You'll confirm on WhatsApp at the end.</p>
+            <p class="muted prelaunch-only">It takes two minutes. We open on WhatsApp soon, and our team calls you to confirm your listing.</p>
             <ol class="stepper" id="stepper">
               <li class="current">Your business</li>
               <li>Where and when</li>
@@ -126,13 +127,22 @@
             <p class="hint" id="wa-manual"></p>
             <p class="hint" id="expires"></p>
           </div>
+
+          <div class="done-panel" id="done-prelaunch" hidden>
+            <span class="badge brand plain">You're on the list</span>
+            <h1>We'll call you</h1>
+            <p class="muted">We open on WhatsApp soon. Our team will call <strong id="prelaunch-phone"></strong> to confirm your details, then list your business before we launch.</p>
+            <div class="code" id="prelaunch-code">REG-000000</div>
+            <p class="hint">Your reference. Keep it in case we ask for it.</p>
+          </div>
         </section>
 
         <aside class="card aside">
           <h2>What happens next</h2>
           <ol>
-            <li><div><strong>Confirm on WhatsApp</strong><span class="muted">Send the code we give you. Your listing goes live straight away.</span></div></li>
-            <li><div><strong>Add products and prices</strong><span class="muted">We reply with a link to your dashboard. Upload your whole price list at once if you like.</span></div></li>
+            <li class="needs-whatsapp"><div><strong>Confirm on WhatsApp</strong><span class="muted">Send the code we give you. Your listing goes live straight away.</span></div></li>
+            <li class="prelaunch-only"><div><strong>We call you</strong><span class="muted">Our team calls to confirm your details, then lists your business.</span></div></li>
+            <li><div><strong>Add products and prices</strong><span class="muted">We send you a link to your dashboard. Upload your whole price list at once if you like.</span></div></li>
             <li><div><strong>Get verified</strong><span class="muted">A field agent may visit to verify you. Verified businesses are shown first.</span></div></li>
           </ol>
         </aside>

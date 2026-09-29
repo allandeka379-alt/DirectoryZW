@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "",
+  "installCommand": "",
+  "rewrites": [{ "source": "/(.*)", "destination": "https://directoryzw-production.up.railway.app/$1" }]
+}

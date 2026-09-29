@@ -2,10 +2,12 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { App } from "../app.js";
 import { one } from "../db/client.js";
-import { isUuid } from "../directory/businesses.js";
+import { getBusiness, isUuid } from "../directory/businesses.js";
 import { productsChanged } from "../conversation/alerts.js";
 import { logAction } from "../ops/accounts.js";
 import { archiveProducts, catalogHealth, deletePhoto, listProducts, ProductQuery } from "../web/catalog.js";
+import { createLoginLink, ownerContactFor, signInUrl, TEAM_LINK_HOURS } from "../web/owner-auth.js";
+import { listWebRegistration } from "../web/registration.js";
 import { catalogStatus, markAllForCatalog } from "../whatsapp/catalog.js";
 import { actorOf, refuseUnlessAdmin } from "./ops-auth.js";
 
@@ -67,6 +69,18 @@ export function registerWebAdminRoutes(ops: FastifyInstance, app: App): void {
     }));
   });
 
+  // Before launch (or when an owner can't send their code), the team lists a sign-up after calling
+  // the owner. Nobody manages it until its number messages us on WhatsApp, or the team sends a link.
+  ops.post("/web-registrations/:id/list", async (req, reply) => {
+    const params = Id.safeParse(req.params);
+    if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
+    const result = await listWebRegistration({ db: app.db, gazetteer: app.services.gazetteer }, params.data.id, now());
+    if (result.status === "unknown") return reply.code(404).send({ error: "Sign-up not found" });
+    if (!("businessId" in result)) return reply.code(409).send({ error: "This sign-up is already listed" });
+    await logAction(app.db, actorOf(req), "registration.list", result.businessId, { name: result.name, existed: result.status === "exists" });
+    return { businessId: result.businessId, name: result.name, created: result.status === "created" };
+  });
+
   // ----- A business's catalogue, for moderation -----
 
   const exists = async (id: string) => Boolean(await one(app.db, "SELECT 1 FROM businesses WHERE id = $1", [id]));
@@ -105,6 +119,20 @@ export function registerWebAdminRoutes(ops: FastifyInstance, app: App): void {
     await logAction(app.db, actorOf(req), "photo.remove", params.data.id);
     await productsChanged(app.services, params.data.id);
     return { ok: true };
+  });
+
+  // A one-time dashboard link for the business's owner, for the team to hand over: before launch, or
+  // when the owner can't get one on WhatsApp. It works once, for a day; the owner is the business's number.
+  ops.post("/businesses/:id/owner/link", async (req, reply) => {
+    if (refuseUnlessAdmin(req, reply)) return;
+    const params = Id.safeParse(req.params);
+    if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
+    const b = await getBusiness(app.db, params.data.id);
+    if (!b || b.status === "removed") return reply.code(404).send({ error: "Business not found" });
+    const contactId = await ownerContactFor(app.db, b);
+    const token = await createLoginLink(app.db, contactId, now(), TEAM_LINK_HOURS * 60);
+    await logAction(app.db, actorOf(req), "owner.link", b.id);
+    return { url: signInUrl(app.config.publicBaseUrl, token), expiresAt: new Date(now().getTime() + TEAM_LINK_HOURS * 3600_000) };
   });
 
   // Signs the owner out of the dashboard everywhere: a lost phone, or someone else had the link.

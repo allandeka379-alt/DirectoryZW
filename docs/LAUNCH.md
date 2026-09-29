@@ -20,6 +20,11 @@ In order. The code is ready for each step; most of the work here is accounts, ap
 
 ## 2. Hosting (see [DEPLOY.md](DEPLOY.md))
 
+Until Meta approves the number, run with `WHATSAPP_TRANSPORT=off` (pre-launch mode). The website, the dashboard, the admin portal and the field app work, for the sign-up drive:
+- Website sign-ups wait on **Website sign-ups**. Call each owner, check the details, then **List it**.
+- Owners get their dashboard through a one-time link from their business's page (**Dashboard link for the owner**). It works for a day.
+- On launch day, set the Meta settings and `WHATSAPP_TRANSPORT=cloud`. Owners claim their listings by typing *my business* on WhatsApp.
+
 - [ ] Postgres with backups; test a restore.
 - [ ] A private bucket for photos (`STORAGE=s3`).
 - [ ] Deploy, with health checks on `/ready`.

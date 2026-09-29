@@ -166,7 +166,11 @@ Step by step in [docs/LAUNCH.md](docs/LAUNCH.md); hosting, backups and monitorin
    | `weekly_summary` | Your week: {{1}} was shown in {{2}} searches and {{3}} customers connected with you. | none |
 
 5. Set the following, then deploy with the `Dockerfile` or anywhere that runs Node:
-   - `WHATSAPP_TRANSPORT=cloud`, plus the WhatsApp variables in `.env.example`
+   - `WHATSAPP_TRANSPORT=cloud`, plus the WhatsApp variables in `.env.example`. Before Meta has approved the number, use `WHATSAPP_TRANSPORT=off` (**pre-launch mode**):
+     - The website, the dashboard, the admin portal and the field app run, and nothing goes out on WhatsApp.
+     - Website sign-ups wait on **Website sign-ups** for the team to call the owner and **List it**.
+     - Owners get a one-time dashboard link from the business's page in the admin portal (**Dashboard link for the owner**, admins only), which works for a day.
+     - Switch to `cloud` once the Meta settings are in.
    - `DATABASE_URL` pointing at Postgres (required in production)
    - `OPS_TOKEN`
    - `PUBLIC_BASE_URL`: your HTTPS address, used in agents' setup links and owners' dashboard sign-in links

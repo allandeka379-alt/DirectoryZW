@@ -357,6 +357,19 @@ Requested on 29 September 2026: make the engine work well, getting products from
 - [ ] Connect the catalog in Meta's Commerce Manager and set `WHATSAPP_CATALOG_ID` (see [LAUNCH.md](LAUNCH.md)). The catalog calls, cards and carts can only be tried against Meta once the number is approved.
 - [ ] Native speakers: more Shona and Ndebele names for items, for the list of other names in `src/directory/products.ts`
 
+## The name, and pre-launch mode
+
+On 29 September 2026 the project was named **FindZim** (`BRAND_NAME`; the GitHub repository and the Railway service keep their old name for now). Production runs on Railway before Meta approves the number, so:
+
+- [x] **Pre-launch mode** (`WHATSAPP_TRANSPORT=off`):
+  - The website, the dashboard, the admin portal and the field app run. Nothing goes out on WhatsApp, and WhatsApp's webhook is turned away.
+  - The website says we open on WhatsApp soon and hides the WhatsApp buttons.
+  - A website sign-up waits 60 days for the team, who call the owner and **List it** from the admin portal.
+  - Admins hand owners a one-time dashboard link from the business's page. It works for a day, and the business's own number becomes its owner.
+- [x] Tests (261)
+- [x] Live before Meta: the app on Railway (positive-love) behind `https://findzim.vercel.app` (see [DEPLOY.md](DEPLOY.md))
+- [ ] Switch to `WHATSAPP_TRANSPORT=cloud` once Meta's settings are in
+
 ## Later: monetization (only after traction)
 
 - [ ] Featured placement, lead credits and sponsored slots, as priced in the feasibility study

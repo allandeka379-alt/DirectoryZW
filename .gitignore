@@ -5,3 +5,6 @@ coverage/
 .env
 *.log
 evals/real*.jsonl
+
+# Vercel project link (made by the Vercel CLI)
+.vercel/

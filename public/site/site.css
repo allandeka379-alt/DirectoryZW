@@ -852,3 +852,14 @@
     padding: 16px;
   }
 }
+
+/* Before launch (WhatsApp not connected yet): what needs WhatsApp is hidden, and a note says so. */
+[data-whatsapp="off"] .needs-whatsapp,
+[data-whatsapp="on"] .prelaunch-only {
+  display: none !important;
+}
+.prelaunch-note {
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--text-2);
+}

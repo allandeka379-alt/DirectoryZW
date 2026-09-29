@@ -1118,6 +1118,33 @@ async function openBusiness(id) {
 
 function ownerSection(b, reload) {
   const o = b.owner;
+  // A one-time link for the owner, handed over by the team: before launch, or when WhatsApp can't reach them.
+  const linkBox = h("div");
+  const linkButton = isAdmin()
+    ? h(
+        "div",
+        {},
+        h(
+          "button",
+          {
+            class: "btn btn-secondary btn-sm",
+            type: "button",
+            onclick: (e) =>
+              busy(e.currentTarget, async () => {
+                const r = await post(`/businesses/${b.id}/owner/link`);
+                linkBox.replaceChildren(
+                  secretBox(
+                    "Dashboard sign-in link",
+                    r.url,
+                    `Give it only to the owner of ${b.name}. It works once, until ${dateTime(r.expiresAt)}, and signs them in as the owner of this business.`,
+                  ),
+                );
+              }),
+          },
+          "Dashboard link for the owner",
+        ),
+      )
+    : null;
   return h(
     "section",
     { class: "detail-section" },
@@ -1172,6 +1199,8 @@ function ownerSection(b, reload) {
             : null,
         ]
       : h("p", { class: "muted", text: "Nobody manages this listing yet: it's claimed when its number messages us on WhatsApp." }),
+    linkButton,
+    linkBox,
   );
 }
 
@@ -1359,7 +1388,7 @@ async function signups(params) {
   return [
     pageHead(
       "Website sign-ups",
-      "Businesses that registered on the website. A listing is created when the owner sends their code from WhatsApp; a code works for 48 hours. Call the ones still waiting to help them finish.",
+      "Businesses that registered on the website. A listing is created when the owner sends their code from WhatsApp, or when you list it after calling them. Before launch, codes can't be sent: call each one, then List it.",
       segmented(
         [
           ["pending", "Waiting for the code"],
@@ -1392,6 +1421,34 @@ async function signups(params) {
               : new Date(r.expiresAt) > new Date()
                 ? badge(`Code works until ${dateTime(r.expiresAt)}`, "warn")
                 : badge("Code ran out", "bad"),
+        },
+        {
+          label: "",
+          render: (r) =>
+            r.completedAt
+              ? null
+              : h(
+                  "button",
+                  {
+                    class: "btn btn-secondary btn-sm",
+                    type: "button",
+                    onclick: async (e) => {
+                      const button = e.currentTarget;
+                      const ok = await confirmDialog({
+                        title: `List ${r.name ?? "this business"}?`,
+                        body: "Do this after calling the owner to check the details. It goes live now. They manage it by typing my business on WhatsApp, or with a dashboard link from its page.",
+                        ok: "List it",
+                      });
+                      if (!ok) return;
+                      await busy(button, async () => {
+                        const res = await post(`/web-registrations/${r.id}/list`);
+                        toast(res.created ? `${res.name} is listed.` : `${res.name} was already listed.`);
+                        refresh();
+                      });
+                    },
+                  },
+                  "List it",
+                ),
         },
       ],
       rows,
@@ -2484,7 +2541,7 @@ async function system() {
         line("Last message in", s.last_inbound_at ? dateTime(s.last_inbound_at) : "none yet"),
         line("Last reply out", s.last_sent_at ? dateTime(s.last_sent_at) : "none yet"),
         line("Database", s.database),
-        line("WhatsApp", s.whatsapp),
+        line("WhatsApp", s.whatsapp === "off" ? "Off: before launch, not connected yet" : s.whatsapp),
         line("Photos stored on", s.storage),
         line("Understanding", s.features.understanding),
         line("Alerts go to", s.features.alertsTo),
