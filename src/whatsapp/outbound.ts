@@ -11,6 +11,12 @@ export interface ListSection {
   title?: string;
   rows: ListRow[];
 }
+/** Products from our catalog, under one heading (a store's name). */
+export interface ProductSection {
+  title: string;
+  /** Catalog retailer IDs; the name, price and photo are for the simulator and logs (WhatsApp shows the catalog's own). */
+  products: { id: string; name?: string; price?: string | null; image?: string | null }[];
+}
 
 export type OutboundMessage =
   | { kind: "text"; text: string }
@@ -19,6 +25,8 @@ export type OutboundMessage =
   | { kind: "cta_url"; body: string; displayText: string; url: string; footer?: string }
   | { kind: "location_request"; body: string }
   | { kind: "contact_card"; name: string; phone: string }
+  /** WhatsApp's own product cards, from our catalog: photos, prices, "View items". */
+  | { kind: "product_list"; catalogId: string; header: string; body: string; footer?: string; sections: ProductSection[] }
   | {
       kind: "template";
       name: string;
@@ -45,6 +53,8 @@ export const LIMITS = {
   sectionTitle: 24,
   ctaText: 20,
   id: 256,
+  productSections: 10,
+  products: 30,
 } as const;
 
 export function truncate(text: string, max: number): string {
@@ -105,6 +115,24 @@ export function normalize(msg: OutboundMessage): OutboundMessage {
       };
     case "contact_card":
       return msg;
+    case "product_list": {
+      let remaining: number = LIMITS.products;
+      const sections = msg.sections
+        .slice(0, LIMITS.productSections)
+        .map((s) => {
+          const products = s.products.slice(0, Math.max(0, remaining));
+          remaining -= products.length;
+          return { title: truncate(s.title, LIMITS.sectionTitle), products };
+        })
+        .filter((s) => s.products.length > 0);
+      return {
+        ...msg,
+        header: truncate(msg.header, LIMITS.header),
+        body: truncate(msg.body, LIMITS.body),
+        footer: msg.footer ? truncate(msg.footer, LIMITS.footer) : undefined,
+        sections,
+      };
+    }
   }
 }
 
@@ -168,6 +196,21 @@ export function toCloudPayload(to: string, input: OutboundMessage): Record<strin
         type: "contacts",
         contacts: [{ name: { formatted_name: msg.name, first_name: msg.name }, phones: [{ phone: `+${msg.phone}`, type: "WORK", wa_id: msg.phone }] }],
       };
+    case "product_list":
+      return {
+        ...base,
+        type: "interactive",
+        interactive: {
+          type: "product_list",
+          header: { type: "text", text: msg.header },
+          body: { text: msg.body },
+          ...(msg.footer ? { footer: { text: msg.footer } } : {}),
+          action: {
+            catalog_id: msg.catalogId,
+            sections: msg.sections.map((s) => ({ title: s.title, product_items: s.products.map((p) => ({ product_retailer_id: p.id })) })),
+          },
+        },
+      };
     case "template": {
       const components: unknown[] = [];
       if (msg.bodyParams.length) components.push({ type: "body", parameters: msg.bodyParams.map((text) => ({ type: "text", text })) });
@@ -194,6 +237,10 @@ export function describe(msg: OutboundMessage): string {
       return `${msg.body}\n[Send location]`;
     case "contact_card":
       return `Contact: ${msg.name} +${msg.phone}`;
+    case "product_list":
+      return `${msg.header}\n${msg.body}\n${msg.sections
+        .map((s) => `${s.title}: ${s.products.map((p) => [p.name ?? p.id, p.price].filter(Boolean).join(" ")).join(", ")}`)
+        .join("\n")}`;
     case "template":
       return describe(msg.fallback);
   }

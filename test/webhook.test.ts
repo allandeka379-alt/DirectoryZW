@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { parseWebhook, verifySignature } from "../src/whatsapp/webhook.js";
 
-const ids = { customer: "PNID_CUSTOMER", business: "PNID_BUSINESS" };
+/** Our one WhatsApp number. */
+const OURS = "PNID_OURS";
 
 function payload(phoneNumberId: string, value: Record<string, unknown>) {
   return {
@@ -29,17 +30,44 @@ describe("verifySignature", () => {
 });
 
 describe("parseWebhook", () => {
-  it("parses a text message with the sender's name and channel", () => {
+  it("parses a message written from one of our product cards, and a cart", () => {
     const out = parseWebhook(
-      payload(ids.customer, {
+      payload(OURS, {
+        messages: [
+          {
+            from: "263771234567",
+            id: "p1",
+            type: "text",
+            text: { body: "Is this available?" },
+            context: { from: "263770000000", id: "wamid.cards", referred_product: { catalog_id: "cat-1", product_retailer_id: "abc" } },
+          },
+          {
+            from: "263771234567",
+            id: "p2",
+            type: "order",
+            order: { catalog_id: "cat-1", text: "", product_items: [{ product_retailer_id: "abc", quantity: "2", item_price: "849", currency: "USD" }] },
+          },
+        ],
+      }),
+      OURS,
+    );
+    expect(out.messages[0]!.referredProduct).toEqual({ catalogId: "cat-1", retailerId: "abc" });
+    expect(out.messages[0]!.content).toEqual({ type: "text", text: "Is this available?" });
+    expect(out.messages[1]!.referredProduct).toBeUndefined();
+    expect(out.messages[1]!.content).toEqual({ type: "order", catalogId: "cat-1", items: [{ retailerId: "abc", quantity: 2, price: 849, currency: "USD" }] });
+  });
+
+  it("parses a text message with the sender's name, for the router to pick its side", () => {
+    const out = parseWebhook(
+      payload(OURS, {
         contacts: [{ profile: { name: "Tendai" }, wa_id: "263771234567" }],
         messages: [{ from: "263771234567", id: "wamid.1", timestamp: "1767225600", type: "text", text: { body: "I need a plumber" } }],
       }),
-      ids,
+      OURS,
     );
     expect(out.messages).toHaveLength(1);
     const m = out.messages[0]!;
-    expect(m.channel).toBe("customer");
+    expect(m.route).toBe(true);
     expect(m.from).toBe("263771234567");
     expect(m.phone).toBe("263771234567");
     expect(m.profileName).toBe("Tendai");
@@ -47,20 +75,27 @@ describe("parseWebhook", () => {
     expect(m.content).toEqual({ type: "text", text: "I need a plumber" });
   });
 
-  it("parses buttons, list rows, template quick replies and locations", () => {
+  it("parses buttons, list rows, template quick replies and locations, and which message a tap answers", () => {
     const out = parseWebhook(
-      payload(ids.business, {
+      payload(OURS, {
         messages: [
-          { from: "263770000001", id: "a", type: "interactive", interactive: { type: "button_reply", button_reply: { id: "bsum", title: "My summary" } } },
+          {
+            from: "263770000001",
+            id: "a",
+            type: "interactive",
+            context: { from: "263770000000", id: "wamid.menu" },
+            interactive: { type: "button_reply", button_reply: { id: "bsum", title: "My summary" } },
+          },
           { from: "263770000001", id: "b", type: "interactive", interactive: { type: "list_reply", list_reply: { id: "biz:1:2", title: "Shop", description: "Avondale" } } },
           { from: "263770000001", id: "c", type: "button", button: { payload: "aa:x:yes", text: "Yes, I can help" } },
           { from: "263770000001", id: "d", type: "location", location: { latitude: -17.8, longitude: 31.05, name: "Home" } },
           { from: "263770000001", id: "e", type: "sticker", sticker: {} },
         ],
       }),
-      ids,
+      OURS,
     );
-    expect(out.messages.map((m) => m.channel)).toEqual(Array(5).fill("business"));
+    expect(out.messages.map((m) => m.route)).toEqual(Array(5).fill(true));
+    expect(out.messages.map((m) => m.contextId)).toEqual(["wamid.menu", undefined, undefined, undefined, undefined]);
     expect(out.messages.map((m) => m.content)).toEqual([
       { type: "button_reply", id: "bsum", title: "My summary" },
       { type: "list_reply", id: "biz:1:2", title: "Shop", description: "Avondale" },
@@ -71,15 +106,15 @@ describe("parseWebhook", () => {
   });
 
   it("reads delivery statuses and ignores numbers we don't own", () => {
-    const statuses = parseWebhook(payload(ids.customer, { statuses: [{ id: "wamid.9", status: "read", recipient_id: "263771234567" }] }), ids);
-    expect(statuses.statuses).toEqual([{ channel: "customer", waMessageId: "wamid.9", status: "read", recipient: "263771234567", errors: undefined }]);
-    const foreign = parseWebhook(payload("SOMEONE_ELSE", { messages: [{ from: "1", id: "x", type: "text", text: { body: "hi" } }] }), ids);
+    const statuses = parseWebhook(payload(OURS, { statuses: [{ id: "wamid.9", status: "read", recipient_id: "263771234567" }] }), OURS);
+    expect(statuses.statuses).toEqual([{ waMessageId: "wamid.9", status: "read", recipient: "263771234567", errors: undefined }]);
+    const foreign = parseWebhook(payload("SOMEONE_ELSE", { messages: [{ from: "1", id: "x", type: "text", text: { body: "hi" } }] }), OURS);
     expect(foreign.messages).toHaveLength(0);
-    expect(parseWebhook({ object: "page" }, ids).messages).toHaveLength(0);
+    expect(parseWebhook({ object: "page" }, OURS).messages).toHaveLength(0);
   });
 
   it("accepts senders without a phone number (business-scoped user IDs)", () => {
-    const out = parseWebhook(payload(ids.customer, { messages: [{ from_user_id: "ZW.abc123", id: "u1", type: "text", text: { body: "hi" } }] }), ids);
+    const out = parseWebhook(payload(OURS, { messages: [{ from_user_id: "ZW.abc123", id: "u1", type: "text", text: { body: "hi" } }] }), OURS);
     expect(out.messages[0]?.from).toBe("ZW.abc123");
     expect(out.messages[0]?.phone).toBeUndefined();
   });

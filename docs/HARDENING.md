@@ -61,7 +61,7 @@ A cold cache is the normal case until requests are less than 5 minutes apart. A 
   - More customers will answer "Not yet" this early. Track records only count final answers, so they stay honest.
   - If the window has closed by the time it's due, the follow-up is skipped, unless `PAID_FOLLOW_UPS=true`.
 - [x] **Lead notices only when they're free.** Send one when the business has written to us in the last 24 hours; otherwise skip it (`LEAD_NOTICES=free_only`).
-  - The customer's own first message already says "I found you on Directory ZW (ref K7Q2M)", so the business still knows where the customer came from.
+  - The customer's own first message already says "I found you on FindZim (ref K7Q2M)", so the business still knows where the customer came from.
   - The business menu gets **My customers**: recent reference codes, free to check any time.
 - [x] **Weekly summaries on request.** The week shows at the top of the business menu, and "summary" answers any time. The Monday push is a setting, off by default (`WEEKLY_SUMMARIES=off|window_only|always`).
 - [x] **Handoff replies inside the window.** The team can't send a free-form reply once a customer's 24 hours are over; today such a send fails.

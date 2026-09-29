@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { Channel, InboundContent, InboundMessage, StatusUpdate } from "./types.js";
+import type { InboundContent, InboundMessage, StatusUpdate } from "./types.js";
 
 /** Check Meta's X-Hub-Signature-256 header against the raw request body. */
 export function verifySignature(rawBody: Buffer | string, header: string | undefined, appSecret: string): boolean {
@@ -17,10 +17,11 @@ export interface ParsedWebhook {
 type Json = Record<string, any>;
 
 /**
- * Turn a WhatsApp Cloud API webhook payload into our own message types. Messages for
- * phone numbers we don't own are ignored; unknown message types become "unsupported".
+ * Turn a WhatsApp Cloud API webhook payload into our own message types. Messages for other
+ * numbers are ignored; unknown message types become "unsupported". Customers and businesses share
+ * our one number, so every message is marked for the router to pick its side.
  */
-export function parseWebhook(payload: unknown, phoneNumberIds: Record<Channel, string>): ParsedWebhook {
+export function parseWebhook(payload: unknown, phoneNumberId: string): ParsedWebhook {
   const out: ParsedWebhook = { messages: [], statuses: [] };
   const body = payload as Json;
   if (body?.object !== "whatsapp_business_account" || !Array.isArray(body.entry)) return out;
@@ -28,8 +29,7 @@ export function parseWebhook(payload: unknown, phoneNumberIds: Record<Channel, s
     for (const change of (entry.changes ?? []) as Json[]) {
       if (change.field !== "messages") continue;
       const value = (change.value ?? {}) as Json;
-      const channel = channelFor(value.metadata?.phone_number_id, phoneNumberIds);
-      if (!channel) continue;
+      if (value.metadata?.phone_number_id !== phoneNumberId) continue;
       const names = new Map<string, string>();
       for (const c of (value.contacts ?? []) as Json[]) {
         const id = c.wa_id ?? c.user_id;
@@ -39,7 +39,12 @@ export function parseWebhook(payload: unknown, phoneNumberIds: Record<Channel, s
         const from = String(m.from ?? m.from_user_id ?? "");
         if (!from || !m.id) continue;
         out.messages.push({
-          channel,
+          channel: "customer",
+          route: true,
+          contextId: m.context?.id ? String(m.context.id) : undefined,
+          referredProduct: m.context?.referred_product?.product_retailer_id
+            ? { catalogId: String(m.context.referred_product.catalog_id ?? ""), retailerId: String(m.context.referred_product.product_retailer_id) }
+            : undefined,
           waMessageId: String(m.id),
           from,
           phone: /^\d{7,15}$/.test(from) ? from : undefined,
@@ -51,7 +56,6 @@ export function parseWebhook(payload: unknown, phoneNumberIds: Record<Channel, s
       for (const s of (value.statuses ?? []) as Json[]) {
         if (!s.id || !s.status) continue;
         out.statuses.push({
-          channel,
           waMessageId: String(s.id),
           status: String(s.status),
           recipient: String(s.recipient_id ?? ""),
@@ -61,12 +65,6 @@ export function parseWebhook(payload: unknown, phoneNumberIds: Record<Channel, s
     }
   }
   return out;
-}
-
-function channelFor(phoneNumberId: unknown, ids: Record<Channel, string>): Channel | undefined {
-  if (phoneNumberId === ids.customer) return "customer";
-  if (phoneNumberId === ids.business) return "business";
-  return undefined;
 }
 
 function parseContent(m: Json): InboundContent {
@@ -95,6 +93,18 @@ function parseContent(m: Json): InboundContent {
       return { type: "image", mediaId: String(m.image?.id ?? ""), caption: m.image?.caption, mimeType: m.image?.mime_type };
     case "audio":
       return { type: "audio", mediaId: String(m.audio?.id ?? ""), voice: Boolean(m.audio?.voice), mimeType: m.audio?.mime_type };
+    case "order":
+      return {
+        type: "order",
+        catalogId: String(m.order?.catalog_id ?? ""),
+        items: ((m.order?.product_items ?? []) as Json[]).map((i) => ({
+          retailerId: String(i.product_retailer_id ?? ""),
+          quantity: Number(i.quantity ?? 1),
+          price: i.item_price != null ? Number(i.item_price) : undefined,
+          currency: i.currency ? String(i.currency) : undefined,
+        })),
+        text: m.order?.text ? String(m.order.text) : undefined,
+      };
     default:
       return { type: "unsupported", rawType: String(m.type ?? "unknown") };
   }

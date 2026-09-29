@@ -19,6 +19,7 @@ import { Taxonomy } from "./directory/taxonomy.js";
 import { JobQueue } from "./jobs/queue.js";
 import { consoleLogger, type Logger } from "./logger.js";
 import { DiskStore, S3Store, type FileStore } from "./storage.js";
+import { GraphCatalog, MemoryCatalog, type CatalogClient } from "./whatsapp/catalog.js";
 import { CloudApiTransport, SimulatorTransport, type Transport } from "./whatsapp/transport.js";
 
 export interface App {
@@ -48,6 +49,8 @@ export interface AppOptions {
   alerts?: Alerts;
   /** Pass null to switch Claude off even when it is configured. */
   claude?: RequestReader | null;
+  /** The WhatsApp catalog; pass null for none. By default Meta's (WHATSAPP_CATALOG_ID) or the simulator's. */
+  catalog?: CatalogClient | null;
   log?: Logger;
   now?: () => Date;
 }
@@ -71,7 +74,7 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
       ? new CloudApiTransport({
           graphVersion: config.whatsapp.graphVersion,
           accessToken: config.whatsapp.accessToken!,
-          phoneNumberIds: config.whatsapp.phoneNumberIds,
+          phoneNumberId: config.whatsapp.phoneNumberId,
           log,
         })
       : new SimulatorTransport());
@@ -95,6 +98,14 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     alerts.send(`job:${job.kind}`, `Background job "${job.kind}" failed ${job.attempts} times: ${error.slice(0, 200)}`),
   );
   const messenger = new Messenger(db, transport, config, log, { now, jobs, alerts });
+  const catalogId = config.whatsapp.catalogId;
+  const catalog = pick(opts.catalog, () =>
+    !catalogId
+      ? undefined
+      : cloud
+        ? new GraphCatalog({ graphVersion: config.whatsapp.graphVersion, accessToken: config.whatsapp.accessToken!, catalogId, log })
+        : new MemoryCatalog(catalogId),
+  );
   const services: Services = {
     db,
     config,
@@ -107,6 +118,7 @@ export async function createApp(config: Config, opts: AppOptions = {}): Promise<
     messenger,
     jobs,
     store,
+    catalog,
     alerts,
     log,
     now,

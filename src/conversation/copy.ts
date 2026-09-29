@@ -15,15 +15,45 @@ export interface BusinessView {
   verifiedAt?: Date | null;
   /** How customers got on with it recently (cards only). */
   record?: { answered: number; sorted: number };
+  /** The product it lists for what was asked (results lists). */
+  product?: ListedProduct | null;
+}
+
+/** A product as customers see it: its name, and its price as the store set it. */
+export interface ListedProduct {
+  name: string;
+  /** "$589.00", a price written another way, or null for "ask them". */
+  price: string | null;
+  /** The price as a number, for "from $520" and budgets. */
+  amount: number | null;
+  /** "each", "per kg". */
+  unit: string | null;
+  /** "updated today", "updated 3 days ago". */
+  updated: string | null;
 }
 
 /** Customers see a track record from this many answers (TRACK_RECORD_MIN in directory/trust.ts). */
 const TRACK_RECORD_SHOWN_FROM = 5;
 
-/** Price-list items that match the request, shown on a business card. */
+/** Products that match the request, shown on a business card: read live when the card is opened. */
 export interface PriceView {
-  items: { name: string; price: string | null }[];
-  updatedAt: Date;
+  items: ListedProduct[];
+}
+
+/** "updated today", "updated yesterday", "updated 3 days ago", "updated on 2 Sep". */
+export function updatedPhrase(at: Date | null, now: Date): string | null {
+  if (!at) return null;
+  const harare = (d: Date) => new Date(d.getTime() + 2 * 3600_000).toISOString().slice(0, 10);
+  const days = Math.round((Date.parse(harare(now)) - Date.parse(harare(at))) / 86400000);
+  if (days <= 0) return "updated today";
+  if (days === 1) return "updated yesterday";
+  if (days < 14) return `updated ${days} days ago`;
+  if (days < 60) return `updated ${Math.round(days / 7)} weeks ago`;
+  return `updated on ${at.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Harare" })}`;
+}
+
+function money(n: number): string {
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 }
 
 const UNVERIFIED_WARNING = "⚠️ Not yet checked by our team. Don't pay a deposit before you see the item or the work.";
@@ -90,7 +120,7 @@ function distance(b: BusinessView): string | null {
   return b.distanceKm < 1 ? "under 1 km" : `${b.distanceKm.toFixed(b.distanceKm < 10 ? 1 : 0)} km`;
 }
 
-// ---------- Customer number ----------
+// ---------- Customers ----------
 
 export function consent(brand: string, privacyUrl: string | undefined, name: string | null): OutboundMessage {
   const hi = firstName(name) ? `Hi ${firstName(name)}!` : "Hi!";
@@ -102,7 +132,7 @@ export function consent(brand: string, privacyUrl: string | undefined, name: str
       "✅ Every business we verify is visited in person by our team, and we check who runs it, so you know it's genuine and reliable. " +
       "Customers rate the businesses they contact, and we look into every report.\n\n" +
       `We keep your messages to help you, and only share your request with businesses you choose to contact.${privacy}\n\n` +
-      "Tap *I agree* to start.",
+      "Tap *I agree* to start. Own a business? Type *register my business* to list it free.",
     buttons: [{ id: Ids.consent, title: "I agree" }],
   };
 }
@@ -128,7 +158,8 @@ export function help(brand: string): OutboundMessage {
       "1. Type what you need and where, for example *plumber in Mabelreign*.\n" +
       "2. I show businesses that can help. ✅ means our team checked them in person.\n" +
       "3. Pick one and tap *Connect me* to chat with them directly on WhatsApp.\n\n" +
-      "Type *recommend* to tell us about a good business we should list, *agent* to talk to a person, or *menu* to start again.",
+      "Type *recommend* to tell us about a good business we should list, *agent* to talk to a person, or *menu* to start again.\n\n" +
+      "Own a business? Type *register my business* to list it free, or *my business* to manage your listing.",
   };
 }
 
@@ -145,12 +176,21 @@ function notWhatIAskedRow(requestId: string) {
   return { id: Ids.notIt(requestId), title: "Not what I asked for", description: "Tell me again, or talk to a person" };
 }
 
+/**
+ * A row per business. One that lists what was asked shows the price and the product ("$589 ·
+ * Samsung 55-inch Smart TV · ✅ · 0.8 km"), with the product's name shortened to fit.
+ */
 function businessRows(requestId: string, hits: BusinessView[]) {
-  return hits.map((h) => ({
-    id: Ids.business(requestId, h.id),
-    title: h.name,
-    description: [badge(h), h.areaName, distance(h), rating(h)].filter(Boolean).join(" · "),
-  }));
+  return hits.map((h) => {
+    if (!h.product) {
+      return { id: Ids.business(requestId, h.id), title: h.name, description: [badge(h), h.areaName, distance(h), rating(h)].filter(Boolean).join(" · ") };
+    }
+    const price = h.product.price ?? "Ask for price";
+    const tail = [h.verification === "verified" ? "✅" : "Not verified", distance(h)].filter(Boolean).join(" · ");
+    const room = 72 - price.length - tail.length - 6;
+    const name = h.product.name.length > room ? `${h.product.name.slice(0, Math.max(8, room - 1)).trimEnd()}…` : h.product.name;
+    return { id: Ids.business(requestId, h.id), title: h.name, description: `${price} · ${name} · ${tail}` };
+  });
 }
 
 function unverifiedNote(hits: BusinessView[]): string {
@@ -219,7 +259,63 @@ export function results(
       { title: "Not checked yet", rows: businessRows(requestId, unchecked) },
       { title: "Not right?", rows: [notWhatIAskedRow(requestId)] },
     ].filter((s) => s.rows.length),
-    // On the business number, "menu" goes back to the business menu.
+    // In a supplier search, "menu" goes back to the business menu.
+    footer: need.trade ? "Type menu for your business menu" : "Type menu to start a new search",
+  };
+}
+
+/**
+ * Results when stores list what was asked: where it is and from what price, said from what the
+ * stores themselves listed. "I found *samsung 55 inch tv* at three stores near Avondale, from
+ * *$520*. Two of them are verified by our team ✅." Stores in the category that haven't listed it
+ * come after, counted apart. Verified stores stay first (see mergeSuppliers).
+ */
+export function productResults(
+  requestId: string,
+  hits: BusinessView[],
+  need: Need,
+  place: string | undefined,
+  opts: { budget?: number | null; sells?: string } = {},
+): OutboundMessage {
+  const shown = hits.slice(0, 9);
+  const listed = shown.filter((h) => h.product);
+  const verified = shown.filter((h) => h.verification === "verified");
+  const unchecked = shown.filter((h) => h.verification !== "verified");
+  const near = place ? ` near ${place}` : "";
+  const noun = (n: number) => (need.trade ? (n === 1 ? "supplier" : "suppliers") : n === 1 ? "store" : "stores");
+  const n = listed.length;
+  const amounts = listed.map((h) => h.product!.amount).filter((a): a is number => a != null);
+  const from = amounts.length ? Math.min(...amounts) : null;
+  const oneForAll = amounts.length > 0 && amounts.every((a) => a === from);
+
+  let body = `I found *${need.text}* at ${n === 1 ? `one ${noun(1)}` : `${inWords(n)} ${noun(n)}`}${near}`;
+  body += from == null ? "." : oneForAll ? `, for *${money(from)}*.` : `, from *${money(from)}*.`;
+  const v = listed.filter((h) => h.verification === "verified").length;
+  if (v === n) body += n === 1 ? " It's verified by our team ✅." : ` ${n === 2 ? "Both are" : `All ${inWords(n)} are`} verified by our team ✅.`;
+  else if (v > 0) body += ` ${capitalize(inWords(v))} of them ${v === 1 ? "is" : "are"} verified by our team ✅.`;
+  else body += ` ${n === 1 ? "It listed itself and hasn't" : "They listed themselves and haven't"} been checked by our team yet.`;
+  if (opts.budget != null && amounts.length) {
+    const within = listed.filter((h) => h.product!.amount != null && h.product!.amount <= opts.budget!).length;
+    body += within
+      ? ` ${capitalize(inWords(within))} ${within === 1 ? "is" : "are"} within your ${money(opts.budget)} budget.`
+      : ` None is within your ${money(opts.budget)} budget yet.`;
+  }
+  const others = shown.length - n;
+  if (others > 0) {
+    body += ` ${capitalize(inWords(others))} more ${noun(others)} ${opts.sells ? `${others === 1 ? "sells" : "sell"} ${opts.sells}` : "may have it"}, but ${others === 1 ? "hasn't" : "haven't"} listed it.`;
+  }
+  body += ` The stores set their own prices, so confirm with them. Tap ${shown.length === 1 ? "it" : "one"} to connect.`;
+  if (unchecked.length) body += "\n\n⚠️ Don't pay a deposit before you see the item.";
+
+  return {
+    kind: "list",
+    body,
+    button: need.trade ? "See suppliers" : "See stores",
+    sections: [
+      { title: "Verified by our team", rows: businessRows(requestId, verified) },
+      { title: "Not checked yet", rows: businessRows(requestId, unchecked) },
+      { title: "Not right?", rows: [notWhatIAskedRow(requestId)] },
+    ].filter((s) => s.rows.length),
     footer: need.trade ? "Type menu for your business menu" : "Type menu to start a new search",
   };
 }
@@ -245,7 +341,7 @@ export function relatedResults(requestId: string, hits: BusinessView[], need: Ne
         rows: [{ id: Ids.human(requestId), title: "Talk to a person", description: "Someone from our team helps you find it" }, notWhatIAskedRow(requestId)],
       },
     ],
-    // On the business number, "menu" goes back to the business menu.
+    // In a supplier search, "menu" goes back to the business menu.
     footer: need.trade ? "Type menu for your business menu" : "Type menu to start a new search",
   };
 }
@@ -268,9 +364,11 @@ export function businessCard(requestId: string, b: BusinessView, prices?: PriceV
   if (requestId) buttons.push({ id: Ids.list(requestId), title: "Other options" });
   buttons.push({ id: Ids.report(b.id), title: "Report" });
   const priceLines = prices?.items.length
-    ? `\n\n🏷️ From their price list (${prices.updatedAt.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Harare" })}):\n` +
-      prices.items.map((i) => `• ${i.name}${i.price ? `: ${i.price}` : ""}`).join("\n") +
-      "\nPrices may have changed, so confirm with them."
+    ? "\n\n🏷️ *Listed by them now:*\n" +
+      prices.items
+        .map((i) => `• ${i.name}: ${i.price ? `*${i.price}*${i.unit && i.unit !== "each" ? ` ${i.unit}` : ""}` : "ask for the price"}${i.updated ? ` (${i.updated})` : ""}`)
+        .join("\n") +
+      "\nThe store sets its own prices, so confirm with them before you pay."
     : "";
   return {
     kind: "buttons",
@@ -578,7 +676,80 @@ export function stopped(): OutboundMessage {
   return { kind: "text", text: "Okay, I won't message you unless you write to me again. Type *menu* any time to search." };
 }
 
-// ---------- Business number ----------
+// ---------- Products on WhatsApp ----------
+
+/**
+ * A store has just listed what they asked for and nobody had: once, inside their free window.
+ * "See it" opens the store's card; "No more alerts" stops them.
+ */
+export function productAlert(
+  requestId: string,
+  a: {
+    firstName: string | null;
+    asked: string;
+    business: { id: string; name: string; verified: boolean; area: string | null; distanceKm: number | null };
+    product: { name: string; price: string | null };
+  },
+): OutboundMessage {
+  const hi = firstName(a.firstName) ? `Good news, ${firstName(a.firstName)}!` : "Good news!";
+  const where = a.business.area ? ` in ${a.business.area}` : "";
+  const far = a.business.distanceKm == null ? "" : a.business.distanceKm < 1 ? " (under 1 km from you)" : ` (${a.business.distanceKm.toFixed(a.business.distanceKm < 10 ? 1 : 0)} km from you)`;
+  const asked = a.asked.length > 60 ? `${a.asked.slice(0, 59).trimEnd()}…` : a.asked;
+  const price = a.product.price ? ` for *${a.product.price}*` : "";
+  const trust = a.business.verified ? "✅ Verified by our team." : "⚠️ Not yet checked by our team. Don't pay a deposit before you see the item.";
+  return {
+    kind: "buttons",
+    body: `${hi} Earlier you asked for *${asked}*, and nobody had it listed. *${a.business.name}*${where}${far} has just listed *${a.product.name}*${price}.\n\n${trust}`,
+    buttons: [
+      { id: Ids.business(requestId, a.business.id), title: "See it" },
+      { id: Ids.alertsOff, title: "No more alerts" },
+    ],
+  };
+}
+
+export function alertsOff(): OutboundMessage {
+  return { kind: "text", text: "Okay, no more alerts. Type *alerts on* if you'd like them again, or *menu* to search." };
+}
+
+export function alertsOn(): OutboundMessage {
+  return {
+    kind: "text",
+    text: "Alerts are on. When nobody has what you ask for and a store lists it within a day, I'll tell you once.",
+  };
+}
+
+/**
+ * WhatsApp product cards for what the stores in the results list: photos and prices from our
+ * catalog, a section per store. Opening one and writing to us about it brings that store's card.
+ */
+export function productCards(catalogId: string, need: Need, sections: { title: string; products: { id: string; name: string; price: string | null; image: string }[] }[]): OutboundMessage {
+  return {
+    kind: "product_list",
+    catalogId,
+    header: "Photos and prices",
+    body: `What the stores list for *${need.text}*. Open a product to see its photo, then send us a message about it and I'll put you in touch with the store.`,
+    footer: "Prices are set by each store",
+    sections,
+  };
+}
+
+/** A product they asked about isn't listed any more (sold out, taken down, or the store paused). */
+export function productGone(): OutboundMessage {
+  return {
+    kind: "text",
+    text: "Sorry, that product isn't available any more. Tell me what you're looking for, and I'll find who has it now.",
+  };
+}
+
+/** A cart sent from our product cards: stores sell directly, so we connect them instead. */
+export function ordersGoToStores(): OutboundMessage {
+  return {
+    kind: "text",
+    text: "We don't take orders or payments here: each store sells to you directly. Here's the store, so you can order from them.",
+  };
+}
+
+// ---------- Businesses ----------
 
 /** `buyer`: another business looking for supplies, named so the supplier knows who's asking. */
 export function leadNotification(
@@ -716,7 +887,8 @@ export function regDone(name: string): OutboundMessage {
     kind: "text",
     text:
       `You're listed! Customers can now find *${name}*.\n\nA field agent may visit to verify you, and verified businesses show first. ` +
-      "Do you also sell wholesale to other businesses? Choose *Who I sell to* in the menu. Type *menu* any time for your options.",
+      "Do you also sell wholesale to other businesses? Choose *Who I sell to* in the menu. Type *my business* any time for your business menu, " +
+      "and *dashboard* for a link to add your products, prices and photos.",
   };
 }
 
@@ -756,7 +928,7 @@ export function tradeSaved(name: string, trade: string): OutboundMessage {
 }
 
 export function regCancelled(): OutboundMessage {
-  return { kind: "text", text: "Registration cancelled. Type *register* when you're ready." };
+  return { kind: "text", text: "Registration cancelled. Type *register my business* when you're ready." };
 }
 
 /** The owner's menu, with their week at the top: free to show, unlike a Monday summary. */
@@ -786,6 +958,7 @@ export function bizMenu(
       (week
         ? `\nThis week: shown in ${week.shown} search${week.shown === 1 ? "" : "es"} · ${week.intros} customer${week.intros === 1 ? "" : "s"} connected`
         : "") +
+      "\n\nProducts, prices and photos: type *dashboard* for your sign-in link." +
       "\n\nWhat would you like to do?",
     button: "Options",
     sections: [{ title: "Your listing", rows }],
@@ -821,7 +994,7 @@ export function listingUpdated(name: string): OutboundMessage {
   return { kind: "text", text: `Done, *${name}* is updated. Type *menu* for your options.` };
 }
 
-/** Voice notes and photos on the business number. */
+/** Voice notes and photos on the business side. */
 export function bizTypeInstead(): OutboundMessage {
   return { kind: "text", text: "I can only read typed messages for now. Type *menu* for your options." };
 }
@@ -913,5 +1086,42 @@ export function bizErased(): OutboundMessage {
 }
 
 export function bizNoListing(): OutboundMessage {
-  return { kind: "text", text: "You don't have a listing yet. Type *register* to list your business." };
+  return { kind: "text", text: "You don't have a listing yet. Type *register my business* to list it free." };
+}
+
+// ---------- The business dashboard on the web ----------
+
+export function dashboardLink(url: string): OutboundMessage {
+  return {
+    kind: "text",
+    text:
+      `Here's your sign-in link for your business dashboard. It works once, for 15 minutes:\n${url}\n\n` +
+      "There you can add products and prices, upload photos, and see your customers and searches. Type *dashboard* any time for a new link.",
+  };
+}
+
+export function webRegDone(name: string, url: string): OutboundMessage {
+  return {
+    kind: "text",
+    text:
+      `Thank you! *${name}* is registered, and customers can find you now. A field agent may visit to verify you, and verified businesses show first.\n\n` +
+      `Add your products and prices on your dashboard:\n${url}\n\n` +
+      "The link works once, for 15 minutes. Type *dashboard* any time for a new one, or *my business* for your business menu.",
+  };
+}
+
+export function webRegAlready(name: string, url: string): OutboundMessage {
+  return {
+    kind: "text",
+    text: `*${name}* is already registered to this number. Here's your dashboard (the link works once, for 15 minutes):\n${url}`,
+  };
+}
+
+export function webRegProblem(problem: "unknown" | "expired" | "used", registerUrl: string): OutboundMessage {
+  const text = {
+    unknown: `We couldn't find that registration code. Check it and send it again, or register at ${registerUrl}`,
+    expired: `That registration code has expired. Please register again at ${registerUrl}. It takes two minutes.`,
+    used: "That code has already been used. Type *my business* for your business menu, or *dashboard* for a sign-in link.",
+  }[problem];
+  return { kind: "text", text };
 }

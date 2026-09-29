@@ -74,7 +74,7 @@ export interface S3StoreOptions {
   /** Without keys, the AWS SDK's usual credential chain is used. */
   accessKeyId?: string;
   secretAccessKey?: string;
-  /** Folder inside the bucket, e.g. "whatsapp-directory". */
+  /** Folder inside the bucket, e.g. "findzim". */
   prefix?: string;
   forcePathStyle?: boolean;
 }

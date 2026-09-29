@@ -14,11 +14,14 @@ import type { Area } from "../directory/gazetteer.js";
 import type { Taxonomy } from "../directory/taxonomy.js";
 import { eraseBusiness, eraseContact } from "../privacy.js";
 import { normalizeText, normalizeZimPhone } from "../text.js";
+import { createLoginLink, signInUrl } from "../web/owner-auth.js";
+import { completeWebRegistration, REGISTRATION_CODE } from "../web/registration.js";
 import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
 import { ERASE_WORDS, handleCustomerTurn, type CustomerState } from "./customer.js";
-import { setConsent } from "./store.js";
+import { DASHBOARD, isRegisterIntent, MY_BUSINESS } from "./router.js";
+import { otherSide, setConsent } from "./store.js";
 
 type Stage =
   | "reg_name"
@@ -70,13 +73,20 @@ export async function handleBusinessTurn(t: T): Promise<void> {
   if (contact.phone) await claimBusinessesByPhone(svc.db, contact.id, contact.phone);
 
   const c = inbound.content;
+  // Finishing a registration started on the website, or asking for a dashboard link, whatever else was going on.
+  if (c.type === "text" && REGISTRATION_CODE.test(c.text)) return finishWebRegistration(t, c.text);
+  if (c.type === "text" && DASHBOARD.has(normalizeText(c.text))) return sendDashboardLink(t);
   // Looking for supplies: the customer flow runs on this number, for the owner's business.
   if ((c.type === "button_reply" || c.type === "list_reply") && BUYER_ACTIONS.has(parseAction(c.id).action)) return asBuyer(t);
   if (state.buying) {
     const said = c.type === "text" ? normalizeText(c.text) : "";
-    if (LEAVE_BUYING.includes(said)) {
+    if (LEAVE_BUYING.includes(said) || MY_BUSINESS.has(said)) {
       stopBuying(t);
       return showMenu(t);
+    }
+    if (isRegisterIntent(said)) {
+      stopBuying(t);
+      return startRegistration(t);
     }
     if (c.type === "text" && !ERASE_WORDS.includes(said)) return asBuyer(t);
     if (c.type === "location") return asBuyer(t);
@@ -100,6 +110,13 @@ export async function handleBusinessTurn(t: T): Promise<void> {
     if (ERASE_WORDS.includes(cmd)) {
       const owned = await businessesOwnedBy(svc.db, contact.id);
       return t.reply(copy.bizEraseConfirm(owned.map((b) => b.name)));
+    }
+    // "I want to register a business" starts afresh, even halfway through something else.
+    if (isRegisterIntent(cmd)) return startRegistration(t);
+    if (MY_BUSINESS.has(cmd)) {
+      state.stage = undefined;
+      state.draft = undefined;
+      return showMenu(t);
     }
     if (state.stage) return continueStage(t, c.text);
     if (REGISTER_WORDS.includes(cmd)) return startRegistration(t);
@@ -449,17 +466,49 @@ async function askCurrent(t: T): Promise<void> {
   }
 }
 
+// ---------- The web dashboard ----------
+
+async function dashboardUrl(t: T): Promise<string> {
+  const token = await createLoginLink(t.svc.db, t.contact.id, t.svc.now());
+  return signInUrl(t.svc.config.publicBaseUrl, token);
+}
+
+/** A one-time sign-in link for the owner's web dashboard, sent in this chat (free: they just wrote to us). */
+async function sendDashboardLink(t: T): Promise<void> {
+  const owned = await businessesOwnedBy(t.svc.db, t.contact.id);
+  if (!owned.length) return t.reply(copy.bizNoListing());
+  return t.reply(copy.dashboardLink(await dashboardUrl(t)));
+}
+
+/** The owner sent the code shown after registering on the website: create the listing, owned by this number. */
+async function finishWebRegistration(t: T, text: string): Promise<void> {
+  const { svc, contact, state } = t;
+  const result = await completeWebRegistration({ db: svc.db, gazetteer: svc.gazetteer }, text, contact.id, svc.now());
+  if (!("businessId" in result)) return t.reply(copy.webRegProblem(result.status, `${svc.config.publicBaseUrl}/register`));
+  await setConsent(svc.db, contact.id);
+  state.stage = undefined;
+  state.draft = undefined;
+  state.selectedBusinessId = result.businessId;
+  if (result.status === "created") svc.log.info({ contactId: contact.id, name: result.name }, "Business registered on the website");
+  const url = await dashboardUrl(t);
+  return t.reply(result.status === "created" ? copy.webRegDone(result.name, url) : copy.webRegAlready(result.name, url));
+}
+
 // ---------- Deleting their data ----------
 
-/** The owner asked us to forget them: their chats and every listing they manage. */
+/** The owner asked us to forget them: their chats (as a customer too) and every listing they manage. */
 async function eraseEverything(t: T): Promise<void> {
   const { svc, contact } = t;
   const owned = await businessesOwnedBy(svc.db, contact.id);
   await t.reply(copy.bizErased());
   t.defer(async () => {
     for (const b of owned) await eraseBusiness(svc.db, svc.store, b.id);
+    // Their products leave the WhatsApp catalog at the next sync, straight away.
+    if (owned.length && svc.catalog) await svc.jobs.enqueueOnce("catalog_sync", "all", {}, svc.now());
     const result = await eraseContact(svc.db, contact.id);
-    svc.log.info({ ...result, listings: owned.length }, "Business owner deleted their data");
+    const asCustomer = await otherSide(svc.db, contact);
+    if (asCustomer) await eraseContact(svc.db, asCustomer.id);
+    svc.log.info({ ...result, listings: owned.length, alsoCustomer: Boolean(asCustomer) }, "Business owner deleted their data");
   });
 }
 

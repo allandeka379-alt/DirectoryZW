@@ -76,6 +76,8 @@ export function registerAdminRoutes(ops: FastifyInstance, app: App): void {
     if (!business) return reply.code(404).send({ error: "Business not found" });
     await eraseBusiness(app.db, app.store, business.id);
     await logAction(app.db, actorOf(req), "business.erase", business.id);
+    // Its products leave the WhatsApp catalog at the next sync, straight away.
+    if (app.services.catalog) await app.services.jobs.enqueueOnce("catalog_sync", "all", {}, app.services.now());
     return { ok: true };
   });
 

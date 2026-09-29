@@ -11,6 +11,7 @@ import type { Taxonomy } from "../directory/taxonomy.js";
 import type { JobQueue } from "../jobs/queue.js";
 import type { Logger } from "../logger.js";
 import type { FileStore } from "../storage.js";
+import type { CatalogClient } from "../whatsapp/catalog.js";
 import type { OutboundMessage } from "../whatsapp/outbound.js";
 import type { InboundMessage } from "../whatsapp/types.js";
 import type { Messenger } from "./messenger.js";
@@ -35,6 +36,8 @@ export interface Services {
   jobs: JobQueue;
   /** Field agents' photos of businesses. */
   store: FileStore;
+  /** Our WhatsApp product catalog, when there is one (the simulator keeps its own). */
+  catalog?: CatalogClient;
   /** Tells the team when something needs a person. */
   alerts: Alerts;
   log: Logger;

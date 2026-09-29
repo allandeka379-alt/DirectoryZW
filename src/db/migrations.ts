@@ -553,4 +553,147 @@ CREATE INDEX businesses_trade_idx ON businesses (trade) WHERE trade <> 'retail';
 ALTER TABLE requests ADD COLUMN buyer_business_id uuid REFERENCES businesses(id) ON DELETE SET NULL;
 `,
   },
+  {
+    id: "013_business_web_app",
+    sql: /* sql */ `
+-- Products and services owners manage on the dashboard, alongside the price-list items read before.
+ALTER TABLE offerings
+  ADD COLUMN description text NOT NULL DEFAULT '',
+  -- "each", "per kg", "per hour"
+  ADD COLUMN unit text,
+  -- the business's own code, used to match rows in bulk uploads
+  ADD COLUMN sku text,
+  -- the business's own grouping, e.g. "Paint"
+  ADD COLUMN category text,
+  ADD COLUMN in_stock boolean NOT NULL DEFAULT true,
+  ADD COLUMN source text NOT NULL DEFAULT 'price_list' CHECK (source IN ('price_list', 'dashboard', 'import')),
+  -- when the owner last set or confirmed the price; customers see it
+  ADD COLUMN price_updated_at timestamptz,
+  ADD COLUMN updated_at timestamptz NOT NULL DEFAULT now(),
+  -- removed by the owner; kept out of search, and deleted with the business
+  ADD COLUMN archived_at timestamptz;
+UPDATE offerings SET price_updated_at = created_at WHERE price_updated_at IS NULL;
+CREATE UNIQUE INDEX offerings_sku_idx ON offerings (business_id, lower(sku)) WHERE sku IS NOT NULL AND archived_at IS NULL;
+CREATE INDEX offerings_live_idx ON offerings (business_id) WHERE archived_at IS NULL;
+CREATE INDEX offerings_name_search_idx ON offerings USING gin (to_tsvector('simple', name));
+
+-- Every price change, for the dashboard's history.
+CREATE TABLE offering_price_changes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  offering_id uuid NOT NULL REFERENCES offerings(id) ON DELETE CASCADE,
+  business_id uuid NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  old_price numeric(12, 2),
+  new_price numeric(12, 2),
+  reason text NOT NULL DEFAULT 'edit' CHECK (reason IN ('edit', 'bulk', 'import')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX offering_price_changes_offering_idx ON offering_price_changes (offering_id, created_at);
+
+-- Product photos live with the business's other photos.
+ALTER TABLE business_photos DROP CONSTRAINT business_photos_kind_check;
+ALTER TABLE business_photos ADD CONSTRAINT business_photos_kind_check
+  CHECK (kind IN ('shopfront', 'inside', 'price_list', 'product'));
+
+-- Profile details owners edit on the dashboard.
+ALTER TABLE businesses
+  ADD COLUMN hours text NOT NULL DEFAULT '',
+  ADD COLUMN email text,
+  ADD COLUMN website text;
+
+-- Signing in to the dashboard: a one-time link sent on WhatsApp opens a session. Only hashes are stored.
+CREATE TABLE owner_login_links (
+  token_hash text PRIMARY KEY,
+  contact_id uuid NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE owner_sessions (
+  token_hash text PRIMARY KEY,
+  contact_id uuid NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX owner_sessions_contact_idx ON owner_sessions (contact_id);
+
+-- Registrations started on the website. The owner finishes by sending the code from their WhatsApp,
+-- which proves the number is theirs. Details are cleared once the business is created.
+CREATE TABLE web_registrations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text NOT NULL UNIQUE,
+  details jsonb NOT NULL,
+  business_id uuid REFERENCES businesses(id) ON DELETE SET NULL,
+  expires_at timestamptz NOT NULL,
+  completed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+`,
+  },
+  {
+    id: "014_product_engine",
+    sql: /* sql */ `
+-- Products are searched on their own, live: the name counts most, then the owner's category and
+-- code, then the description. Only products customers can buy are indexed.
+ALTER TABLE offerings ADD COLUMN search_tsv tsvector GENERATED ALWAYS AS (
+  setweight(to_tsvector('simple', name), 'A') ||
+  setweight(to_tsvector('simple', coalesce(category, '') || ' ' || coalesce(sku, '')), 'B') ||
+  setweight(to_tsvector('simple', left(description, 1000)), 'C')
+) STORED;
+CREATE INDEX offerings_search_idx ON offerings USING gin (search_tsv) WHERE archived_at IS NULL AND in_stock;
+DROP INDEX offerings_name_search_idx;
+
+-- A business's own search text no longer carries its product names (capped, and out of date between
+-- refreshes): product search reads the products themselves.
+DROP INDEX businesses_search_idx;
+ALTER TABLE businesses DROP COLUMN search_tsv;
+ALTER TABLE businesses DROP COLUMN offerings_text;
+ALTER TABLE businesses ADD COLUMN search_tsv tsvector GENERATED ALWAYS AS (
+  to_tsvector('simple', name || ' ' || description || ' ' || keywords)
+) STORED;
+CREATE INDEX businesses_search_idx ON businesses USING gin (search_tsv);
+
+-- How many businesses listed a matching product when the request was answered (null before products
+-- were searched): a request nobody had a product for can get an alert when one is added.
+ALTER TABLE requests ADD COLUMN product_matches integer;
+-- The product shown for each business in the results.
+ALTER TABLE request_results ADD COLUMN offering_id uuid REFERENCES offerings(id) ON DELETE SET NULL;
+
+-- "A store near you now has it": at most one alert per request, never to people who said stop.
+ALTER TABLE contacts ADD COLUMN alerts_off_at timestamptz;
+CREATE TABLE product_alerts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id uuid NOT NULL UNIQUE REFERENCES requests(id) ON DELETE CASCADE,
+  contact_id uuid NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  business_id uuid NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  offering_id uuid REFERENCES offerings(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX product_alerts_contact_idx ON product_alerts (contact_id, created_at);
+CREATE INDEX requests_recent_unmet_idx ON requests (created_at) WHERE product_matches = 0;
+
+-- The WhatsApp (Meta) catalog. A product is marked when it changes; the sync sends what changed.
+ALTER TABLE offerings ADD COLUMN catalog_dirty boolean NOT NULL DEFAULT true;
+CREATE INDEX offerings_catalog_dirty_idx ON offerings (business_id) WHERE catalog_dirty;
+-- What's in the catalog now, kept apart from products so a deleted product can still be taken out.
+CREATE TABLE catalog_items (
+  retailer_id text PRIMARY KEY,
+  offering_id uuid NOT NULL,
+  business_id uuid NOT NULL,
+  hash text NOT NULL,
+  synced_at timestamptz NOT NULL DEFAULT now(),
+  error text
+);
+CREATE INDEX catalog_items_offering_idx ON catalog_items (offering_id);
+CREATE INDEX catalog_items_business_idx ON catalog_items (business_id);
+-- Meta checks each batch after accepting it; problems come back later, by handle.
+CREATE TABLE catalog_batches (
+  handle text PRIMARY KEY,
+  items integer NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  errors jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  checked_at timestamptz
+);
+`,
+  },
 ];

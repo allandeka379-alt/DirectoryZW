@@ -22,6 +22,8 @@ export const Ids = {
   /** An answer to "Did you mean…?": a category, or none of them. */
   mean: (slug: string) => `mean:${slug}`,
   meanOther: "mean:",
+  /** "No more alerts" under a product alert. */
+  alertsOff: "alerts:off",
   // Business number
   register: "breg:start",
   categoriesOk: "breg:catok",

@@ -1,0 +1,854 @@
+/* The public website: landing page and registration. Builds on /assets/base.css. */
+
+.wrap {
+  width: min(1120px, 100% - 32px);
+  margin: 0 auto;
+}
+
+/* ---------- Header ---------- */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: saturate(1.6) blur(14px);
+  -webkit-backdrop-filter: saturate(1.6) blur(14px);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.nav-inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 64px;
+}
+.nav-links {
+  display: flex;
+  gap: 4px;
+  margin-left: 12px;
+}
+.nav-links a {
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 14px;
+  text-decoration: none;
+}
+.nav-links a:hover {
+  color: var(--text);
+  background: var(--bg-muted);
+}
+.nav-cta {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+@media (max-width: 760px) {
+  .nav-links {
+    display: none;
+  }
+}
+
+/* ---------- Hero ---------- */
+.hero {
+  --map-grid: rgb(255 255 255 / 0.045);
+  --map-road: rgb(255 255 255 / 0.12);
+  --map-minor: rgb(255 255 255 / 0.06);
+  --map-label: rgb(255 255 255 / 0.32);
+  --map-glow: color-mix(in srgb, var(--brand) 20%, transparent);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 88px 0 72px;
+}
+:root[data-theme="light"] .hero {
+  --map-grid: rgb(12 10 9 / 0.05);
+  --map-road: rgb(12 10 9 / 0.11);
+  --map-minor: rgb(12 10 9 / 0.06);
+  --map-label: rgb(12 10 9 / 0.38);
+  --map-glow: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+/* Keeps the headline readable over the map, and fades the map into the page below. */
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(0deg, var(--bg) 0%, transparent 18%),
+    linear-gradient(90deg, var(--bg) 0%, var(--bg) 28%, color-mix(in srgb, var(--bg) 55%, transparent) 50%, transparent 72%);
+}
+.hero-inner {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 56px;
+  align-items: center;
+}
+.hero h1 {
+  margin: 0 0 18px;
+  font-size: clamp(38px, 6vw, 62px);
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+  font-weight: 680;
+}
+.hero h1 .soft {
+  color: var(--text-3);
+}
+.lede {
+  max-width: 34em;
+  font-size: 18px;
+  color: var(--text-2);
+}
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+@media (max-width: 900px) {
+  .hero {
+    padding-top: 48px;
+  }
+  .hero::after {
+    background:
+      linear-gradient(0deg, var(--bg) 0%, transparent 14%),
+      linear-gradient(180deg, color-mix(in srgb, var(--bg) 80%, transparent) 0%, color-mix(in srgb, var(--bg) 65%, transparent) 40%, transparent 58%);
+  }
+  .hero-inner {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+}
+
+/* The map behind the chat: Harare at night, with customers asking across the city */
+.hero-visual {
+  position: relative;
+  justify-self: center;
+  width: min(380px, 100%);
+}
+.hero-map {
+  position: absolute;
+  z-index: -2;
+  top: 50%;
+  left: 50%;
+  width: 1120px;
+  max-width: none; /* wider than the phone column it's centred on */
+  height: 1120px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(closest-side, #000 62%, transparent);
+  mask-image: radial-gradient(closest-side, #000 62%, transparent);
+}
+.hero-map .map-grid {
+  fill: none;
+  stroke: var(--map-grid);
+  stroke-width: 1;
+}
+.hero-map .map-glow-a {
+  stop-color: var(--map-glow);
+}
+.hero-map .map-glow-b {
+  stop-color: transparent;
+}
+.hero-map .map-ring,
+.hero-map .map-minor,
+.hero-map .map-road,
+.hero-map .map-route {
+  fill: none;
+  stroke-linecap: round;
+}
+.hero-map .map-ring {
+  stroke: var(--map-minor);
+  stroke-width: 1.5;
+}
+.hero-map .map-minor {
+  stroke: var(--map-minor);
+  stroke-width: 1.5;
+}
+.hero-map .map-road {
+  stroke: var(--map-road);
+  stroke-width: 2.4;
+}
+.hero-map .map-route {
+  stroke: var(--brand);
+  stroke-width: 2;
+  stroke-dasharray: 3 7;
+  opacity: 0.8;
+  animation: map-route 1.6s linear infinite;
+}
+.hero-map .map-labels {
+  fill: var(--map-label);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-anchor: middle;
+}
+.hero-map .map-dot {
+  fill: var(--map-label);
+}
+.hero-map .map-pin {
+  fill: var(--brand);
+}
+.hero-map .map-halo {
+  opacity: 0.18;
+}
+.hero-map .map-ping {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: map-ping 2.8s ease-out infinite;
+}
+@keyframes map-ping {
+  from {
+    transform: scale(0.8);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+@keyframes map-route {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-map .map-route,
+  .hero-map .map-ping {
+    animation: none;
+  }
+  .hero-map .map-ping {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .hero-map {
+    width: 1000px;
+    height: 1000px;
+  }
+}
+
+/* The example chat */
+.phone {
+  position: relative;
+  padding: 14px;
+  border-radius: 34px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+.phone-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.phone-top img {
+  width: 36px;
+  height: 36px;
+}
+.phone-top div {
+  display: grid;
+  line-height: 1.25;
+  font-size: 14px;
+}
+.phone-top span {
+  font-size: 12px;
+  color: var(--good);
+}
+.chat {
+  display: grid;
+  gap: 10px;
+  padding: 16px 6px 8px;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.msg {
+  max-width: 88%;
+  padding: 10px 12px;
+  border-radius: 16px 16px 16px 4px;
+  background: var(--bg-muted);
+}
+.msg.me {
+  justify-self: end;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--brand);
+  color: var(--on-brand);
+}
+.msg ol {
+  margin: 8px 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.msg em {
+  display: block;
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.phone-note {
+  padding: 4px 8px 2px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+/* ---------- The intent band ---------- */
+.band {
+  border-block: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+.band-inner {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 40px;
+  padding: 40px 0;
+  align-items: center;
+}
+.band-lead {
+  font-size: 22px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+.band-points {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.band-points div {
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+}
+.band-points span {
+  color: var(--text-2);
+}
+@media (max-width: 900px) {
+  .band-inner,
+  .band-points {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Sections ---------- */
+.section {
+  padding: 88px 0;
+}
+.section-muted {
+  background: var(--bg-subtle);
+  border-block: 1px solid var(--border);
+}
+.section-head {
+  max-width: 640px;
+  margin-bottom: 40px;
+}
+.section-head h2,
+.faq h2,
+.final h2,
+.partner h2 {
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: -0.035em;
+  margin-bottom: 10px;
+}
+.section-head p {
+  font-size: 17px;
+}
+
+/* How it works */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.steps li {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.steps h3 {
+  font-size: 18px;
+}
+.step-no {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 6px;
+  border-radius: 10px;
+  background: var(--inverse);
+  color: var(--on-inverse);
+  font-weight: 650;
+  font-size: 14px;
+}
+@media (max-width: 900px) {
+  .steps {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The dashboard, as a bento grid */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.tile {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.tile h3 {
+  font-size: 17px;
+}
+.tile p {
+  font-size: 14.5px;
+}
+.tile-wide {
+  grid-column: span 2;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: end;
+}
+.tile-full {
+  grid-column: 1 / -1;
+}
+.tile-copy {
+  display: grid;
+  gap: 10px;
+}
+.tile-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand-text);
+}
+.tile-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.mini-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 120px;
+  padding: 10px 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.mini-chart span {
+  flex: 1;
+  height: var(--h);
+  border-radius: 4px 4px 0 0;
+  background: var(--chart);
+  opacity: 0.85;
+}
+.mini-chart span:last-child {
+  opacity: 1;
+}
+.tile-dark {
+  background: var(--inverse);
+  color: var(--on-inverse);
+  border-color: var(--inverse);
+}
+.tile-dark p {
+  color: color-mix(in srgb, var(--on-inverse) 70%, transparent);
+}
+.demand {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.demand li {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.demand i {
+  height: 8px;
+  width: var(--w);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--on-inverse) 70%, transparent);
+}
+.demand b {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fdb022;
+  color: #1c1917;
+}
+@media (max-width: 900px) {
+  .bento {
+    grid-template-columns: 1fr;
+  }
+  .tile-wide {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Founding partners */
+.partner {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 40px;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--brand-soft), var(--surface) 70%);
+}
+.partner div {
+  max-width: 640px;
+}
+.partner p {
+  font-size: 16px;
+}
+@media (max-width: 760px) {
+  .partner {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 28px;
+  }
+}
+
+/* Questions */
+.faq {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 40px;
+}
+.faq-list {
+  border-top: 1px solid var(--border);
+}
+.faq details {
+  border-bottom: 1px solid var(--border);
+}
+.faq summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 0;
+  font-weight: 560;
+  cursor: pointer;
+  list-style: none;
+}
+.faq summary::-webkit-details-marker {
+  display: none;
+}
+.faq summary::after {
+  content: "+";
+  color: var(--text-3);
+  font-size: 20px;
+  line-height: 1;
+}
+.faq details[open] summary::after {
+  content: "\2212";
+}
+.faq details p {
+  padding: 0 0 18px;
+  color: var(--text-2);
+}
+@media (max-width: 900px) {
+  .faq {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+.final {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.final .btn {
+  margin-top: 16px;
+}
+
+/* ---------- Footer ---------- */
+.footer {
+  border-top: 1px solid var(--border);
+  padding: 32px 0;
+}
+.footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 28px;
+}
+.footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-size: 14px;
+}
+.footer nav a {
+  color: var(--text-2);
+  text-decoration: none;
+}
+.footer nav a:hover {
+  color: var(--text);
+}
+.footer p {
+  margin-left: auto;
+  font-size: 13px;
+}
+
+/* ---------- Registration ---------- */
+.reg {
+  padding: 48px 0 80px;
+}
+.reg-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 32px;
+  align-items: start;
+}
+.reg-card {
+  padding: 32px;
+}
+.reg-card h1 {
+  font-size: 30px;
+  letter-spacing: -0.035em;
+  margin-bottom: 6px;
+}
+.stepper {
+  display: flex;
+  gap: 8px;
+  margin: 24px 0 28px;
+  padding: 0;
+  list-style: none;
+}
+.stepper li {
+  flex: 1;
+  display: grid;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.stepper li::before {
+  content: "";
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+.stepper li.done,
+.stepper li.current {
+  color: var(--text);
+}
+.stepper li.done::before,
+.stepper li.current::before {
+  background: var(--brand);
+}
+.form-grid {
+  display: grid;
+  gap: 18px;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+.form-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 28px;
+}
+.picker {
+  position: relative;
+}
+.picker-list {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.picker-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.picker-list li small {
+  color: var(--text-3);
+}
+.picker-list li[aria-selected="true"],
+.picker-list li:hover {
+  background: var(--bg-muted);
+}
+.chosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 0;
+}
+.chosen .chip {
+  cursor: default;
+  background: var(--brand-soft);
+  border-color: transparent;
+  color: var(--brand-text);
+}
+.chosen button {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 0 0 2px;
+  font-size: 16px;
+  line-height: 1;
+}
+.aside {
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+  position: sticky;
+  top: 88px;
+}
+.aside h2 {
+  font-size: 17px;
+}
+.aside ol {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: s;
+  font-size: 14px;
+}
+.aside li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  counter-increment: s;
+}
+.aside li::before {
+  content: counter(s);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--bg-muted);
+  font-weight: 650;
+  font-size: 13px;
+}
+.aside li strong {
+  display: block;
+}
+.done-panel {
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+.code {
+  font-family: var(--mono);
+  font-size: clamp(30px, 6vw, 44px);
+  letter-spacing: 0.04em;
+  padding: 14px 22px;
+  border-radius: 16px;
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-subtle);
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  .reg-grid {
+    grid-template-columns: 1fr;
+  }
+  .aside {
+    position: static;
+  }
+}
+
+/* ---------- A product's public page (/p/:id) ---------- */
+.product-wrap {
+  padding: 40px 0 80px;
+}
+.product-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  padding: 24px;
+  max-width: 920px;
+  margin: 0 auto;
+}
+.product-photo {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.product-info {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  justify-items: start;
+}
+.product-info h1 {
+  font-size: clamp(24px, 3.4vw, 34px);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+.product-price {
+  font-size: 30px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+.product-info .badge {
+  margin-left: 6px;
+}
+@media (max-width: 760px) {
+  .product-page {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+}

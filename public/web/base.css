@@ -1,0 +1,511 @@
+/* Shared design system for the website and the business web app.
+   System fonts (no downloads: data is expensive), neutral surfaces, one green accent.
+   Dark is the default look; light is there for anyone who switches to it (see theme.js). */
+
+:root {
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --bg: #0c0a09;
+  --bg-subtle: #121110;
+  --bg-muted: #1c1917;
+  --surface: #161413;
+  --surface-2: #1c1917;
+  --border: #292524;
+  --border-strong: #44403c;
+  --text: #fafaf9;
+  --text-2: #a8a29e;
+  --text-3: #78716c;
+  --brand: #3ecfa6;
+  --brand-strong: #6fdcbc;
+  --brand-soft: #0f2a23;
+  --brand-text: #6fdcbc;
+  --on-brand: #04130f;
+  --accent: #3ecfa6;
+  --on-dark: #fafaf9;
+  --inverse: #fafaf9;
+  --on-inverse: #0c0a09;
+  --good: #47cd89;
+  --good-soft: #0d2a1c;
+  --warn: #fdb022;
+  --warn-soft: #2e2208;
+  --bad: #f97066;
+  --bad-soft: #3a1512;
+  --focus: 0 0 0 3px color-mix(in srgb, var(--brand) 28%, transparent);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 24px 64px -24px rgb(0 0 0 / 0.8);
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --chart: #3ecfa6;
+  --chart-muted: #44403c;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-subtle: #fafaf9;
+  --bg-muted: #f5f5f4;
+  --surface: #ffffff;
+  --surface-2: #fafaf9;
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
+  --text: #0c0a09;
+  --text-2: #57534e;
+  --text-3: #a8a29e;
+  --brand: #0b5d4b;
+  --brand-strong: #084a3b;
+  --brand-soft: #e7f3ef;
+  --brand-text: #0b5d4b;
+  --on-brand: #ffffff;
+  --accent: #15907a;
+  --inverse: #0c0a09;
+  --on-inverse: #fafaf9;
+  --good: #067647;
+  --good-soft: #ecfdf3;
+  --warn: #b54708;
+  --warn-soft: #fffaeb;
+  --bad: #b42318;
+  --bad-soft: #fef3f2;
+  --shadow-sm: 0 1px 2px rgb(12 10 9 / 0.05);
+  --shadow: 0 1px 2px rgb(12 10 9 / 0.04), 0 8px 24px -12px rgb(12 10 9 / 0.14);
+  --shadow-lg: 0 24px 64px -24px rgb(12 10 9 / 0.28);
+  --chart: #15907a;
+  --chart-muted: #d6d3d1;
+  color-scheme: light;
+}
+
+/* Parts that only show in one theme, like the theme switch's sun and moon. */
+:root[data-theme="light"] .show-dark,
+:root:not([data-theme="light"]) .show-light {
+  display: none !important;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+/* Hidden means hidden, even for elements a class lays out as grid or flex. */
+[hidden] {
+  display: none !important;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+a {
+  color: inherit;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+h1,
+h2,
+h3 {
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  font-weight: 650;
+}
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.muted {
+  color: var(--text-2);
+}
+.faint {
+  color: var(--text-3);
+}
+.mono {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  --h: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: var(--h);
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--inverse);
+  color: var(--on-inverse);
+  font-weight: 560;
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.05s, opacity 0.15s;
+}
+.btn:hover {
+  opacity: 0.88;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn[disabled],
+.btn.is-busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.btn-secondary:hover {
+  opacity: 1;
+  background: var(--bg-muted);
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text);
+}
+.btn-ghost:hover {
+  opacity: 1;
+  background: var(--bg-muted);
+}
+.btn-brand {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+.btn-danger {
+  background: transparent;
+  color: var(--bad);
+  border-color: var(--border);
+}
+.btn-danger:hover {
+  opacity: 1;
+  background: var(--bad-soft);
+}
+.btn-sm {
+  --h: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.btn-lg {
+  --h: 48px;
+  padding: 0 22px;
+  font-size: 15px;
+}
+.btn-icon {
+  width: var(--h);
+  padding: 0;
+}
+.btn svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/* ---------- Forms ---------- */
+.field {
+  display: grid;
+  gap: 6px;
+  /* Side by side with a taller field, keep the label and input at the top rather than stretched. */
+  align-content: start;
+}
+.field > label,
+.label {
+  font-size: 13px;
+  font-weight: 560;
+}
+.hint {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.input,
+.select,
+.textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+.select {
+  appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+.input:hover,
+.select:hover,
+.textarea:hover {
+  border-color: var(--border-strong);
+}
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: var(--focus);
+}
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-3);
+}
+.input-group {
+  display: flex;
+  align-items: stretch;
+}
+.input-group > .addon {
+  display: grid;
+  place-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-right: 0;
+  border-radius: 10px 0 0 10px;
+  background: var(--bg-muted);
+  color: var(--text-2);
+  font-size: 14px;
+}
+.input-group > .input {
+  border-radius: 0 10px 10px 0;
+}
+.check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  cursor: pointer;
+}
+.check input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--brand);
+  flex: none;
+}
+.error-text {
+  color: var(--bad);
+  font-size: 13px;
+}
+
+/* A switch: <label class="switch"><input type="checkbox"><span></span></label> */
+.switch {
+  position: relative;
+  display: inline-flex;
+  width: 38px;
+  height: 22px;
+  flex: none;
+  cursor: pointer;
+}
+.switch input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.switch span {
+  width: 100%;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 0.15s;
+}
+.switch span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 0.15s;
+}
+.switch input:checked + span {
+  background: var(--brand);
+}
+.switch input:checked + span::after {
+  transform: translateX(16px);
+}
+.switch input:focus-visible + span {
+  box-shadow: var(--focus);
+}
+
+/* A segmented control: <div class="segmented"><button aria-pressed="true">…</button>…</div> */
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+}
+.segmented button {
+  border: 0;
+  background: transparent;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 540;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.segmented button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---------- Surfaces ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 560;
+  background: var(--bg-muted);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.8;
+}
+.badge.plain::before {
+  display: none;
+}
+.badge.good {
+  background: var(--good-soft);
+  color: var(--good);
+  border-color: transparent;
+}
+.badge.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+  border-color: transparent;
+}
+.badge.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+  border-color: transparent;
+}
+.badge.brand {
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  border-color: transparent;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chip[aria-pressed="true"] {
+  background: var(--inverse);
+  color: var(--on-inverse);
+  border-color: var(--inverse);
+}
+.chip .count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+.kbd {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+/* ---------- Brand mark ---------- */
+.brandmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+  color: var(--text);
+  font-size: 16px;
+}
+.brandmark img {
+  width: 28px;
+  height: 28px;
+}
+
+/* ---------- Motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

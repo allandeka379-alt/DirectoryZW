@@ -89,7 +89,7 @@ Follows the plan and the feasibility study: a free WhatsApp directory for everyt
   - `npm run eval -- --claude --model …` compares models.
   - The keyword baseline gets 79% of categories right (60% for Shona, 50% for Ndebele), which is why Claude is the primary interpreter.
 - [x] Tests (110)
-- [ ] Meta business verification, two numbers, display names, approved templates
+- [ ] Meta business verification, one number (see Milestone 13), display name, approved templates
 - [ ] Hosting set up (Postgres with a tested restore, private bucket, HTTPS domain, alert webhook)
 - [ ] POTRAZ data-controller licence and data protection officer; privacy notice and business terms published; confirm the lawful basis for keeping public details of businesses found online, and for sending voice notes abroad for transcription
 - [ ] About 300 real requests labelled; compare Claude models and pick the cheapest that scores as well
@@ -269,9 +269,93 @@ The executive review of 26 September 2026 found four soft-launch measures that n
 - [x] **Launch measures** on the Overview, for the last 30 days, each with its target:
   - follow-up answers that say "Yes, sorted", counting final answers only, as track records do (aim: 60% or more)
   - customers who came back on another day (aim: 25% or more)
-  - owners who used the business number (aim: half or more)
+  - owners who wrote to us (aim: half or more)
   - connections per verified business, and how many verified businesses got at least one
 - [x] Tests (174)
+
+## Milestone 13: one WhatsApp number
+
+The owner's decision, 27 September 2026: one number for everyone. Businesses register on it by typing "I want to register a business".
+
+- [x] **The router** (`src/conversation/router.ts`) picks the side for each message on the number:
+  - A tap goes back to the side that sent the button: by WhatsApp's reply context, else by the button's ID.
+  - "I want to register a business", "register my shop", "list my business" or "sign up" starts a registration. "Register a company" stays a search, because people look for agents who register companies.
+  - "my business" opens the business menu, and claims a listing a field agent registered for that number.
+  - While the business side is in the middle of a registration, an edit or a supplier search, and was the last to reply within the hour, it keeps typed messages, its own commands, and "menu", "cancel" or "back".
+  - An owner's "delete my data" goes to the business side, which deletes both sides and their listings.
+  - Everything else is a customer's search.
+- [x] **One reply window.** A message to either side opens WhatsApp's free 24-hour window for both, so a lead notice to an owner who searched recently is free.
+- [x] **Wording.** The welcome and help messages tell businesses to type *register my business*. Texts owners keep, like "You're listed!", say *my business*.
+- [x] **Settings.** `WHATSAPP_PHONE_NUMBER_ID` and `WHATSAPP_NUMBER` replace the four two-number settings. The webhook takes messages to our number only.
+- [x] **Simulator.** Two people side by side, a customer and a business owner, both chatting with the one number.
+- [x] **Ops console.** Handoff replies go out on our number. Chats and contacts are marked "customer" or "business", and the launch measure counts owners who wrote to us on either side.
+- [x] Tests (183)
+- [ ] Native speakers: Shona and Ndebele ways of saying "register my business", for the router once reviewed
+
+## Milestone 14: the website, the business dashboard and the admin portal
+
+Requested on 29 September 2026: a website where businesses register, a web app where they manage products and prices and see their numbers, and an admin portal where the team manages everything. Minimal and modern, dark by default.
+
+- [x] **The website** (`public/site`):
+  - A landing page whose hero is a night map of Harare, with customers asking across the city. It says nothing about prices or plans.
+  - A three-step registration form. It gives a code, and the owner sends it from WhatsApp: that creates the listing and links it to their phone (`src/web/registration.ts`). A code works for 48 hours, and the form's details are cleared once the listing exists.
+- [x] **Signing in to the dashboard without a password** (`src/web/owner-auth.ts`):
+  - The owner types *dashboard* on WhatsApp, or asks from the sign-in page while their free reply window is open.
+  - They get a one-time link that works for 15 minutes. The page trades it for a 30-day session cookie with a POST, so link previews can't use it up.
+- [x] **The business dashboard** (`public/app`):
+  - **Overview:** the searches the business came up in, the customers sent to it, its connection rate, a day-by-day chart, what customers asked for, and how complete the catalogue is.
+  - **Products:** add or edit one at a time, with a photo shrunk in the browser. Change a price right in the table, mark products in or out of stock, confirm prices are still right, and take products down. Search, filter and sort.
+  - **Upload a list** from a CSV file or cells pasted from Excel or Google Sheets:
+    - Columns are matched by their headings, and nothing changes until the list has been checked.
+    - Up to 25,000 products, sent in batches.
+    - Products already listed are updated (by code, else by name); columns left out keep their values.
+  - **Change prices** by a percentage or an amount, or set a new price:
+    - For chosen products, one category, or everything.
+    - Rounded to the cent, 5c, 10c, 50c or dollar, and previewed first.
+    - Every price change is kept in the product's history.
+  - **Customers** by reference code, **Insights** (what people in the business's categories and city ask for, what nobody could supply, and at what time of day), and the **business profile** with shopfront photos.
+- [x] Product names feed WhatsApp search. Results show a product's price with when it was last updated; products out of stock or taken down drop out.
+- [x] **The admin portal** (`public/admin`, at `/admin`):
+  - The team signs in with their own email and password; businesses never use this sign-in.
+  - One sidebar for everything: live chats, reports and people; all businesses, verification, website sign-ups, call-backs, re-checks and customer tips; requests and supply gaps; vocabulary, the word list, and checking and labelling answers; field agents, team accounts and the activity log; health and costs.
+  - A business's page shows its owner, their dashboard use, the catalogue and the photos. The team can take a product down (with a reason, kept in the activity log), delete a photo, or sign the owner out of the dashboard everywhere.
+  - `/ops` now leads here; the first console stays at `/ops/classic`.
+- [x] **Dark by default**, with a light mode anyone can switch to (`public/web/theme.js`). The dashboard and the admin portal share one set of building blocks (`public/web/ui.js`).
+- [x] Tests (222)
+- [ ] Publish the business terms and privacy notice, and set `BUSINESS_TERMS_URL` and `PRIVACY_URL`: the website and the registration form link to them
+- [ ] A photo for the hero, if real shops would sell it better than the map (keep it small: data is expensive)
+
+## Milestone 15: the product engine
+
+Requested on 29 September 2026: make the engine work well, getting products from the dashboard to WhatsApp in real time, with WhatsApp's own product cards.
+
+- [x] **Products are searched on their own, live** (`src/directory/products.ts`):
+  - Each product has its own search index: its name counts most, then the owner's category and code, then the description. A store's whole catalogue is searched, however big.
+  - Nothing waits for a refresh. A product added, a price changed or "out of stock" on the dashboard is in the very next reply.
+  - For goods, any store that lists the item is found, whatever its categories. For a service, only that trade's own listings count: "fridge repair" never shows fridges for sale.
+  - Stores that list the item come first, verified before unverified, then stores in the trade that haven't listed it. Wholesale-only stores are for businesses buying stock.
+- [x] **Matching that reads product names the way people write them:**
+  - Sizes and units are read one way ('55"', "55in" and "55 inch"; "300L" and "300 litres"). It also allows for plurals, other names for an item (fridge, refrigerator, firiji), Shona and Ndebele words through their English meaning, and typos.
+  - Two-word items count as one ("washing machine" isn't a sewing machine), in the database's first cut too.
+  - The item asked for must be in the product's name or the owner's category for it. The description will do when the name is only a model, like "Capri CF300".
+  - A different size isn't a match, and nor is an accessory ("TV stand", "Bracket for 55 inch TV"). A word before the item only describes it ("Stand fan"), and what comes with it is still the item ("TV with free bracket").
+- [x] **Replies say what stores list.** "I found *samsung 55 inch tv* at three stores near Avondale, from *$520*", each store's row with its price, and a store's card with up to three matching products and when each price was updated. "Other options" and a store's card read the prices again, so they're never out of date.
+- [x] **Alerts** (`src/conversation/alerts.ts`). When nobody listed what someone asked for, and a store near them lists it within a day, they get one message, inside their free window only:
+  - Goods only, within 60 km and within their budget. At most one per request, and two a day per person.
+  - Never after *stop* or *alerts off* (or the "No more alerts" button); *alerts on* brings them back.
+  - Sent a moment after the owner saves, from the job queue.
+- [x] **WhatsApp's own product cards** (`src/whatsapp/catalog.ts`):
+  - Products with a photo and a price go into our Meta catalog. A change on the dashboard goes within a minute, and only what changed is sent. Out of stock, taken down or a paused store comes out, and so do an erased business's products.
+  - If Meta refuses a batch, its products go again at the next sync. A daily check sends anything missed.
+  - After the results list, the stores' products follow as cards, with photos and prices ("View items").
+  - Writing to us from a card ("Ask about this"), sending a cart, or typing a product's code (P-xxxxxxxx) brings that store's card, ready to connect. We don't take orders: the store sells directly.
+  - Each product has a public page (`/p/:id`) and photo (`/media/products/:photoId`), which Meta's catalog needs. The page has an "Ask about it on WhatsApp" link.
+- [x] **Admin portal:** "Products on WhatsApp" on Health and costs shows what's in the catalog, what's waiting, what Meta refused and the alerts sent. It has a "Send everything again" button.
+- [x] **Simulator:** product cards, with "Ask about this".
+- [x] **Settings:** `WHATSAPP_CATALOG_ID`, `PRODUCT_CARDS`, `PRODUCT_ALERTS` and `PRODUCT_ALERT_HOURS`.
+- [x] Tests (257)
+- [ ] Connect the catalog in Meta's Commerce Manager and set `WHATSAPP_CATALOG_ID` (see [LAUNCH.md](LAUNCH.md)). The catalog calls, cards and carts can only be tried against Meta once the number is approved.
+- [ ] Native speakers: more Shona and Ndebele names for items, for the list of other names in `src/directory/products.ts`
 
 ## Later: monetization (only after traction)
 
@@ -284,6 +368,8 @@ The executive review of 26 September 2026 found four soft-launch measures that n
 - Area coordinates are approximate centroids; refine them from field GPS pins.
 - Results say a verified store "has" what the customer asked for because our team checked what it sells (its categories), not its stock of that model. The customer's message to the store names the item, so the store answers about stock.
 - The related-categories list is a first draft: review it with the field team, especially across groups (solar to electricians, catering to restaurants).
+- The product matcher's word lists (other names for an item, accessories, two-word items) are a first draft. Extend them from the requests the team labels.
+- Product cards, carts and the catalog's batch calls follow Meta's documentation but haven't run against Meta yet, because the number isn't approved. Try them on a test number first.
 - The field name for WhatsApp's business-scoped user IDs is unconfirmed; the parser accepts `from` and `from_user_id`.
 - Simulator messages live in memory and reset when the server restarts; the database persists.
 - Run a single instance: messages from each person are kept in order in memory, and the login lockout and alert throttling are in memory too.

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedReferenceData } from "../src/db/seed.js";
-import { searchBusinesses } from "../src/directory/search.js";
+import { productQuery, searchProducts } from "../src/directory/products.js";
 import { createServer, registerRoutes } from "../src/http/server.js";
 import type { InboundContent } from "../src/whatsapp/types.js";
 import { testApp, textOf, type TestApp } from "./helpers.js";
@@ -72,8 +72,8 @@ describe("typed messages only", () => {
 });
 
 describe("price lists", () => {
-  it("finds businesses by their price-list items and shows matching prices", async () => {
-    // Items read from price-list photos (before photos were switched off) stay searchable.
+  it("finds stores by the items on their price lists and shows the matching prices", async () => {
+    // Items read from price-list photos (before photos were switched off) are products like any other.
     const [siyaso] = await app.db.query<{ id: string }>("SELECT id FROM businesses WHERE name = 'Siyaso Hardware (sample)'");
     const items: [string, number | null, string][] = [
       ["PPC Cement 50kg", 11.5, "$11.50"],
@@ -83,19 +83,20 @@ describe("price lists", () => {
     for (const [name, usd, text] of items) {
       await app.db.query("INSERT INTO offerings (business_id, name, price_usd, price_text) VALUES ($1, $2, $3, $4)", [siyaso!.id, name, usd, text]);
     }
-    await app.db.query("UPDATE businesses SET offerings_text = $2 WHERE id = $1", [siyaso!.id, items.map(([name]) => name).join(" ")]);
 
     // "wheelbarrow" is only on Siyaso's price list, not in its description or keywords.
-    const hits = await searchBusinesses(app.db, app.services.taxonomy, { categorySlug: null, text: "wheelbarrow", limit: 8, minVerified: 3 });
+    const hits = await searchProducts(app.db, { query: productQuery("wheelbarrow", app.services.lexicon) });
     expect(hits.map((h) => h.name)).toContain("Siyaso Hardware (sample)");
+    expect(hits.find((h) => h.name === "Siyaso Hardware (sample)")?.best.priceText).toBe("ZiG 900");
 
     const c = as(newCustomer());
     await c.consented();
     await c.say("I need cement in Mbare");
+    expect(textOf(c.last())).toContain("*$11.50*");
     await c.tap("Siyaso");
     const card = textOf(c.last());
-    expect(card).toContain("From their price list");
-    expect(card).toContain("PPC Cement 50kg: $11.50");
+    expect(card).toContain("Listed by them now");
+    expect(card).toContain("• PPC Cement 50kg: *$11.50*");
     expect(card).not.toContain("Wheelbarrow");
     expect(card).toContain("confirm with them");
   });

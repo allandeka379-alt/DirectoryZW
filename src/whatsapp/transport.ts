@@ -32,7 +32,8 @@ export function isAuthError(err: unknown): boolean {
 export interface CloudApiOptions {
   graphVersion: string;
   accessToken: string;
-  phoneNumberIds: Record<Channel, string>;
+  /** Our one WhatsApp number: both sides of the conversation send from it. */
+  phoneNumberId: string;
   log: Logger;
   fetchFn?: typeof fetch;
 }
@@ -45,8 +46,8 @@ export class CloudApiTransport implements Transport {
     this.fetchFn = opts.fetchFn ?? fetch;
   }
 
-  async send(channel: Channel, to: string, message: OutboundMessage): Promise<string> {
-    const url = `https://graph.facebook.com/${this.opts.graphVersion}/${this.opts.phoneNumberIds[channel]}/messages`;
+  async send(_channel: Channel, to: string, message: OutboundMessage): Promise<string> {
+    const url = `https://graph.facebook.com/${this.opts.graphVersion}/${this.opts.phoneNumberId}/messages`;
     const res = await this.fetchFn(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${this.opts.accessToken}`, "Content-Type": "application/json" },
@@ -95,6 +96,11 @@ export class SimulatorTransport implements Transport {
 
   since(channel: Channel, to: string, afterSeq = 0): SimulatedMessage[] {
     return this.outbox.filter((m) => m.channel === channel && m.to === to && m.seq > afterSeq);
+  }
+
+  /** Everything sent to one person from our number, from either side of the conversation. */
+  sinceAny(to: string, afterSeq = 0): SimulatedMessage[] {
+    return this.outbox.filter((m) => m.to === to && m.seq > afterSeq);
   }
 
   clear(): void {

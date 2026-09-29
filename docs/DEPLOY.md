@@ -6,10 +6,10 @@ The app is one Node.js process with a web server, a background job loop and the 
 
 | Piece | Why | Examples |
 | --- | --- | --- |
-| A host that runs Node 22+ or Docker, with HTTPS | The app, the webhook Meta calls, the ops console and field app (GPS and offline mode need HTTPS) | Render, Railway, Fly.io, a VPS behind Caddy |
+| A host that runs Node 22+ or Docker, with HTTPS | The app, the webhook Meta calls, the website, the business dashboard, the admin portal and the field app (GPS and offline mode need HTTPS) | Render, Railway, Fly.io, a VPS behind Caddy |
 | Managed PostgreSQL 15+ with daily backups and point-in-time recovery | Everything except photos | Neon, Supabase, AWS RDS, DigitalOcean |
-| S3-compatible bucket, private | Field agents' photos of businesses | Cloudflare R2, AWS S3, Backblaze B2 |
-| Meta WhatsApp Business account with two numbers | Customer number and business number | See [LAUNCH.md](LAUNCH.md) |
+| S3-compatible bucket, private | Field agents' photos of businesses, and the photos owners add on the dashboard | Cloudflare R2, AWS S3, Backblaze B2 |
+| Meta WhatsApp Business account with one number | Customers and businesses both message it | See [LAUNCH.md](LAUNCH.md) |
 | Anthropic API key (optional) | Wording the local engine can't read (within `CLAUDE_DAILY_BUDGET_USD`) | console.anthropic.com |
 | Chat webhook (optional) | Alerts | Slack, Discord or Google Chat incoming webhook |
 
@@ -28,11 +28,10 @@ WHATSAPP_TRANSPORT=cloud
 WHATSAPP_ACCESS_TOKEN=…            # permanent system-user token
 WHATSAPP_APP_SECRET=…
 WHATSAPP_VERIFY_TOKEN=…
-WHATSAPP_CUSTOMER_PHONE_NUMBER_ID=…
-WHATSAPP_BUSINESS_PHONE_NUMBER_ID=…
-WHATSAPP_CUSTOMER_NUMBER=263…
-WHATSAPP_BUSINESS_NUMBER=263…
+WHATSAPP_PHONE_NUMBER_ID=…         # our one number
+WHATSAPP_NUMBER=263…
 WHATSAPP_BUSINESS_ACCOUNT_ID=…     # for npm run templates
+WHATSAPP_CATALOG_ID=…              # optional: our Meta catalog, for product cards
 ANTHROPIC_API_KEY=…
 STORAGE=s3
 S3_BUCKET=… S3_ENDPOINT=… S3_ACCESS_KEY_ID=… S3_SECRET_ACCESS_KEY=…
@@ -47,11 +46,11 @@ The app refuses to start in production without `OPS_TOKEN`, `DATABASE_URL` and t
 With Docker:
 
 ```bash
-docker build -t whatsapp-directory .
+docker build -t findzim .
 ```
 
 ```bash
-docker run --env-file .env -p 3000:3000 whatsapp-directory
+docker run --env-file .env -p 3000:3000 findzim
 ```
 
 Without Docker: `npm ci`, `npm run build`, then `npm start`. The database schema is created and upgraded automatically at start-up.
@@ -66,7 +65,7 @@ Create the first admin account from the server:
 node dist/ops/user-cli.js add --email you@example.com --name "Your Name" --role admin
 ```
 
-It prints a password once. Sign in at `https://your-domain/ops`, then add the rest of the team under **Team**. You can also sign in with the ops token under "Use the ops token instead". Everything done that way is recorded as "ops token", so keep it for scripts.
+It prints a password once. Sign in at `https://your-domain/admin`, then add the rest of the team under **Team accounts**. You can also sign in with the ops token under "Use the ops token instead". Everything done that way is recorded as "ops token", so keep it for scripts.
 
 ## Backups and restores
 
@@ -88,7 +87,7 @@ It prints a password once. Sign in at `https://your-domain/ops`, then add the re
   - replies that still fail after retries
   - background jobs and incoming messages that keep failing
   - businesses paused by customer reports
-- The **System** screen in the ops console shows:
+- The **Health and costs** screen in the admin portal shows:
   - messages waiting to be handled
   - replies being retried or failed
   - due and failed jobs

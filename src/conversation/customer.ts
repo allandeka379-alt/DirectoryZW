@@ -5,24 +5,27 @@ import { one } from "../db/client.js";
 import { adjustResponseScore, businessesOwnedBy, getBusiness, recordRating, type Business } from "../directory/businesses.js";
 import { haversineKm } from "../directory/gazetteer.js";
 import { createIntroduction, getIntroduction, waMeLink } from "../directory/introductions.js";
-import { matchingOfferings, priceLabel } from "../directory/offerings.js";
+import { priceOf, productQuery, productsOf, searchProducts, wordsToMatch, type ProductHit, type ProductMatch, type ProductQuery } from "../directory/products.js";
 import { createRecommendation } from "../directory/recommendations.js";
 import { fileReport, reportsSince } from "../directory/reports.js";
-import { searchBusinesses, searchRelated } from "../directory/search.js";
+import { searchBusinesses, searchRelated, type BusinessHit } from "../directory/search.js";
+import { mergeSuppliers, type Supplier } from "../directory/suppliers.js";
 import { trackRecord } from "../directory/trust.js";
 import type { Category } from "../directory/taxonomy.js";
 import { eraseContact } from "../privacy.js";
 import { containsPhrase, normalizeText, normalizeZimPhone } from "../text.js";
 import { whenTeamReplies } from "../time.js";
 import type { OutboundMessage } from "../whatsapp/outbound.js";
+import { setAlerts } from "./alerts.js";
 import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
-import type { BusinessView, Need, PriceView } from "./copy.js";
+import type { BusinessView, ListedProduct, Need, PriceView } from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
 import {
   createRequest,
   flagRequest,
   getRequest,
+  otherSide,
   recordAnswer,
   recordQuestion,
   saveResults,
@@ -68,7 +71,7 @@ export interface CustomerState {
   /** We already asked them to say it differently; next time a person takes over. */
   unclear?: boolean;
   /**
-   * A business owner looking for supplies, on the business number (see business.ts): searches
+   * A business owner looking for supplies, on the business side (see business.ts): searches
    * find businesses that sell wholesale, and suppliers are told which business is asking.
    */
   buying?: { businessId: string; name: string };
@@ -94,6 +97,10 @@ const FRUSTRATED = [
   "hauna kunzwisisa", "haunzwisise", "hazvina basa", "hazvisi izvo",
   "awuzwisisi", "akuzwisisi", "akusizo", "akulancedo",
 ];
+
+const ALERTS_OFF = ["alerts off", "stop alerts", "no alerts", "no more alerts", "turn off alerts"];
+/** A product's code as its page on our website shows it. */
+export const PRODUCT_CODE = /\bP-([0-9a-f]{8})\b/i;
 
 export const ERASE_WORDS = [
   "delete my data",
@@ -128,8 +135,18 @@ export async function handleCustomerTurn(t: T): Promise<void> {
 
   if (!contact.consent_at) return consentGate(t);
 
+  // Written from one of our product cards: the store that lists it.
+  if (inbound.referredProduct) {
+    resetSearch(state);
+    return askedAboutProduct(t, inbound.referredProduct.retailerId);
+  }
+
   const c = inbound.content;
   switch (c.type) {
+    case "order":
+      // A cart from our product cards: stores sell directly, so the store is what they need.
+      resetSearch(state);
+      return askedAboutProduct(t, c.items[0]?.retailerId ?? "", copy.ordersGoToStores());
     case "text":
       return onText(t, c.text);
     case "button_reply":
@@ -170,7 +187,23 @@ async function onText(t: T, text: string): Promise<void> {
 
   if (isCommand(raw, ["stop", "unsubscribe"])) {
     resetSearch(state);
+    // "I won't message you unless you write to me again": no alerts either.
+    await setAlerts(svc.db, contact.id, false, svc.now());
     return t.reply(copy.stopped());
+  }
+  if (isCommand(raw, ALERTS_OFF)) {
+    await setAlerts(svc.db, contact.id, false, svc.now());
+    return t.reply(copy.alertsOff());
+  }
+  if (isCommand(raw, ["alerts on", "alerts", "turn on alerts"])) {
+    await setAlerts(svc.db, contact.id, true, svc.now());
+    return t.reply(copy.alertsOn());
+  }
+  // A product's code, from its page on our website ("P-3f2a9c1e").
+  const code = PRODUCT_CODE.exec(raw);
+  if (code) {
+    resetSearch(state);
+    return askedAboutProduct(t, code[1]!.toLowerCase());
   }
   if (isCommand(raw, ["menu", "start", "restart", "new search"])) {
     resetSearch(state);
@@ -415,10 +448,11 @@ async function onLocation(t: T, lat: number, lng: number): Promise<void> {
 }
 
 /**
- * Suppliers for a request: those in its own category first. If none are nearby, suppliers in
- * related categories (a gadget nobody lists goes to our electronics shops). If there are none of
- * those either, a person from the team takes over straight away. Related-only and handed-over
- * requests are supply gaps for the field team.
+ * Suppliers for a request: businesses that list a matching product, and those in its category,
+ * read live (a price changed on the dashboard a moment ago is the price in this reply). If none are
+ * nearby, suppliers in related categories (a gadget nobody lists goes to our electronics shops). If
+ * there are none of those either, a person from the team takes over straight away. Related-only and
+ * handed-over requests are supply gaps for the team.
  */
 async function runSearch(
   t: T,
@@ -457,40 +491,36 @@ async function runSearch(
     excludeIds: buyer ? (await businessesOwnedBy(svc.db, contact.id)).map((b) => b.id) : [],
   };
 
-  const hits = await searchBusinesses(svc.db, svc.taxonomy, {
-    ...search,
-    categorySlug: category?.slug ?? null,
-    text: interpretation.query || raw,
-  });
-  if (hits.length) {
-    await saveResults(svc.db, request.id, hits.map((h) => h.id));
-    await setRequestStatus(svc.db, request.id, "answered", hits.length, "exact");
-    return t.reply(copy.results(request.id, hits, what, place?.label));
+  const products = productQueryFor(t, interpretation, raw);
+  const text = interpretation.query || raw;
+  const found = await findSuppliers(t, { ...search, category, text, products });
+  const budget = interpretation.budget_usd;
+  if (found.suppliers.length) {
+    await saveResults(svc.db, request.id, found.suppliers.map((s) => ({ businessId: s.id, offeringId: s.product?.id })));
+    await setRequestStatus(svc.db, request.id, "answered", found.suppliers.length, "exact", found.productMatches);
+    await t.reply(resultsMessage(t, request.id, found.suppliers, what, place?.label, category, { budget }));
+    return sendProductCards(t, found.suppliers, what, products);
   }
 
   // No wholesaler has it: a business gets the retail stores in that line of business instead.
   if (buyer) {
-    const retail = await searchBusinesses(svc.db, svc.taxonomy, {
-      ...search,
-      trade: "retail",
-      categorySlug: category?.slug ?? null,
-      text: interpretation.query || raw,
-    });
-    if (retail.length) {
-      await saveResults(svc.db, request.id, retail.map((h) => h.id));
-      await setRequestStatus(svc.db, request.id, "answered", retail.length, "retail");
-      return t.reply(copy.results(request.id, retail, what, place?.label, { retailInstead: true }));
+    const retail = await findSuppliers(t, { ...search, trade: "retail", category, text, products });
+    if (retail.suppliers.length) {
+      await saveResults(svc.db, request.id, retail.suppliers.map((s) => ({ businessId: s.id, offeringId: s.product?.id })));
+      await setRequestStatus(svc.db, request.id, "answered", retail.suppliers.length, "retail", retail.productMatches);
+      await t.reply(resultsMessage(t, request.id, retail.suppliers, what, place?.label, category, { budget, retailInstead: true }));
+      return sendProductCards(t, retail.suppliers, what, products);
     }
   }
 
   const related = category ? await searchRelated(svc.db, svc.taxonomy, { ...search, categorySlug: category.slug }) : [];
   if (category && related.length) {
-    await saveResults(svc.db, request.id, related.map((h) => h.id));
-    await setRequestStatus(svc.db, request.id, "answered", related.length, "related");
+    await saveResults(svc.db, request.id, related.map((h) => ({ businessId: h.id })));
+    await setRequestStatus(svc.db, request.id, "answered", related.length, "related", 0);
     return t.reply(copy.relatedResults(request.id, related, what, relatedLabel(t, category), place?.label));
   }
 
-  await setRequestStatus(svc.db, request.id, "handoff", 0, "none");
+  await setRequestStatus(svc.db, request.id, "handoff", 0, "none", 0);
   state.stage = "handoff";
   svc.log.info({ contactId: contact.id, requestId: request.id }, "No supplier found; handed over to a person");
   return t.reply(copy.noSupplierHandoff(what, place?.label, whenTeamReplies(svc.now(), svc.config.teamHours)));
@@ -523,6 +553,9 @@ async function onAction(t: T, id: string): Promise<void> {
       return feedback(t, args[0] ?? "", args[1] ?? "");
     case "rate":
       return rate(t, args[0] ?? "", Number(args[1]));
+    case "alerts":
+      await setAlerts(svc.db, contact.id, false, svc.now());
+      return t.reply(copy.alertsOff());
     default:
       return t.reply(copy.help(svc.config.brandName));
   }
@@ -539,15 +572,14 @@ async function showBusiness(t: T, requestId: string, businessId: string): Promis
   return t.reply(copy.businessCard(request?.id ?? "", view, prices));
 }
 
-/** Price-list items matching what the customer asked for. */
+/** The business's products that match what the customer asked for, read now. */
 async function pricesFor(t: T, businessId: string, request: RequestRow): Promise<PriceView | undefined> {
-  const text = [request.query, request.raw_text].filter(Boolean).join(" ");
-  const matches = await matchingOfferings(t.svc.db, businessId, text, 3);
-  if (!matches.length) return undefined;
-  return {
-    items: matches.map((o) => ({ name: o.name, price: priceLabel(o) })),
-    updatedAt: new Date(Math.max(...matches.map((o) => new Date(o.created_at).getTime()))),
-  };
+  const query = productQueryFor(t, request.interpretation, request.raw_text, request.query);
+  const matches = await productsOf(t.svc.db, businessId, query, 3).catch((err: unknown) => {
+    t.svc.log.error({ err: String(err), businessId }, "Product match for a card failed");
+    return [];
+  });
+  return matches.length ? { items: matches.map((m) => listed(t, m)) } : undefined;
 }
 
 async function connect(t: T, requestId: string, businessId: string): Promise<void> {
@@ -601,8 +633,22 @@ async function reshowResults(t: T, requestId: string): Promise<void> {
   const place = request.area_id != null ? svc.gazetteer.get(request.area_id)?.name : undefined;
   const what: Need = { ...need(request.interpretation, category, request.understood_by), trade: !!request.buyer_business_id };
   if (!rows.length) return t.reply(copy.noOtherOptions(request.id));
-  const views = rows.map((b) => viewOf(t, b, request));
-  if (request.match === "related" && category) return t.reply(copy.relatedResults(request.id, views, what, relatedLabel(t, category), place));
+  if (request.match === "related" && category) {
+    return t.reply(copy.relatedResults(request.id, rows.map((b) => viewOf(t, b, request)), what, relatedLabel(t, category), place));
+  }
+  // What each business lists now: a price changed or a product sold out since the first list shows as it is.
+  const live = await safeProducts(t, {
+    query: productQueryFor(t, request.interpretation, request.raw_text, request.query),
+    businessIds: rows.map((b) => b.id),
+    lat: request.lat ?? undefined,
+    lng: request.lng ?? undefined,
+    maxKm: 1e6,
+  });
+  const byBusiness = new Map(live.map((p) => [p.businessId, p.best]));
+  const views = rows.map((b) => ({ ...viewOf(t, b, request), product: byBusiness.has(b.id) ? listed(t, byBusiness.get(b.id)!) : null }));
+  if (views.some((v) => v.product)) {
+    return t.reply(copy.productResults(request.id, views, what, place, { budget: request.interpretation?.budget_usd, sells: category?.goods ? category.phrase : undefined }));
+  }
   return t.reply(copy.results(request.id, views, what, place, { retailInstead: request.match === "retail" }));
 }
 
@@ -658,6 +704,10 @@ async function eraseAnswer(t: T, yes: boolean): Promise<void> {
   // After the turn is saved, so the confirmation and this very message are deleted too.
   t.defer(async () => {
     const result = await eraseContact(svc.db, contact.id);
+    // Their chats on the business side go too, unless they own a listing: the router sends an
+    // owner's "delete my data" to the business side, which asks about their listings first.
+    const asBusiness = await otherSide(svc.db, contact);
+    if (asBusiness && !(await businessesOwnedBy(svc.db, asBusiness.id)).length) await eraseContact(svc.db, asBusiness.id);
     svc.log.info({ ...result }, "Customer deleted their data");
   });
 }
@@ -790,6 +840,212 @@ async function rate(t: T, introId: string, stars: number): Promise<void> {
   );
   if (updated[0]) await recordRating(svc.db, updated[0].business_id, stars);
   return t.reply(copy.ratingThanks());
+}
+
+// ---------- Products ----------
+
+/**
+ * What to look for in product names: the request's search words ("samsung 55 inch tv"), or its
+ * wording without the place when there are none.
+ */
+function productQueryFor(t: T, interpretation: RequestInterpretation | null | undefined, raw: string, query?: string): ProductQuery {
+  const text = wordsToMatch(raw, query || interpretation?.query, interpretation?.area, t.svc.gazetteer);
+  return productQuery(text, t.svc.lexicon, interpretation?.budget_usd ?? null);
+}
+
+/** Product search never stops a reply: if it fails, the category search still answers. */
+async function safeProducts(t: T, s: Parameters<typeof searchProducts>[1]): Promise<ProductHit[]> {
+  try {
+    return await searchProducts(t.svc.db, s);
+  } catch (err) {
+    t.svc.log.error({ err: String(err) }, "Product search failed; answering from categories");
+    return [];
+  }
+}
+
+/**
+ * Businesses for a request: in its category, and those listing a matching product. Goods are
+ * looked for in every business's listings (a hardware store may sell a fridge); a service only in
+ * its own trade's listings ("fridge repair" never finds fridges for sale).
+ */
+async function findSuppliers(
+  t: T,
+  s: {
+    lat?: number;
+    lng?: number;
+    limit: number;
+    minVerified: number;
+    trade: "retail" | "wholesale";
+    excludeIds: string[];
+    category: Category | undefined;
+    text: string;
+    products: ProductQuery;
+  },
+): Promise<{ suppliers: Supplier[]; productMatches: number }> {
+  const { svc } = t;
+  const service = s.category && !s.category.goods;
+  const [byCategory, byProduct] = await Promise.all([
+    searchBusinesses(svc.db, svc.taxonomy, {
+      lat: s.lat,
+      lng: s.lng,
+      limit: s.limit,
+      minVerified: s.minVerified,
+      trade: s.trade,
+      excludeIds: s.excludeIds,
+      categorySlug: s.category?.slug ?? null,
+      text: s.text,
+    }),
+    safeProducts(t, {
+      query: s.products,
+      lat: s.lat,
+      lng: s.lng,
+      maxKm: s.category?.needsLocation === false ? 1e6 : undefined,
+      trade: s.trade,
+      excludeIds: s.excludeIds,
+      categorySlug: service ? s.category!.slug : undefined,
+    }),
+  ]);
+  const suppliers = mergeSuppliers(byCategory, byProduct, {
+    limit: s.limit,
+    minVerified: s.minVerified,
+    verifiedOnly: s.category?.risk === "high_scam",
+    now: svc.now(),
+  });
+  return { suppliers, productMatches: byProduct.length };
+}
+
+/**
+ * After the results list: WhatsApp's own product cards, with photos, for what the stores in it list
+ * (up to three each). Only products already in our catalog; a problem here never costs the reply.
+ */
+async function sendProductCards(t: T, suppliers: Supplier[], what: Need, query: ProductQuery): Promise<void> {
+  const { svc } = t;
+  if (!svc.catalog || !svc.config.products.cards) return;
+  try {
+    const stores = suppliers.filter((s) => s.product).slice(0, 10);
+    const found: { store: Supplier; matches: ProductMatch[] }[] = [];
+    for (const store of stores) {
+      const matches = (await productsOf(svc.db, store.id, query, 3)).filter((m) => m.photoId && m.price != null);
+      if (matches.length) found.push({ store, matches });
+    }
+    const ids = found.flatMap((f) => f.matches.map((m) => m.id));
+    if (!ids.length) return;
+    // A card shows Meta's copy of the product: one changed a moment ago waits until the sync has sent it.
+    const inCatalog = new Set(
+      (
+        await svc.db.query<{ retailer_id: string }>(
+          `SELECT ci.retailer_id FROM catalog_items ci JOIN offerings o ON o.id = ci.offering_id
+            WHERE ci.retailer_id = ANY($1::text[]) AND ci.error IS NULL AND NOT o.catalog_dirty`,
+          [ids],
+        )
+      ).map((r) => r.retailer_id),
+    );
+    const sections = found
+      .map((f) => ({
+        title: f.store.name,
+        products: f.matches
+          .filter((m) => inCatalog.has(m.id))
+          .map((m) => ({ id: m.id, name: m.name, price: priceOf(m), image: `${svc.config.publicBaseUrl}/media/products/${m.photoId}` })),
+      }))
+      .filter((s) => s.products.length);
+    if (sections.length) await t.reply(copy.productCards(svc.catalog.catalogId, what, sections));
+  } catch (err) {
+    svc.log.error({ err: String(err) }, "Product cards failed; the results went out without them");
+  }
+}
+
+/**
+ * They asked about one product: from our product cards, a cart, or a product page's code. The
+ * store's card, with its prices now, ready to connect. It keeps to the request that showed that
+ * store when there is a recent one; otherwise the product becomes the request, so connecting and
+ * follow-ups work as usual.
+ */
+async function askedAboutProduct(t: T, key: string, first?: OutboundMessage): Promise<void> {
+  const { svc, contact, state } = t;
+  const product = /^[0-9a-f]{8}$/.test(key) || /^[0-9a-f-]{36}$/i.test(key) ? await liveProduct(t, key) : undefined;
+  if (!product) return t.reply(copy.productGone());
+  if (first) await t.reply(first);
+  const shown = await one<{ id: string }>(
+    svc.db,
+    `SELECT r.id FROM requests r JOIN request_results rr ON rr.request_id = r.id
+      WHERE r.contact_id = $1 AND rr.business_id = $2 AND r.created_at > $3
+      ORDER BY r.created_at DESC LIMIT 1`,
+    [contact.id, product.business_id, new Date(svc.now().getTime() - 7 * 24 * 3600_000)],
+  );
+  let requestId = shown?.id;
+  if (!requestId) {
+    const request = await createRequest(svc.db, {
+      contactId: contact.id,
+      rawText: `Asked about ${product.name}`.slice(0, 500),
+      interpretation: {
+        intent: "search",
+        category_slug: null,
+        query: product.name.slice(0, 80),
+        area: null,
+        budget_usd: null,
+        needed_by: null,
+        clarifying_question: null,
+        language: "en",
+      },
+      categorySlug: null,
+      query: product.name.slice(0, 80),
+      understoodBy: "customer",
+    });
+    await saveResults(svc.db, request.id, [{ businessId: product.business_id, offeringId: product.id }]);
+    await setRequestStatus(svc.db, request.id, "answered", 1, "exact", 1);
+    requestId = request.id;
+  }
+  state.lastRequestId = requestId;
+  return showBusiness(t, requestId, product.business_id);
+}
+
+/** A product customers can still buy, by its ID or the first 8 characters of it. */
+async function liveProduct(t: T, key: string): Promise<{ id: string; business_id: string; name: string } | undefined> {
+  const exact = key.length === 36;
+  return one<{ id: string; business_id: string; name: string }>(
+    t.svc.db,
+    `SELECT o.id, o.business_id, o.name FROM offerings o JOIN businesses b ON b.id = o.business_id
+      WHERE ${exact ? "o.id::text = $1" : "o.id::text LIKE $1 || '%'"}
+        AND o.archived_at IS NULL AND o.in_stock AND b.status = 'active'
+      ORDER BY o.updated_at DESC LIMIT 1`,
+    [key.toLowerCase()],
+  );
+}
+
+function listed(t: T, m: ProductMatch): ListedProduct {
+  return { name: m.name, price: priceOf(m), amount: m.price, unit: m.unit, updated: copy.updatedPhrase(m.priceUpdatedAt, t.svc.now()) };
+}
+
+function supplierView(t: T, s: Supplier | BusinessHit): BusinessView {
+  const product = "product" in s && s.product ? listed(t, s.product) : null;
+  return {
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    verification: s.verification,
+    areaName: s.areaName,
+    distanceKm: s.distanceKm,
+    ratingAvg: s.ratingAvg,
+    ratingCount: s.ratingCount,
+    product,
+  };
+}
+
+/** Results as a list: with products and prices when stores list what was asked, otherwise by category. */
+function resultsMessage(
+  t: T,
+  requestId: string,
+  suppliers: Supplier[],
+  what: Need,
+  place: string | undefined,
+  category: Category | undefined,
+  opts: { budget?: number | null; retailInstead?: boolean },
+): OutboundMessage {
+  const views = suppliers.map((s) => supplierView(t, s));
+  if (views.some((v) => v.product)) {
+    return copy.productResults(requestId, views, what, place, { budget: opts.budget, sells: category?.goods ? category.phrase : undefined });
+  }
+  return copy.results(requestId, views, what, place, { retailInstead: opts.retailInstead });
 }
 
 // ---------- Helpers ----------

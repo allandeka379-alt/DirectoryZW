@@ -19,11 +19,14 @@ import { RECOMMENDATION_STATUSES, setRecommendationStatus } from "../directory/r
 import { RECHECK_OUTCOMES, recheckQueue, recordRecheck, trackRecord } from "../directory/trust.js";
 import { agentStats, createAgent, resetAgentToken, setAgentActive, setupUrl } from "../field/agents.js";
 import { AUDIT_OUTCOMES, auditQueue, recordAudit } from "../field/audits.js";
+import { productsChanged } from "../conversation/alerts.js";
 import { logAction } from "../ops/accounts.js";
+import { catalogHealth } from "../web/catalog.js";
 import { normalizeText, normalizeZimPhone } from "../text.js";
 import { registerAdminRoutes } from "./ops-admin.js";
 import { actorOf, opsAuthHook, refuseUnlessAdmin, registerAccountRoutes } from "./ops-auth.js";
 import { registerLabelRoutes } from "./ops-labels.js";
+import { registerWebAdminRoutes } from "./ops-web.js";
 import { registerWordRoutes } from "./ops-words.js";
 import { serveFile } from "./static.js";
 
@@ -49,11 +52,17 @@ const FieldRegistration = z.object({
 const Id = z.object({ id: z.string().refine(isUuid, "Not a valid ID") });
 
 /**
- * JSON API for the ops console. People sign in with their own accounts (admin or staff);
- * scripts can use OPS_TOKEN. The console page itself is public; it asks them to sign in.
+ * The admin portal (/admin) and its JSON API (/ops/api). The team signs in with their own accounts
+ * (admin or staff), never the WhatsApp links business owners use; scripts can use OPS_TOKEN. The
+ * pages themselves are public; they ask people to sign in. The first console stays at /ops/classic.
  */
 export function registerOps(server: FastifyInstance, app: App): void {
-  serveFile(server, "/ops", "ops/index.html");
+  server.get("/admin", async (_req, reply) => reply.redirect("/admin/"));
+  serveFile(server, "/admin/", "admin/index.html");
+  serveFile(server, "/admin/admin.js", "admin/admin.js");
+  serveFile(server, "/admin/admin.css", "admin/admin.css");
+  server.get("/ops", async (_req, reply) => reply.redirect("/admin/"));
+  serveFile(server, "/ops/classic", "ops/index.html");
   serveFile(server, "/ops/app.js", "ops/app.js");
   serveFile(server, "/ops/app.css", "ops/app.css");
 
@@ -64,6 +73,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
       registerAdminRoutes(ops, app);
       registerWordRoutes(ops, app);
       registerLabelRoutes(ops, app);
+      registerWebAdminRoutes(ops, app);
 
       // ----- Overview -----
 
@@ -81,6 +91,12 @@ export function registerOps(server: FastifyInstance, app: App): void {
              (SELECT count(*)::int FROM reports WHERE status = 'open' AND created_at < now() - interval '1 day') AS reports_over_a_day,
              (SELECT count(*)::int FROM agents WHERE active) AS active_agents,
              (SELECT count(*)::int FROM recommendations WHERE status = 'new') AS new_recommendations,
+             (SELECT count(*)::int FROM businesses WHERE verification = 'registered' AND status = 'active' AND source = 'self') AS to_verify,
+             -- The website and the business dashboard
+             (SELECT count(*)::int FROM web_registrations WHERE completed_at IS NULL AND expires_at > now()) AS web_registrations_pending,
+             (SELECT count(*)::int FROM offerings WHERE archived_at IS NULL) AS products_listed,
+             (SELECT count(DISTINCT business_id)::int FROM offerings WHERE archived_at IS NULL) AS businesses_with_products,
+             (SELECT count(DISTINCT contact_id)::int FROM owner_sessions WHERE created_at > now() - interval '30 days') AS owners_on_dashboard_30d,
              -- Launch measures (docs/LAUNCH.md), the last 30 days. Final answers leave out "not yet", as track records do.
              (SELECT count(*)::int FROM introductions
                 WHERE outcome IN ('sorted', 'couldnt_help', 'no_reply') AND created_at > now() - interval '30 days') AS answered_30d,
@@ -232,17 +248,19 @@ export function registerOps(server: FastifyInstance, app: App): void {
       // ----- Businesses -----
 
       ops.get("/businesses", async (req) => {
-        const q = req.query as { q?: string; verification?: string; status?: string; limit?: string };
+        const q = req.query as { q?: string; verification?: string; status?: string; source?: string; limit?: string };
         const limit = Math.min(Number(q.limit) || 50, 200);
         return app.db.query(
           `SELECT b.id, b.name, b.phone, b.verification, b.status, b.source, b.audit_status, b.created_at,
-                  a.name AS area, ag.name AS agent
+                  a.name AS area, ag.name AS agent, b.owner_contact_id IS NOT NULL AS has_owner,
+                  (SELECT count(*)::int FROM offerings o WHERE o.business_id = b.id AND o.archived_at IS NULL) AS products
              FROM businesses b LEFT JOIN areas a ON a.id = b.area_id LEFT JOIN agents ag ON ag.id = b.registered_by
             WHERE ($1::text IS NULL OR b.name ILIKE '%' || $1 || '%' OR b.phone LIKE '%' || $1 || '%')
               AND ($2::text IS NULL OR b.verification = $2)
               AND ($3::text IS NULL OR b.status = $3)
+              AND ($5::text IS NULL OR b.source = $5)
             ORDER BY b.created_at DESC LIMIT $4`,
-          [q.q?.trim() || null, q.verification || null, q.status || null, limit],
+          [q.q?.trim() || null, q.verification || null, q.status || null, limit, q.source || null],
         );
       });
 
@@ -251,15 +269,39 @@ export function registerOps(server: FastifyInstance, app: App): void {
         if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
         const b = await getBusiness(app.db, params.data.id);
         if (!b) return reply.code(404).send({ error: "Business not found" });
-        const [photos, audits, categories, offerings, rechecks, record] = await Promise.all([
+        const [photos, audits, categories, offerings, rechecks, record, owner, catalogue] = await Promise.all([
           app.db.query("SELECT id, kind, content_type, bytes, created_at FROM business_photos WHERE business_id = $1 ORDER BY created_at", [b.id]),
           app.db.query("SELECT outcome, note, audited_by, created_at FROM audits WHERE business_id = $1 ORDER BY created_at DESC", [b.id]),
           categoriesOf(app.db, b.id),
-          app.db.query("SELECT name, price_usd, price_text, created_at FROM offerings WHERE business_id = $1 ORDER BY name LIMIT 200", [b.id]),
+          app.db.query(
+            "SELECT name, price_usd, price_text, created_at FROM offerings WHERE business_id = $1 AND archived_at IS NULL ORDER BY name LIMIT 200",
+            [b.id],
+          ),
           app.db.query("SELECT outcome, reasons, note, checked_by, created_at FROM rechecks WHERE business_id = $1 ORDER BY created_at DESC", [b.id]),
           trackRecord(app.db, b.id),
+          // Who runs the listing from WhatsApp, and when they last used the dashboard.
+          one(
+            app.db,
+            `SELECT c.wa_id, c.profile_name, c.last_inbound_at, c.is_blocked,
+                    (SELECT count(*)::int FROM owner_sessions s WHERE s.contact_id = c.id AND s.expires_at > now()) AS dashboard_sessions,
+                    (SELECT max(s.created_at) FROM owner_sessions s WHERE s.contact_id = c.id) AS last_dashboard_sign_in
+               FROM contacts c WHERE c.id = $1`,
+            [b.owner_contact_id],
+          ),
+          catalogHealth(app.db, b.id, app.services.now()),
         ]);
-        return { ...b, area: app.services.gazetteer.get(b.area_id)?.name ?? null, categories, photos, audits, offerings, rechecks, record };
+        return {
+          ...b,
+          area: app.services.gazetteer.get(b.area_id)?.name ?? null,
+          categories,
+          photos,
+          audits,
+          offerings,
+          rechecks,
+          record,
+          owner: owner ?? null,
+          catalogue,
+        };
       });
 
       ops.get("/photos/:id", async (req, reply) => {
@@ -316,6 +358,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
         if (!(await getBusiness(app.db, params.data.id))) return reply.code(404).send({ error: "Business not found" });
         await setBusinessTrade(app.db, params.data.id, body.data.trade);
         await logAction(app.db, actorOf(req), "business.trade", params.data.id, { trade: body.data.trade });
+        await productsChanged(app.services, params.data.id);
         return { ok: true };
       });
 
@@ -326,6 +369,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
         if (!(await getBusiness(app.db, params.data.id))) return reply.code(404).send({ error: "Business not found" });
         await verifyBusiness(app.db, params.data.id, body.data.agent ?? actorOf(req).name);
         await logAction(app.db, actorOf(req), "business.verify", params.data.id);
+        await productsChanged(app.services, params.data.id);
         return { ok: true };
       });
 
@@ -337,6 +381,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
         if (!(await getBusiness(app.db, params.data.id))) return reply.code(404).send({ error: "Business not found" });
         await setBusinessStatus(app.db, params.data.id, body.data.status);
         await logAction(app.db, actorOf(req), "business.status", params.data.id, { status: body.data.status });
+        await productsChanged(app.services, params.data.id);
         return { ok: true };
       });
 

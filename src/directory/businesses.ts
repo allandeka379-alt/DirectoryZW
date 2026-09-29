@@ -104,8 +104,17 @@ export async function claimBusinessesByPhone(db: Db, contactId: string, phone: s
   );
 }
 
+/**
+ * The business changed in a way its products show on WhatsApp (live or not, name, place, checked):
+ * the catalog's next sync sends them again.
+ */
+export async function markCatalogDirty(db: Db, businessId: string): Promise<void> {
+  await db.query("UPDATE offerings SET catalog_dirty = true WHERE business_id = $1 AND archived_at IS NULL", [businessId]);
+}
+
 export async function setBusinessStatus(db: Db, id: string, status: Business["status"]): Promise<void> {
   await db.query("UPDATE businesses SET status = $2, updated_at = now() WHERE id = $1", [id, status]);
+  await markCatalogDirty(db, id);
 }
 
 export async function verifyBusiness(db: Db, id: string, by: string): Promise<void> {
@@ -113,6 +122,7 @@ export async function verifyBusiness(db: Db, id: string, by: string): Promise<vo
     "UPDATE businesses SET verification = 'verified', verified_at = now(), verified_by = $2, updated_at = now() WHERE id = $1",
     [id, by],
   );
+  await markCatalogDirty(db, id);
 }
 
 export async function recordRating(db: Db, id: string, rating: number): Promise<void> {
@@ -173,4 +183,5 @@ export function isUuid(value: string): boolean {
 /** Set who a business sells to. */
 export async function setBusinessTrade(db: Db, id: string, trade: Trade): Promise<void> {
   await db.query("UPDATE businesses SET trade = $2, updated_at = now() WHERE id = $1", [id, trade]);
+  await markCatalogDirty(db, id);
 }

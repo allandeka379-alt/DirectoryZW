@@ -17,7 +17,7 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default("0.0.0.0"),
-  BRAND_NAME: z.string().default("Directory ZW"),
+  BRAND_NAME: z.string().default("FindZim"),
   PRIVACY_URL: optionalString,
   BUSINESS_TERMS_URL: optionalString,
   DATABASE_URL: optionalString,
@@ -55,10 +55,9 @@ const EnvSchema = z.object({
   WHATSAPP_ACCESS_TOKEN: optionalString,
   WHATSAPP_APP_SECRET: optionalString,
   WHATSAPP_VERIFY_TOKEN: optionalString,
-  WHATSAPP_CUSTOMER_PHONE_NUMBER_ID: optionalString,
-  WHATSAPP_BUSINESS_PHONE_NUMBER_ID: optionalString,
-  WHATSAPP_CUSTOMER_NUMBER: z.string().default("263770000000"),
-  WHATSAPP_BUSINESS_NUMBER: z.string().default("263770000001"),
+  /** Our one WhatsApp number: customers and businesses both message it. */
+  WHATSAPP_PHONE_NUMBER_ID: optionalString,
+  WHATSAPP_NUMBER: z.string().default("263770000000"),
   WHATSAPP_BUSINESS_ACCOUNT_ID: optionalString,
   TEMPLATE_LANGUAGE: z.string().default("en"),
   TEMPLATE_LEAD_NOTIFICATION: z.string().default("lead_notification"),
@@ -74,6 +73,12 @@ const EnvSchema = z.object({
   MIN_VERIFIED_RESULTS: z.coerce.number().int().min(0).default(3),
   MAX_RESULTS: z.coerce.number().int().min(1).max(10).default(8),
   JOB_POLL_SECONDS: z.coerce.number().positive().default(15),
+  // Products on WhatsApp: an alert when a store lists what a customer couldn't find, and product
+  // cards from our Meta catalog (the simulator has its own catalog).
+  PRODUCT_ALERTS: z.enum(["on", "off"]).default("on"),
+  PRODUCT_ALERT_HOURS: z.coerce.number().positive().max(24).default(24),
+  PRODUCT_CARDS: z.enum(["on", "off"]).default("on"),
+  WHATSAPP_CATALOG_ID: optionalString,
 });
 
 export interface Config {
@@ -129,10 +134,14 @@ export interface Config {
     accessToken?: string;
     appSecret?: string;
     verifyToken?: string;
-    phoneNumberIds: { customer: string; business: string };
-    numbers: { customer: string; business: string };
+    /** Meta's ID for our WhatsApp number ("sim-whatsapp" in the simulator). */
+    phoneNumberId: string;
+    /** The number itself, digits only. */
+    number: string;
     /** WhatsApp Business Account ID, for managing message templates. */
     businessAccountId?: string;
+    /** Our Meta catalog, connected to the number: products with a photo and a price go in it. */
+    catalogId?: string;
     templates: {
       language: string;
       leadNotification: string;
@@ -158,6 +167,14 @@ export interface Config {
   minVerifiedResults: number;
   maxResults: number;
   jobPollSeconds: number;
+  products: {
+    /** Tell a customer once when a store lists what they asked for and nobody had. Free: inside their window only. */
+    alerts: boolean;
+    /** How far back a request can be for an alert (at most the 24-hour window). */
+    alertHours: number;
+    /** Send WhatsApp product cards from the catalog with results. Needs a catalog (the simulator has one). */
+    cards: boolean;
+  };
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -209,12 +226,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       accessToken: e.WHATSAPP_ACCESS_TOKEN,
       appSecret: e.WHATSAPP_APP_SECRET,
       verifyToken: e.WHATSAPP_VERIFY_TOKEN,
-      phoneNumberIds: {
-        customer: e.WHATSAPP_CUSTOMER_PHONE_NUMBER_ID ?? "sim-customer",
-        business: e.WHATSAPP_BUSINESS_PHONE_NUMBER_ID ?? "sim-business",
-      },
-      numbers: { customer: digits(e.WHATSAPP_CUSTOMER_NUMBER), business: digits(e.WHATSAPP_BUSINESS_NUMBER) },
+      phoneNumberId: e.WHATSAPP_PHONE_NUMBER_ID ?? "sim-whatsapp",
+      number: digits(e.WHATSAPP_NUMBER),
       businessAccountId: e.WHATSAPP_BUSINESS_ACCOUNT_ID,
+      catalogId: e.WHATSAPP_CATALOG_ID ?? (e.WHATSAPP_TRANSPORT === "simulator" ? "sim-catalog" : undefined),
       templates: {
         language: e.TEMPLATE_LANGUAGE,
         leadNotification: e.TEMPLATE_LEAD_NOTIFICATION,
@@ -232,6 +247,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     minVerifiedResults: e.MIN_VERIFIED_RESULTS,
     maxResults: e.MAX_RESULTS,
     jobPollSeconds: e.JOB_POLL_SECONDS,
+    products: { alerts: e.PRODUCT_ALERTS === "on", alertHours: e.PRODUCT_ALERT_HOURS, cards: e.PRODUCT_CARDS === "on" },
   };
   validate(config);
   return config;
@@ -243,9 +259,7 @@ function validate(c: Config): void {
     if (!c.whatsapp.accessToken) problems.push("WHATSAPP_ACCESS_TOKEN is required for the cloud transport");
     if (!c.whatsapp.appSecret) problems.push("WHATSAPP_APP_SECRET is required for the cloud transport");
     if (!c.whatsapp.verifyToken) problems.push("WHATSAPP_VERIFY_TOKEN is required for the cloud transport");
-    if (c.whatsapp.phoneNumberIds.customer.startsWith("sim-") || c.whatsapp.phoneNumberIds.business.startsWith("sim-")) {
-      problems.push("Both WhatsApp phone number IDs are required for the cloud transport");
-    }
+    if (c.whatsapp.phoneNumberId.startsWith("sim-")) problems.push("WHATSAPP_PHONE_NUMBER_ID is required for the cloud transport");
   }
   if (c.storage.driver === "s3" && !c.storage.bucket) problems.push("S3_BUCKET is required when STORAGE=s3");
   if (c.env === "production") {

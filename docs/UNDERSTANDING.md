@@ -81,7 +81,7 @@ Some rules hold at every step:
 
 ## 4. Step 1: the local engine (v2)
 
-Everything the engine knows lives in data (the lexicon), editable from the ops console, not in code.
+Everything the engine knows lives in data (the lexicon), editable from the admin portal, not in code.
 
 **Normalising**
 - Lower case, strip punctuation and emoji, and collapse stretched letters ("pleeease").
@@ -137,7 +137,7 @@ The target is **98% or better precision for HIGH answers**, checked weekly on a 
 ## 5. Step 2: the phrasebook (why it gets cheaper every week)
 
 - Each resolved request is saved as **signature → interpretation**. The signature is the request's content words, normalised and sorted, without places or numbers. For example, "ndoda keke remuchato ku Budiriro" is saved as `keke muchato` → Cakes.
-- Sources, most trusted first: a person in the ops console, the customer's own tap, then Claude.
+- Sources, most trusted first: a person in the admin portal, the customer's own tap, then Claude.
 - The next customer who writes the same thing gets an answer with no Claude call.
 - **Vocabulary suggestions:** unknown words are counted against the categories they were resolved to. For example: "keke → Cakes, seen 14 times, all agreed. Add it?" One click in the Vocabulary screen makes it part of the lexicon. Nothing enters the lexicon without a person's approval.
 - There are no names or phone numbers in signatures. An entry used only once is dropped after 180 days.
@@ -196,7 +196,7 @@ Show these on the System screen and review them every week:
 - Clarifying questions: how often asked, and how often tapped
 - Handoffs: share of requests, and time to first answer
 - **Local precision:**
-  - Each week the team reviews 50 random HIGH answers in the ops console: right, wrong, or should have asked.
+  - Each week the team reviews 50 random HIGH answers in the admin portal: right, wrong, or should have asked.
   - A wrong answer becomes a lexicon or rule fix plus a test.
 - Top unknown words, and pending vocabulary suggestions
 
@@ -245,7 +245,7 @@ Each phase ships on its own and must keep the eval at least as accurate as Claud
 **Phase 2: a local engine that reads like a Zimbabwean (built)**
 - Built:
   - the normaliser (texting spellings, numbers stuck to units, stretched letters), word roles, English word forms, fuzzy matching (same first letter, 6+ letters) and place prefixes
-  - the lexicon in the database, editable in the ops console
+  - the lexicon in the database, editable in the admin portal
   - Shona word shapes: joining prefixes, "ma-" on borrowed words, verb roots with their prefixes and endings, common spelling variations. A word joined by "of" ("nyama yemombe") only describes the main word.
   - a draft Shona list of about 460 words and roots
   - Ndebele word shapes: noun prefixes ("ifriji", "ifridge"), "of"/"and" forms that swallow a vowel ("ikhekhe lomtshado", "inyama yenkomo"), e- and -ini for places, verb roots ("olungisa", "ukuqasha"), and a draft list of about 300 words and roots
@@ -259,7 +259,7 @@ Each phase ships on its own and must keep the eval at least as accurate as Claud
   - The developers wrote these examples alongside the word lists, so real traffic will score lower. That's what Phase 3 measures.
 
 **Phase 3: tune on real traffic (tools built in Milestone 8; run them after the first 2–4 weeks)**
-- **Labelling** (built): the ops console's **Label requests** screen shows random real requests with what the assistant did. The team says what each customer wanted.
+- **Labelling** (built): the admin portal's **Label requests** screen shows random real requests with what the assistant did. The team says what each customer wanted.
   - A correction also teaches the phrasebook.
   - `npm run eval:export -- --labelled` turns the labels into the eval's answer key.
   - The screen shows how often each step of the ladder was right.

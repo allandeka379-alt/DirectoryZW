@@ -162,13 +162,17 @@ describe("field registration", () => {
 });
 
 describe("pages", () => {
-  it("serves the field app, its service worker and the ops console", async () => {
+  it("serves the field app, its service worker and the admin portal", async () => {
     const page = await server.inject({ url: "/field/" });
     expect(page.statusCode).toBe(200);
     expect(page.headers["content-type"]).toContain("text/html");
     const sw = await server.inject({ url: "/field/sw.js" });
     expect(sw.headers["service-worker-allowed"]).toBe("/field/");
+    // The old address for the console leads to the admin portal; the first console stays at /ops/classic.
     const ops = await server.inject({ url: "/ops" });
-    expect(ops.body).toContain("Ops console");
+    expect(ops.statusCode).toBe(302);
+    expect(ops.headers.location).toBe("/admin/");
+    expect((await server.inject({ url: "/admin/" })).body).toContain("Admin");
+    expect((await server.inject({ url: "/ops/classic" })).body).toContain("Ops console");
   });
 });

@@ -6,13 +6,13 @@ A Shona or Ndebele word starts as a draft. Until someone approves it, a request 
 
 ## How to review
 
-**In the ops console** (any team account):
+**In the admin portal** (any team account):
 1. Open **Word list**, choose **Shona** (or **Ndebele**) and **To review**.
 2. For each word, read **Meaning** and **What it does**.
 3. Tick the words that are right, then press **Approve ticked**. Press **Wrong** on a word that's wrong.
 4. To correct a word, open **Add a word, or correct what one means** at the bottom. Enter the word with the right meaning and category, and save. A saved word counts as approved.
 
-**Offline:** press **Download as a spreadsheet**, fill in the "Your correction" column, and send it back to the team to enter in the console.
+**Offline:** press **Download as a spreadsheet**, fill in the "Your correction" column, and send it back to the team to enter in the admin portal.
 
 "Customers agreed" shows how many customers picked the word's category when the assistant asked them. It's a helpful hint, not proof.
 

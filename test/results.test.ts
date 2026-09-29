@@ -84,7 +84,7 @@ describe("results say which businesses our team verified", () => {
   });
 
   it("tells new customers why they can trust verified businesses", () => {
-    const m = copy.consent("Directory ZW", undefined, "Tendai Moyo");
+    const m = copy.consent("FindZim", undefined, "Tendai Moyo");
     expect(m.kind === "buttons" && m.body).toContain(
       "✅ Every business we verify is visited in person by our team, and we check who runs it, so you know it's genuine and reliable.",
     );

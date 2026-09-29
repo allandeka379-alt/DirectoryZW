@@ -17,6 +17,18 @@ const tick = async () => {
 const timer = setInterval(() => {
   tick().catch((err) => server.log.error({ err: String(err) }, "Background work failed"));
 }, config.jobPollSeconds * 1000);
+// A job due within the minute (a product alert, a catalog sync) starts then, not at the next tick.
+let wake: { timer: NodeJS.Timeout; at: number } | undefined;
+app.services.jobs.onSoon((runAt) => {
+  const at = runAt.getTime() + 100;
+  if (wake && wake.at <= at) return;
+  if (wake) clearTimeout(wake.timer);
+  const timer = setTimeout(() => {
+    wake = undefined;
+    app.runJobs().catch((err) => server.log.error({ err: String(err) }, "Background work failed"));
+  }, Math.max(0, at - Date.now()));
+  wake = { timer, at };
+});
 
 await server.listen({ port: config.port, host: config.host });
 server.log.info(
@@ -29,6 +41,7 @@ async function shutdown(): Promise<void> {
   if (closing) return;
   closing = true;
   clearInterval(timer);
+  if (wake) clearTimeout(wake.timer);
   await server.close();
   await app.close();
   process.exit(0);

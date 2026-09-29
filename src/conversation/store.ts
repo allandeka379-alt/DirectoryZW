@@ -32,7 +32,18 @@ export async function upsertContact(
      RETURNING *`,
     [m.channel, m.waId, m.phone ?? null, m.profileName ?? null, m.at],
   );
+  // One WhatsApp number: a message to either side opens the free 24-hour window for both.
+  await db.query("UPDATE contacts SET last_inbound_at = GREATEST(last_inbound_at, $3) WHERE wa_id = $1 AND channel <> $2", [
+    m.waId,
+    m.channel,
+    m.at,
+  ]);
   return row!;
+}
+
+/** The same person on the other side of the conversation (a customer who also owns a business), if any. */
+export async function otherSide(db: Db, contact: Pick<Contact, "wa_id" | "channel">): Promise<Contact | undefined> {
+  return one<Contact>(db, "SELECT * FROM contacts WHERE wa_id = $1 AND channel <> $2", [contact.wa_id, contact.channel]);
 }
 
 export async function findContact(db: Db, channel: Channel, waId: string): Promise<Contact | undefined> {
@@ -72,7 +83,12 @@ export async function logInbound(db: Db, m: InboundMessage): Promise<string | nu
       m.waMessageId,
       m.content.type,
       JSON.stringify(m.content),
-      JSON.stringify({ from: m.from, phone: m.phone ?? null, profileName: m.profileName ?? null }),
+      JSON.stringify({
+        from: m.from,
+        phone: m.phone ?? null,
+        profileName: m.profileName ?? null,
+        ...(m.route ? { route: true, contextId: m.contextId ?? null } : {}),
+      }),
     ],
   );
   return row?.id ?? null;
@@ -128,6 +144,8 @@ export interface RequestRow {
   flagged_at: Date | null;
   /** Set when a business was looking for supplies: which of the owner's businesses it was for. */
   buyer_business_id: string | null;
+  /** Businesses that listed a matching product when it was answered (null before products were searched). */
+  product_matches: number | null;
   created_at: Date;
 }
 
@@ -203,18 +221,23 @@ export async function setRequestStatus(
   status: RequestStatus,
   resultCount?: number,
   match?: RequestRow["match"],
+  /** How many businesses listed a matching product: 0 lets a later listing send an alert. */
+  productMatches?: number,
 ): Promise<void> {
   await db.query(
-    "UPDATE requests SET status = $2, result_count = COALESCE($3, result_count), match = COALESCE($4, match) WHERE id = $1",
-    [id, status, resultCount ?? null, match ?? null],
+    `UPDATE requests SET status = $2, result_count = COALESCE($3, result_count), match = COALESCE($4, match),
+            product_matches = COALESCE($5, product_matches)
+      WHERE id = $1`,
+    [id, status, resultCount ?? null, match ?? null, productMatches ?? null],
   );
 }
 
-export async function saveResults(db: Db, requestId: string, businessIds: string[]): Promise<void> {
-  for (const [rank, businessId] of businessIds.entries()) {
+/** The businesses shown for a request, in order, with the product shown for each. */
+export async function saveResults(db: Db, requestId: string, results: { businessId: string; offeringId?: string | null }[]): Promise<void> {
+  for (const [rank, r] of results.entries()) {
     await db.query(
-      "INSERT INTO request_results (request_id, business_id, rank) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-      [requestId, businessId, rank],
+      "INSERT INTO request_results (request_id, business_id, rank, offering_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+      [requestId, r.businessId, rank, r.offeringId ?? null],
     );
   }
 }

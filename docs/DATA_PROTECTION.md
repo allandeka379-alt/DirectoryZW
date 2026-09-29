@@ -8,7 +8,7 @@ A working record of what personal data the service holds, where it goes, and how
 - [ ] Appoint a data protection officer, and publish their contact details in the privacy notice.
 - [ ] Publish the privacy notice and business terms, and set `PRIVACY_URL` and `BUSINESS_TERMS_URL`. Customers see the notice before their first search; businesses agree to the terms when they list.
 - [ ] Record the cross-border transfers below and the safeguards for each (the providers' data processing terms).
-- [ ] Agree who handles data requests, and how fast (the ops console makes each one a few clicks).
+- [ ] Agree who handles data requests, and how fast (the admin portal makes each one a few clicks).
 
 ## What we hold
 
@@ -19,34 +19,42 @@ A working record of what personal data the service holds, where it goes, and how
 | Customers | The team's labels on a sample of requests (what the customer wanted) | Measure and tune how well requests are understood | With the request: deleted with the customer's data. The eval export (`evals/real*.jsonl`) holds request wording, so keep it private and delete it after use. |
 | Customers | Voice notes and photos they send | None: they're asked to type instead | Never downloaded or read. Only the fact that one arrived is logged with the message. |
 | Customers | Ratings, follow-up answers ("sorted", "didn't reply", "didn't have it") and reports about businesses | Rank businesses, show track records, send businesses back for a re-check, stop scams | Until the customer deletes their data. Reports stay after that, with the link to the customer removed. Track records show counts only, never who answered. |
+| Customers | Alerts we sent them (which request, store and product), and when they switched alerts off | Tell them once when a store lists what nobody had; never twice, never after they said no | With the request: deleted with it, and with the customer's data. |
 | Businesses | Name, WhatsApp number, location, description, who they sell to, field agents' photos, price list, ratings, the field team's re-check notes, and what they searched for as buyers (the supplier is told which business asked) | The listing | While listed. Deleting their data removes the listing, photos and re-checks. |
+| Businesses | Products, prices and each price change, product photos, opening hours, email and website, entered on the dashboard | The listing, and prices in our replies | While listed. A product taken down is kept out of sight with its history, and its photo is deleted. Deleting the business's data removes all of it. |
+| Businesses | What's public of their products: each live product's name, price, description, photo and the store's name and area, on its own page (`/p/…`), and, for products with a photo and a price, in our Meta catalog for WhatsApp's product cards | Customers find and share products; WhatsApp shows them as cards | While the product is live. Out of stock, taken down or a paused business leaves the catalog within a minute; taken down, the page and photo go at once. The listing terms must say products are published this way. |
+| Businesses | What they typed on the website's registration form | Creating the listing when the owner sends the code from WhatsApp | Cleared once the listing exists. Unfinished registrations are deleted 7 days after their code runs out. |
+| Business owners | Dashboard sign-in links and sessions, stored only as hashes | Signing in without a password | A link works once, for 15 minutes, and is deleted a day after it runs out. A session lasts 30 days and is then deleted. The team can end an owner's sessions from the admin portal. |
 | Field agents | Name, phone, city, registrations | Quality control | While they work with us. |
-| Ops team | Name, email, password hash, activity log | Accountability | Accounts while active. The activity log holds no message text. |
+| Our team | Name, email, password hash, activity log | Accountability | Accounts while active. The activity log holds no message text. |
 
-Idle chat state is deleted after 90 days (except chats waiting for a person). Finished background jobs go after 30 days, and expired ops sessions daily.
+Idle chat state is deleted after 90 days (except chats waiting for a person). Finished background jobs go after 30 days. Expired team sessions and owners' dashboard sessions go daily, and so do owners' sign-in links a day after they run out.
 
 ## Who processes it (cross-border transfers)
 
 | Provider | Receives | Where |
 | --- | --- | --- |
 | Meta (WhatsApp Cloud API) | All messages, numbers and names | Meta's data centres (outside Zimbabwe) |
+| Meta (Commerce catalog) | Products with a photo and a price: name, price, description, the store's name and area, and links to the product's page and photo. No customer data. | Meta's data centres (outside Zimbabwe) |
 | Anthropic (Claude) | Only typed requests the local engine can't read (and hasn't seen before) | United States |
 | Hosting and database provider | Everything in the database | Your chosen region |
-| Storage provider (S3 or R2) | Field agents' photos of businesses | Your chosen region |
+| Storage provider (S3 or R2) | Field agents' photos of businesses, and the photos owners add on the dashboard | Your chosen region |
 | Alert webhook (Slack, Discord…) | Alert text, without message content or phone numbers | The chat provider |
 
 ## Handling requests
 
-- **Access:** in the ops console go to **People**, find the number, then **Export their data** (admins). It downloads a JSON file with their messages, requests, introductions, reports, tips and listings. Send it to them over a channel you've confirmed is theirs.
+- **Access:** in the admin portal go to **People**, find the number, then **Export their data** (admins). It downloads a JSON file with their messages, requests, introductions, reports, tips and listings. Send it to them over a channel you've confirmed is theirs.
 - **Deletion:** customers type `delete my data` on either WhatsApp number and confirm. It happens straight away, and a business owner's listings go too. Admins can do the same from **People** (a customer's data) or a business's page (**Delete completely**).
-- **Correction:** businesses update their own listing from the business number (menu). The team can edit anything from the ops console.
+- **Correction:** businesses update their own listing from their business menu (they type *my business* on our WhatsApp number) or on the dashboard. The team can change anything from the admin portal.
 - **Objection and marketing:** we send no marketing. `stop` ends conversations. Businesses get weekly summaries only when they had activity.
-- Every export and deletion is recorded in **Activity**, with who did it and when.
+- **Alerts:** one, when nobody had listed what the customer asked for and a store near them lists it within a day. Only inside the free 24-hour window their own message opened, at most two a day, and never after `stop`, `alerts off` or the "No more alerts" button. `alerts on` brings them back.
+- Every export and deletion is recorded in the **Activity log**, with who did it and when.
 
 ## Security measures
 
-- Every ops console user has their own account, with an admin or staff role. Passwords are hashed with scrypt, and sign-in locks after 5 wrong attempts.
+- Everyone on the team has their own admin portal account, with an admin or staff role. Passwords are hashed with scrypt, and sign-in locks after 5 wrong attempts.
+- Business owners sign in to the dashboard with one-time links sent on WhatsApp, so there are no owner passwords to leak. Their session cookie can't be read by scripts, and the dashboard accepts changes only from our own pages.
 - Session tokens, field-agent tokens and opted-out numbers are stored only as hashes.
 - Webhook calls must carry Meta's signature. The ops API needs a signed-in person or the ops token.
-- The photo bucket stays private; photos are served only through the signed-in ops API.
+- The photo bucket stays private. A live product's photo is served publicly, because its page and WhatsApp's catalog need it; every other photo (field agents', shopfront, inside) is served only to the business's owner on the dashboard and to the signed-in team.
 - Limits per number stop floods: messages per minute and day, reports per day.

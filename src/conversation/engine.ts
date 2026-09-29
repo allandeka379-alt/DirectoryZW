@@ -3,6 +3,7 @@ import { handleBusinessTurn, type BusinessState } from "./business.js";
 import type { Services, Turn } from "./context.js";
 import * as copy from "./copy.js";
 import { handleCustomerTurn, type CustomerState } from "./customer.js";
+import { chooseSide } from "./router.js";
 import { attachMessage, loadState, logInbound, saveState, upsertContact } from "./store.js";
 
 /** A message that keeps failing is dropped (and the team alerted) after this many tries. */
@@ -19,14 +20,15 @@ interface SavedMessage {
   channel: Channel;
   wa_message_id: string | null;
   body: InboundContent;
-  sender: { from?: string; phone?: string | null; profileName?: string | null } | null;
+  sender: { from?: string; phone?: string | null; profileName?: string | null; route?: boolean; contextId?: string | null } | null;
   created_at: Date;
 }
 
 /**
- * Routes each inbound message to the customer or business flow. Every message is saved before it
- * is handled, so a crash can't lose it. Messages from the same person are handled one at a time,
- * in order; repeats of a WhatsApp message ID are ignored.
+ * Routes each inbound message to the customer or business flow: messages on our WhatsApp number go
+ * through the router first. Every message is saved before it is handled, so a crash can't lose it.
+ * Messages from the same person are handled one at a time, in order, whichever side they're for;
+ * repeats of a WhatsApp message ID are ignored.
  */
 export class ConversationEngine {
   private readonly chains = new Map<string, Promise<void>>();
@@ -76,7 +78,7 @@ export class ConversationEngine {
   }
 
   private schedule(id: string, msg: InboundMessage): Promise<void> {
-    const key = `${msg.channel}:${msg.from}`;
+    const key = msg.from;
     this.inFlight.add(id);
     const run = (this.chains.get(key) ?? Promise.resolve()).then(() => this.process(id, msg));
     this.chains.set(key, run);
@@ -112,6 +114,11 @@ export class ConversationEngine {
 
   private async handle(id: string, msg: InboundMessage): Promise<void> {
     const { db, messenger } = this.svc;
+    if (msg.route) {
+      const channel = await chooseSide(db, msg);
+      msg = { ...msg, channel, route: false };
+      await db.query("UPDATE messages SET channel = $2 WHERE id = $1", [id, channel]);
+    }
     const contact = await upsertContact(db, {
       channel: msg.channel,
       waId: msg.from,
@@ -172,6 +179,8 @@ function toInbound(row: SavedMessage): InboundMessage | undefined {
   if (!row.sender?.from || !row.wa_message_id) return undefined;
   return {
     channel: row.channel,
+    route: row.sender.route || undefined,
+    contextId: row.sender.contextId ?? undefined,
     waMessageId: row.wa_message_id,
     from: row.sender.from,
     phone: row.sender.phone ?? undefined,

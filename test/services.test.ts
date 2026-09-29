@@ -34,13 +34,13 @@ describe("photo storage", () => {
         return {};
       },
     };
-    const store = await S3Store.create({ bucket: "photos-bucket", region: "auto", prefix: "whatsapp-directory" }, client as never);
+    const store = await S3Store.create({ bucket: "photos-bucket", region: "auto", prefix: "findzim" }, client as never);
     await store.put("photos/b1/p1.jpg", Buffer.from("jpg"), "image/jpeg");
     expect((await store.get("photos/b1/p1.jpg"))?.toString()).toBe("jpg");
     expect(await store.get("photos/b1/missing.jpg")).toBeUndefined();
     await store.delete("photos/b1/p1.jpg");
     expect(sent.map((s) => s.name)).toEqual(["PutObjectCommand", "GetObjectCommand", "GetObjectCommand", "DeleteObjectCommand"]);
-    expect(sent[0]!.input).toMatchObject({ Bucket: "photos-bucket", Key: "whatsapp-directory/photos/b1/p1.jpg", ContentType: "image/jpeg" });
+    expect(sent[0]!.input).toMatchObject({ Bucket: "photos-bucket", Key: "findzim/photos/b1/p1.jpg", ContentType: "image/jpeg" });
   });
 });
 

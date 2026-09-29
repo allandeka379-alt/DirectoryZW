@@ -1,4 +1,4 @@
-/** The local WhatsApp simulator: a customer chat and a business chat side by side. */
+/** The local WhatsApp simulator: a customer and a business owner, side by side, both chatting with our one number. */
 export function simulatorPage(brand: string): string {
   return PAGE.replace("__BRAND__", escapeHtml(brand));
 }
@@ -47,32 +47,36 @@ form.composer input { flex:1; min-width:0; padding:8px 12px; border-radius:20px;
 form.composer button { border:0; border-radius:20px; padding:8px 14px; background:var(--accent); color:#fff; cursor:pointer; font:inherit; }
 form.composer button[type=button] { padding:8px 9px; }
 dialog { border:1px solid var(--border); border-radius:12px; background:var(--panel); color:var(--text); }
+.product { display:flex; gap:8px; align-items:center; padding:6px 8px; border-top:1px solid var(--border); }
+.product img { width:44px; height:44px; object-fit:cover; border-radius:6px; flex:none; }
+.product div { flex:1; min-width:0; }
+.product button { border:0; background:transparent; color:var(--accent); cursor:pointer; font:inherit; padding:4px; width:auto; flex:none; white-space:nowrap; }
 dialog select { max-width:280px; }
 </style>
 </head>
 <body>
 <header>
   <strong>WhatsApp simulator · __BRAND__</strong>
-  <span>Messages stay on this computer. <button id="jobs" type="button">Run follow-ups now</button></span>
+  <span>One WhatsApp number for customers and businesses. Messages stay on this computer. <button id="jobs" type="button">Run follow-ups now</button></span>
 </header>
 <main>
-  <section class="phone" data-channel="customer">
+  <section class="phone" data-pane="customer">
     <div class="bar">
-      <strong>Customer chat</strong>
+      <strong>Customer</strong>
       <label>My number <input class="from" value="263771234567" size="13"></label>
       <label>Name <input class="name" value="Tendai" size="8"></label>
     </div>
     <div class="chat"></div>
     <form class="composer"><button type="button" class="loc" title="Share location">📍</button><input class="text" placeholder="e.g. I need a plumber in Mabelreign" autocomplete="off"><button>Send</button></form>
   </section>
-  <section class="phone" data-channel="business">
+  <section class="phone" data-pane="owner">
     <div class="bar">
-      <strong>Business chat</strong>
+      <strong>Business owner</strong>
       <label>Number <input class="from" value="263770001000" size="13"></label>
-      <select class="pick"><option value="">Switch to a listed business…</option></select>
+      <select class="pick"><option value="">Be the owner of a listed business…</option></select>
     </div>
     <div class="chat"></div>
-    <form class="composer"><button type="button" class="loc" title="Share location">📍</button><input class="text" placeholder="e.g. register" autocomplete="off"><button>Send</button></form>
+    <form class="composer"><button type="button" class="loc" title="Share location">📍</button><input class="text" placeholder="e.g. I want to register a business, or my business" autocomplete="off"><button>Send</button></form>
   </section>
 </main>
 <dialog id="where">
@@ -122,12 +126,13 @@ dialog select { max-width:280px; }
     return b;
   }
 
-  function send(p, content, echo) {
+  function send(p, content, echo, referred) {
     bubble(p, "me", fmt(echo));
-    return post(p, content);
+    return post(p, content, referred);
   }
-  function post(p, content) {
-    var body = { channel: p.channel, from: number(p), content: content };
+  function post(p, content, referred) {
+    var body = { from: number(p), content: content };
+    if (referred) body.referredProduct = referred;
     if (p.name && p.name.value.trim()) body.name = p.name.value.trim();
     return fetch("/simulator/api/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then(function (r) { if (!r.ok) return r.text().then(function (t) { bubble(p, "bot", "<i>Error: " + esc(t) + "</i>"); }); })
@@ -185,6 +190,31 @@ dialog select { max-width:280px; }
       d.appendChild(lb);
     } else if (m.kind === "contact_card") {
       d = bubble(p, "bot", "👤 " + esc(m.name) + " +" + esc(m.phone));
+    } else if (m.kind === "product_list") {
+      // WhatsApp's product cards from our catalog: "View items", then a product; writing about it names the product.
+      d = bubble(p, "bot", "<b>" + esc(m.header) + "</b><br>" + fmt(m.body) + (m.footer ? '<div class="footer">' + esc(m.footer) + "</div>" : ""));
+      var items = document.createElement("div");
+      items.className = "rows";
+      m.sections.forEach(function (s) {
+        var st = document.createElement("div");
+        st.className = "section";
+        st.textContent = s.title;
+        items.appendChild(st);
+        s.products.forEach(function (pr) {
+          var row = document.createElement("div");
+          row.className = "product";
+          if (pr.image) { var img = document.createElement("img"); img.src = pr.image; img.alt = ""; row.appendChild(img); }
+          var info = document.createElement("div");
+          info.innerHTML = "<b>" + esc(pr.name || pr.id) + "</b>" + (pr.price ? "<br>" + esc(pr.price) : "");
+          row.appendChild(info);
+          row.appendChild(button("Ask about this", function () {
+            send(p, { type: "text", text: "Is this available?" }, "🛍️ " + (pr.name || "This product") + "\nIs this available?", { catalogId: m.catalogId, retailerId: pr.id });
+          }));
+          items.appendChild(row);
+        });
+      });
+      d.appendChild(button("🛍️ View items", function () { items.classList.toggle("open"); }, "toggle"));
+      d.appendChild(items);
     } else {
       d = bubble(p, "bot", "<i>(" + esc(m.kind) + ")</i>");
     }
@@ -197,7 +227,7 @@ dialog select { max-width:280px; }
   function poll(p) {
     var n = number(p);
     if (!n) return Promise.resolve();
-    return fetch("/simulator/api/messages?channel=" + p.channel + "&to=" + n + "&after=" + p.after + "&run=" + p.run)
+    return fetch("/simulator/api/messages?to=" + n + "&after=" + p.after + "&run=" + p.run)
       .then(function (r) { return r.json(); })
       .then(function (res) {
         if (res.run !== p.run) { p.run = res.run; p.after = 0; } // the server restarted
@@ -220,14 +250,14 @@ dialog select { max-width:280px; }
   Array.prototype.forEach.call(document.querySelectorAll(".phone"), function (section) {
     var p = {
       section: section,
-      channel: section.getAttribute("data-channel"),
+      key: section.getAttribute("data-pane"),
       chat: section.querySelector(".chat"),
       from: section.querySelector(".from"),
       name: section.querySelector(".name"),
       after: 0,
       run: ""
     };
-    panes[p.channel] = p;
+    panes[p.key] = p;
     section.querySelector("form").addEventListener("submit", function (e) {
       e.preventDefault();
       var input = section.querySelector(".text");

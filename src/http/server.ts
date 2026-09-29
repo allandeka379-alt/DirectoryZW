@@ -5,6 +5,8 @@ import { parseWebhook, verifySignature } from "../whatsapp/webhook.js";
 import { registerField } from "./field.js";
 import { registerOps } from "./ops.js";
 import { registerSimulator } from "./simulator.js";
+import { registerPublicProducts } from "./products-public.js";
+import { registerWeb } from "./web.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -63,7 +65,7 @@ export function registerRoutes(server: FastifyInstance, app: App): void {
     } else if (app.config.env === "production") {
       return reply.code(500).send("WHATSAPP_APP_SECRET is not configured");
     }
-    const parsed = parseWebhook(req.body, app.config.whatsapp.phoneNumberIds);
+    const parsed = parseWebhook(req.body, app.config.whatsapp.phoneNumberId);
     try {
       for (const message of parsed.messages) await app.engine.receive(message);
     } catch (err) {
@@ -81,4 +83,6 @@ export function registerRoutes(server: FastifyInstance, app: App): void {
   if (app.simulator) registerSimulator(server, app, app.simulator);
   registerOps(server, app);
   registerField(server, app);
+  registerWeb(server, app);
+  registerPublicProducts(server, app);
 }

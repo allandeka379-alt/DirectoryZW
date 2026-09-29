@@ -138,7 +138,7 @@ const screens = {
   async handoffs() {
     const [chats, categories] = await Promise.all([api("/handoffs"), api("/categories")]);
     return [
-      ...header("Handoffs", "Customers waiting for a person: they asked for one, we had no supplier for them, or we couldn't understand them. Replies go out on the customer number. Tell the assistant what they wanted, and it answers the same wording itself next time."),
+      ...header("Handoffs", "Customers waiting for a person: they asked for one, we had no supplier for them, or we couldn't understand them. Replies go out on our WhatsApp number. Tell the assistant what they wanted, and it answers the same wording itself next time."),
       ...(chats.length ? chats.map((chat) => handoffCard(chat, categories)) : [h("p", { class: "muted" }, "No one is waiting.")]),
     ];
   },
@@ -715,7 +715,7 @@ function launchCard(s) {
       `${s.sorted_30d} of ${s.answered_30d} final answers`],
     ["Customers who came back on another day", rate(s.returning_30d, s.customers_30d), "%", "25% or more", (v) => v >= 25,
       `${s.returning_30d} of ${s.customers_30d} customers`],
-    ["Owners who used the business number", rate(s.owners_active_30d, s.owners), "%", "half or more", (v) => v >= 50,
+    ["Owners who wrote to us", rate(s.owners_active_30d, s.owners), "%", "half or more", (v) => v >= 50,
       `${s.owners_active_30d} of ${s.owners} owners`],
     ["Connections per verified business", perBusiness, "", "no target yet", null,
       `${s.verified_connected_30d} of ${s.verified_businesses} verified businesses got at least one`],
@@ -730,7 +730,7 @@ function launchCard(s) {
       { label: "Based on", render: (r) => h("span", { class: "muted" }, r[5]) },
     ], rows),
     h("p", { class: "muted" },
-      "Final answers leave out \"Not yet\". An owner counts once they've written to the business number in the last 30 days. " +
+      "Final answers leave out \"Not yet\". An owner counts once they've written to us in the last 30 days, as a business or a customer." +
       "Connections per business shows what a listing is worth to its owner."));
 }
 
@@ -797,7 +797,7 @@ function handoffCard(chat, categories = []) {
   });
   return h("div", { class: "card" },
     h("strong", {}, chat.profile_name || "Customer"), " ",
-    chat.channel === "business" ? [h("span", { class: "tag" }, "business number"), " "] : null,
+    chat.channel === "business" ? [h("span", { class: "tag" }, "business"), " "] : null,
     h("span", { class: "muted" }, `+${chat.wa_id} · waiting since ${date(chat.updated_at)}`), " ",
     left ? h("span", { class: "tag ok", title: "Replies are free and delivered until their 24-hour window closes" }, `Reply window: ${left}`)
       : h("span", { class: "tag warn" }, "Window closed"),
@@ -824,7 +824,7 @@ function handoffCard(chat, categories = []) {
 function contactCard(c) {
   return h("div", { class: "card" },
     h("strong", {}, c.profile_name || "(no name)"), " ",
-    h("span", { class: "tag" }, c.channel === "customer" ? "customer number" : "business number"),
+    h("span", { class: "tag" }, c.channel === "customer" ? "customer" : "business"),
     c.is_blocked ? [" ", h("span", { class: "tag bad" }, "blocked")] : null,
     h("p", { class: "muted" }, [
       `+${c.wa_id}`,

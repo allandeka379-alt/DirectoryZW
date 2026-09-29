@@ -98,6 +98,10 @@ export interface RetentionResult {
   sessions: number;
   jobs: number;
   opsSessions: number;
+  /** Expired dashboard sessions and sign-in links, and website registrations never finished. */
+  ownerSessions: number;
+  loginLinks: number;
+  webRegistrations: number;
 }
 
 /**
@@ -124,5 +128,11 @@ export async function applyRetention(db: Db, now: Date, keep: { messageDays: num
     ),
     jobs: await count("DELETE FROM jobs WHERE status IN ('done', 'failed') AND created_at < $1 RETURNING id", [daysAgo(30)]),
     opsSessions: await count("DELETE FROM ops_sessions WHERE expires_at < $1 RETURNING token_hash", [now]),
+    ownerSessions: await count("DELETE FROM owner_sessions WHERE expires_at < $1 RETURNING token_hash", [now]),
+    loginLinks: await count("DELETE FROM owner_login_links WHERE expires_at < $1 RETURNING token_hash", [daysAgo(1)]),
+    webRegistrations: await count(
+      "DELETE FROM web_registrations WHERE completed_at IS NULL AND expires_at < $1 RETURNING id",
+      [daysAgo(7)],
+    ),
   };
 }

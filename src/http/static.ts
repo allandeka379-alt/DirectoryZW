@@ -3,7 +3,7 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 
 /** Front-end files live in /public at the project root (two levels up from src/http and dist/http). */
-const PUBLIC_DIR = new URL("../../public/", import.meta.url);
+export const PUBLIC_DIR = new URL("../../public/", import.meta.url);
 
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -11,6 +11,7 @@ const TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".webmanifest": "application/manifest+json",
   ".svg": "image/svg+xml",
+  ".csv": "text/csv; charset=utf-8",
 };
 
 /** Serve one known file from /public at a fixed route (no directory listing, no path input). */

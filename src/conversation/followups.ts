@@ -4,7 +4,9 @@ import { getIntroduction } from "../directory/introductions.js";
 import { reportsWaiting } from "../directory/trust.js";
 import { MAX_JOB_ATTEMPTS, type JobHandler } from "../jobs/queue.js";
 import { applyRetention } from "../privacy.js";
+import { markAllForCatalog, syncCatalog } from "../whatsapp/catalog.js";
 import type { Channel } from "../whatsapp/types.js";
+import { sendProductAlerts } from "./alerts.js";
 import type { Services } from "./context.js";
 import * as copy from "./copy.js";
 import { Ids } from "./ids.js";
@@ -88,6 +90,40 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
       }
     },
 
+    /** Shortly after a business's products change: tell customers who were waiting for them. */
+    product_alerts: async (payload) => {
+      await sendProductAlerts(svc, String(payload.businessId ?? ""), new Date(String(payload.since ?? svc.now().toISOString())));
+    },
+
+    /** Shortly after products change: send the WhatsApp catalog what changed. */
+    catalog_sync: async () => {
+      if (!svc.catalog) return;
+      const result = await syncCatalog(svc.db, svc.catalog, { publicBaseUrl: svc.config.publicBaseUrl, lexicon: svc.lexicon, log: svc.log });
+      if (result.more) {
+        await svc.jobs.enqueueOnce("catalog_sync", "all", {}, new Date(svc.now().getTime() + 5_000));
+        return;
+      }
+      // Meta checks a batch after accepting it: look again in a minute, so anything it refused shows
+      // in the admin portal soon, not at the next change. Batches stuck for an hour wait for the daily check.
+      const [checking] = await svc.db.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM catalog_batches WHERE status = 'pending' AND created_at > now() - interval '1 hour'",
+      );
+      if (checking?.n) await svc.jobs.enqueueOnce("catalog_sync", "all", {}, new Date(svc.now().getTime() + 60_000));
+    },
+
+    /** Once a day: check every product against the catalog, so nothing missed stays missed. */
+    catalog_reconcile: async () => {
+      const now = svc.now();
+      try {
+        if (svc.catalog) {
+          await markAllForCatalog(svc.db);
+          await svc.jobs.enqueueOnce("catalog_sync", "all", {}, now);
+        }
+      } finally {
+        await svc.jobs.enqueue("catalog_reconcile", {}, nextDailyRun(now));
+      }
+    },
+
     /** Every Monday: tell each listed business how many searches it appeared in and how many customers it got. */
     weekly_summaries: async () => {
       const now = svc.now();
@@ -155,6 +191,7 @@ export async function scheduleRecurringJobs(svc: Services): Promise<void> {
     ["retention", nextDailyRun(svc.now())],
     ["retrain_classifier", new Date(svc.now().getTime() + 3600_000)],
     ["report_reminders", new Date(svc.now().getTime() + 3600_000)],
+    ["catalog_reconcile", nextDailyRun(svc.now())],
   ];
   for (const [kind, runAt] of recurring) {
     const queued = await svc.db.query("SELECT 1 FROM jobs WHERE kind = $1 AND status IN ('queued', 'running') LIMIT 1", [kind]);

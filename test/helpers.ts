@@ -121,6 +121,7 @@ export function textOf(m: OutboundMessage): string {
     case "list":
     case "cta_url":
     case "location_request":
+    case "product_list":
       return m.body;
     case "contact_card":
       return m.name;

@@ -12,8 +12,7 @@ beforeAll(async () => {
   app = await testApp({
     WHATSAPP_APP_SECRET: SECRET,
     WHATSAPP_VERIFY_TOKEN: "verify-me",
-    WHATSAPP_CUSTOMER_PHONE_NUMBER_ID: "PN_CUSTOMER",
-    WHATSAPP_BUSINESS_PHONE_NUMBER_ID: "PN_BUSINESS",
+    WHATSAPP_PHONE_NUMBER_ID: "PN_OURS",
   });
   server = createServer({ logger: false });
   registerRoutes(server, app);
@@ -44,7 +43,7 @@ const textMessage = (from: string, id: string, text: string) => ({
         {
           field: "messages",
           value: {
-            metadata: { phone_number_id: "PN_CUSTOMER" },
+            metadata: { phone_number_id: "PN_OURS" },
             contacts: [{ profile: { name: "Rudo" }, wa_id: from }],
             messages: [{ from, id, timestamp: "1767225600", type: "text", text: { body: text } }],
           },
@@ -68,6 +67,11 @@ describe("webhook", () => {
     expect(res.statusCode).toBe(200);
     await app.engine.idle();
     expect(textOf(app.last("customer", "263772222222"))).toContain("Hi Rudo!");
+
+    // The same number takes business registrations.
+    await server.inject({ method: "POST", url: "/webhook/whatsapp", ...signed(textMessage("263772222224", "wamid.http3", "I want to register a business")) });
+    await app.engine.idle();
+    expect(textOf(app.last("business", "263772222224"))).toContain("What's the name of your business?");
 
     const forged = await server.inject({
       method: "POST",
@@ -131,6 +135,30 @@ describe("simulator API", () => {
     const page = await server.inject({ url: "/simulator" });
     expect(page.headers["content-type"]).toContain("text/html");
     expect(page.body).toContain("TestDir");
+    // The page's script is written inside a template string: a slip there breaks the whole page.
+    const scripts = [...page.body.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const script of scripts) expect(() => new Function(script)).not.toThrow();
+  });
+
+  it("passes on which product card a message was written from", async () => {
+    const sent = await server.inject({
+      method: "POST",
+      url: "/simulator/api/send",
+      payload: {
+        channel: "customer",
+        from: "263774444446",
+        content: { type: "text", text: "Is this available?" },
+        referredProduct: { catalogId: "sim-catalog", retailerId: "00000000-0000-0000-0000-000000000000" },
+      },
+    });
+    expect(sent.statusCode).toBe(200);
+    const bad = await server.inject({
+      method: "POST",
+      url: "/simulator/api/send",
+      payload: { channel: "customer", from: "263774444446", content: { type: "text", text: "hi" }, referredProduct: { catalogId: "sim-catalog" } },
+    });
+    expect(bad.statusCode).toBe(400);
   });
 
   it("asks for a typed message when a voice note arrives, and takes no uploads", async () => {
