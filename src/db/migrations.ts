@@ -718,4 +718,38 @@ CREATE INDEX photo_fetches_business_idx ON photo_fetches (business_id, status);
 ALTER TABLE offerings ADD COLUMN photo_source_url text;
 `,
   },
+  {
+    id: "016_review_fixes",
+    sql: /* sql */ `
+-- Lookups by person (a customer's own requests, erasure, exports) and by photo (the public photo
+-- route, deleting a photo). Migration 005 dropped the only index that began with requests.contact_id.
+CREATE INDEX IF NOT EXISTS requests_contact_idx ON requests (contact_id, created_at);
+CREATE INDEX IF NOT EXISTS introductions_contact_idx ON introductions (contact_id, created_at);
+CREATE INDEX IF NOT EXISTS clarifications_contact_idx ON clarifications (contact_id);
+CREATE INDEX IF NOT EXISTS owner_login_links_contact_idx ON owner_login_links (contact_id);
+CREATE INDEX IF NOT EXISTS owner_sessions_contact_idx ON owner_sessions (contact_id);
+CREATE INDEX IF NOT EXISTS reports_contact_idx ON reports (contact_id);
+CREATE INDEX IF NOT EXISTS recommendations_contact_idx ON recommendations (contact_id);
+CREATE INDEX IF NOT EXISTS offerings_photo_idx ON offerings (photo_id) WHERE photo_id IS NOT NULL;
+-- The daily clean-up deletes old messages by date.
+CREATE INDEX IF NOT EXISTS messages_created_idx ON messages (created_at);
+-- "stop": no follow-ups for what came before it.
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS stopped_at timestamptz;
+-- Who paused a listing: its owner can switch back on only a pause of their own.
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS paused_by text CHECK (paused_by IN ('owner', 'team', 'system'));
+UPDATE businesses b SET paused_by = CASE
+    WHEN EXISTS (SELECT 1 FROM ops_audit a WHERE a.target = b.id::text AND a.action = 'business.auto_pause') THEN 'system'
+    WHEN b.audit_status = 'failed' THEN 'team'
+    ELSE 'owner' END
+  WHERE b.status = 'paused';
+-- When a job started running, so one left running by a crash goes back in the queue.
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS started_at timestamptz;
+-- Registration codes that didn't match, by a hash of the sender's WhatsApp ID: a few a day each.
+CREATE TABLE IF NOT EXISTS code_attempts (
+  sender text NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS code_attempts_sender_idx ON code_attempts (sender, created_at);
+`,
+  },
 ];

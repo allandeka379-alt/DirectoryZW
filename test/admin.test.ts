@@ -34,7 +34,7 @@ async function write(from: string, content: InboundContent): Promise<void> {
 }
 const say = (from: string, text: string) => write(from, { type: "text", text });
 const lastText = (to: string) => textOf(app.sim.sinceAny(to, 0).at(-1)!.message);
-const tokenIn = (text: string) => decodeURIComponent(/\/app\/\?signin=([\w%-]+)/.exec(text)![1]!);
+const tokenIn = (text: string) => decodeURIComponent(/\/app\/#signin=([\w%-]+)/.exec(text)![1]!);
 
 async function ownerCookie(owner: string): Promise<string> {
   await say(owner, "dashboard");

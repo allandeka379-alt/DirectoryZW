@@ -8,7 +8,7 @@ The app is one Node.js process with a web server, a background job loop and the 
 | --- | --- | --- |
 | A host that runs Node 22+ or Docker, with HTTPS | The app, the webhook Meta calls, the website, the business dashboard, the admin portal and the field app (GPS and offline mode need HTTPS) | Render, Railway, Fly.io, a VPS behind Caddy |
 | Managed PostgreSQL 15+ with daily backups and point-in-time recovery | Everything except photos | Neon, Supabase, AWS RDS, DigitalOcean |
-| S3-compatible bucket, private | Field agents' photos of businesses, and the photos owners add on the dashboard | Cloudflare R2, AWS S3, Backblaze B2 |
+| S3-compatible bucket, private (optional: the live app keeps photos on a Railway volume for now) | Field agents' photos of businesses, and the photos owners add on the dashboard | Cloudflare R2, AWS S3, Backblaze B2 |
 | Meta WhatsApp Business account with one number | Customers and businesses both message it | See [LAUNCH.md](LAUNCH.md) |
 | Anthropic API key (optional) | Wording the local engine can't read (within `CLAUDE_DAILY_BUDGET_USD`) | console.anthropic.com |
 | Chat webhook (optional) | Alerts | Slack, Discord or Google Chat incoming webhook |
@@ -33,7 +33,8 @@ WHATSAPP_NUMBER=263…
 WHATSAPP_BUSINESS_ACCOUNT_ID=…     # for npm run templates
 WHATSAPP_CATALOG_ID=…              # optional: our Meta catalog, for product cards
 ANTHROPIC_API_KEY=…
-STORAGE=s3
+CONTACT_EMAIL=…                    # shown on /privacy and /terms
+STORAGE=s3                         # or UPLOADS_DIR on a disk that survives redeploys
 S3_BUCKET=… S3_ENDPOINT=… S3_ACCESS_KEY_ID=… S3_SECRET_ACCESS_KEY=…
 ALERT_WEBHOOK_URL=…
 SEED_SAMPLE_DATA=false
@@ -55,18 +56,21 @@ docker run --env-file .env -p 3000:3000 findzim
 
 Without Docker: `npm ci`, `npm run build`, then `npm start`. The database schema is created and upgraded automatically at start-up.
 
-Point your host's health check at `/ready` (it checks the database) and uptime monitoring at `/health`.
+Point your host's health check at `/ready` (it checks the database) and uptime monitoring at `/health`. At start-up the app waits about two minutes for the database, and it writes and deletes a test file to check photos can be stored: if they can't, it logs "Photo storage … can't be written".
+
+GitHub Actions type-checks and runs the tests on every push to `main` (`.github/workflows/ci.yml`).
 
 ## Where FindZim runs
 
 - **Railway**, project *positive-love*, runs the app. The service is still named DirectoryZW, and it deploys GitHub `main` with the `Dockerfile`.
   - Postgres is its own service there; `DATABASE_URL` refers to it.
-  - A volume is mounted at `/data`, and photos are kept in `/data/uploads` (`UPLOADS_DIR`), so they survive redeploys.
+  - A volume is mounted at `/data`, and photos are kept in `/data/uploads` (`UPLOADS_DIR`), so they survive redeploys. The app runs as the `node` user: if the logs say photo storage can't be written, set `RAILWAY_RUN_UID=0` on the service.
+  - `railway.json` in the repository sets the health check (`/ready`, up to 5 minutes for migrations) and restarts the app if it stops. Turn on **Wait for CI** in the service's settings so only commits that pass the tests are deployed.
   - Its own address is `https://directoryzw-production.up.railway.app`, pointed at port 3000 (`PORT=3000`).
 - **Vercel**, project *findzim*, gives the public address: `https://findzim.vercel.app` forwards every request to the Railway app (`deploy/vercel/vercel.json`).
   - The website, the dashboard, the admin portal and WhatsApp's webhook share that one address. `PUBLIC_BASE_URL` is set to it, so links we send use it.
   - If the Railway address changes, edit `deploy/vercel/vercel.json`, then run `vercel deploy --prod` from `deploy/vercel`.
-- Until Meta approves the number, the app runs in pre-launch mode (`WHATSAPP_TRANSPORT=off`).
+- Until Meta approves the number, the app runs in pre-launch mode (`WHATSAPP_TRANSPORT=off`). The webhook can be registered with Meta before the switch: verification works with `WHATSAPP_VERIFY_TOKEN`, and signed calls are acknowledged and dropped until `WHATSAPP_TRANSPORT=cloud`.
 
 ## First sign-in
 
@@ -82,6 +86,7 @@ It prints a password once. Sign in at `https://your-domain/admin`, then add the 
 
 - Turn on your Postgres provider's daily backups and point-in-time recovery, and do a test restore before launch.
 - Photos in the bucket aren't in the database backup. Copy the bucket somewhere else once a week (for example `rclone sync`), or enable versioning if your provider has it.
+- Photos on the Railway volume aren't in the database backup either. Turn on backups for the volume in the service's settings, or copy `/data/uploads` to a bucket every week. Moving photos to R2 (`STORAGE=s3`) before launch removes the volume from the picture.
 - An extra nightly dump you control:
 
   ```bash

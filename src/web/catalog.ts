@@ -475,6 +475,8 @@ export async function importProducts(db: Db, businessId: string, req: z.infer<ty
   /** Listed products whose photo comes from a link that's new to them. */
   const photoLinks: { productId: string; url: string }[] = [];
   const has = (v: string | undefined): v is string => v !== undefined;
+  /** An update changes only what the file says: an empty cell keeps what's listed ("ask" takes a price off). */
+  const filled = (v: string | undefined): v is string => v !== undefined && v.trim() !== "";
 
   req.rows.forEach((raw, i) => {
     const row = i + 1;
@@ -499,7 +501,9 @@ export async function importProducts(db: Db, businessId: string, req: z.infer<ty
       results.push({ row, name, action, ...(photoAction ? { photo: photoAction } : {}), ...(photoError ? { photoError } : {}) });
     };
 
-    const match = sku ? bySku.get(sku.toLowerCase()) : byName.get(name.toLowerCase());
+    // By its code; a product listed without one is found by its name, and gets the code.
+    const named = byName.get(name.toLowerCase());
+    const match = sku ? (bySku.get(sku.toLowerCase()) ?? (named && !named.sku ? named : undefined)) : named;
     if (!match) {
       if (room <= 0) return fail(`A business can list up to ${MAX_PRODUCTS.toLocaleString("en")} products`);
       room--;
@@ -522,14 +526,16 @@ export async function importProducts(db: Db, businessId: string, req: z.infer<ty
     const photoAction = !photo ? undefined : match.photo_id && (!match.photo_source_url || match.photo_source_url === photo) ? "keep" : "fetch";
     if (photoAction === "fetch") photoLinks.push({ productId: match.id, url: photo! });
 
-    // Only the columns the file has; an empty description cell keeps what the owner wrote.
+    // Only the cells the file fills in; an empty cell keeps what the owner has.
     const patch: ProductPatch = { name };
-    if (has(raw.price)) patch.price = price;
-    if (has(raw.unit)) patch.unit = blank(raw.unit)?.slice(0, 30) ?? null;
-    if (has(raw.category)) patch.category = blank(raw.category)?.slice(0, 60) ?? null;
-    if (has(raw.description) && raw.description.trim()) patch.description = raw.description.trim().slice(0, 500);
-    if (has(raw.inStock)) patch.inStock = inStock;
+    if (filled(raw.price)) patch.price = price;
+    if (filled(raw.unit)) patch.unit = blank(raw.unit)?.slice(0, 30) ?? null;
+    if (filled(raw.category)) patch.category = blank(raw.category)?.slice(0, 60) ?? null;
+    if (filled(raw.description)) patch.description = raw.description.trim().slice(0, 500);
+    if (filled(raw.inStock)) patch.inStock = inStock;
+    if (sku && !match.sku) patch.sku = sku;
     const same =
+      patch.sku === undefined &&
       patch.name === match.name &&
       (patch.price === undefined || patch.price === dollars(match.price_usd)) &&
       (patch.unit === undefined || patch.unit === match.unit) &&

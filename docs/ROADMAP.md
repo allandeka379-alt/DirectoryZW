@@ -362,7 +362,7 @@ Requested on 29 September 2026: make the engine work well, getting products from
 On 29 September 2026 the project was named **FindZim** (`BRAND_NAME`; the GitHub repository and the Railway service keep their old name for now). Production runs on Railway before Meta approves the number, so:
 
 - [x] **Pre-launch mode** (`WHATSAPP_TRANSPORT=off`):
-  - The website, the dashboard, the admin portal and the field app run. Nothing goes out on WhatsApp, and WhatsApp's webhook is turned away.
+  - The website, the dashboard, the admin portal and the field app run. Nothing goes out on WhatsApp. Meta can verify the webhook, and signed calls are acknowledged and dropped (since the September review).
   - The website says we open on WhatsApp soon and hides the WhatsApp buttons.
   - A website sign-up waits 60 days for the team, who call the owner and **List it** from the admin portal.
   - Admins hand owners a one-time dashboard link from the business's page. It works for a day, and the business's own number becomes its owner.
@@ -387,6 +387,38 @@ Requested on 29 September 2026, so that big catalogues like Halsteds' come with 
   - The owner chooses the product for any that didn't match.
   - Each photo is made smaller in the browser before it's sent, three at a time.
 - [x] Tests (275)
+
+## The September 2026 review
+
+On 30 September 2026 the whole project was reviewed: 230 findings, of which the 70 most serious were checked against the code (48 held up). The report and ratings are in [REVIEW.md](REVIEW.md). Fixed:
+
+- [x] **Conversations that got stuck or went wrong:**
+  - Typing "I agree" (or "yes", "ndinobvuma", "ngiyavuma") after the notice counts as agreeing.
+  - A place we don't know keeps the request and says so; "anywhere" searches without a place; a new request typed instead of a place is a new request.
+  - Questions we asked (where, which one, what went wrong, a recommendation's details) lapse an hour after the customer's last message, so a search typed hours later is never filed as a report. A shared location is used for 12 hours.
+  - While a person handles the chat, "stop", "alerts off" and taps on our follow-ups still work.
+  - "No" to a recommended business's number means not knowing it.
+  - "Yes", "not yet" or "no" typed under the follow-up count as its buttons.
+  - Reactions get no reply; stickers, videos and documents get "please type" instead of the help text, on both sides.
+  - "back", "exit", "menu" and "help" work halfway through registering a business.
+- [x] **Follow-ups and scores:** "stop" also stops the follow-up for businesses contacted before it; "Connect me" tapped twice gives the same link, one lead notice and one follow-up; tapping "Yes, sorted" again never moves a business's score twice; the follow-up is claimed before it's sent, so it's never sent twice.
+- [x] **Results:** cards show the street address and opening hours; service businesses aren't called stores; a business's supplier search that falls back to retail says so with products too; wholesale-only stores never reach the public through product codes; asking about one product reuses only a request that showed that product.
+- [x] **Pauses:** a listing paused after customer reports, a failed call-back or a re-check can't be switched back on by its owner, on WhatsApp or the dashboard (migration 016, `paused_by`). Pauses, re-checks, call-backs, a new location and a photo removed by the team now reach the WhatsApp catalog too.
+- [x] **Launch:** the privacy notice (`/privacy`) and business terms (`/terms`) are served by the app, linked from WhatsApp and the website (`CONTACT_EMAIL`). The webhook can be verified before launch. A listing our team made from a website sign-up is claimed by whoever sends its code first (the team is alerted), and a number can send five wrong codes a day. The website no longer tells pre-launch visitors to use WhatsApp.
+- [x] **Reliability:** start-up waits for the database; a dropped database connection, an unhandled rejection or an uncaught exception no longer kills the process silently; jobs left running by a crash go back in the queue by when they started, every few minutes; recurring jobs can't multiply after a failure; Meta's rate limits are retried; photo storage is checked at start-up; `railway.json` sets the health check and restarts; CI runs the tests (`.github/workflows/ci.yml`).
+- [x] **Data protection:** exports include everything held; after `REQUEST_RETENTION_DAYS` requests lose their search words and location, alerts go, and people who haven't written lose their number and name; owners no longer see how each customer answered our follow-up or rated them.
+- [x] **Security:** sign-in tokens travel after "#" and logs drop query strings; a mangled cookie is no session instead of a server error; responses forbid framing and content sniffing.
+- [x] **Speed:** indexes for lookups by person and by photo (migration 016); the business search keeps the right 300 candidates when there are more.
+- [x] **Uploads:** an empty cell keeps what's listed ("ask" takes a price off); a product listed without a code is found by its name; the add-product form never adds a product twice when its photo fails.
+- [x] **Tests for what had none:** the Cloud API transport and the catalog's batch calls against responses shaped like Meta's, and one person's messages handled in order.
+- [x] Tests (308)
+
+Still to do:
+
+- [ ] A lawyer reviews `/privacy` and `/terms`; set `CONTACT_EMAIL`; register with POTRAZ.
+- [ ] Decide the WhatsApp wording about listing being free (the website says nothing about it; WhatsApp still says "list it free" in places, including the terms step).
+- [ ] Railway: turn on **Wait for CI** and volume backups; if the logs say photo storage can't be written, set `RAILWAY_RUN_UID=0`; move photos to R2 before launch.
+- [ ] Related-category searches in one query instead of one per category.
 
 ## Later: monetization (only after traction)
 

@@ -34,7 +34,7 @@ Until Meta approves the number, run with `WHATSAPP_TRANSPORT=off` (pre-launch mo
 ## 3. Data protection (see [DATA_PROTECTION.md](DATA_PROTECTION.md))
 
 - [ ] POTRAZ licence and data protection officer.
-- [ ] Privacy notice and business terms published; `PRIVACY_URL` and `BUSINESS_TERMS_URL` set.
+- [ ] Privacy notice (`/privacy`) and business terms (`/terms`) reviewed by a lawyer, and `CONTACT_EMAIL` set (or `PRIVACY_URL` and `BUSINESS_TERMS_URL` pointed at your own pages).
 
 ## 4. Quality checks
 

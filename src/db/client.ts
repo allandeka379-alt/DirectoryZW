@@ -20,10 +20,12 @@ export interface DbOptions {
   databaseUrl?: string;
   /** Directory for embedded Postgres; omit for an in-memory database. */
   pgliteDir?: string;
+  /** Told about connection trouble: a dropped idle connection, or the database not up yet at start. */
+  onError?: (message: string, err: unknown) => void;
 }
 
 export async function openDb(opts: DbOptions): Promise<Db> {
-  if (opts.databaseUrl) return openPostgres(opts.databaseUrl);
+  if (opts.databaseUrl) return openPostgres(opts.databaseUrl, opts.onError ?? ((message, err) => console.error(message, String(err))));
   return openPglite(opts.pgliteDir);
 }
 
@@ -73,9 +75,28 @@ function wrapPgClient(client: pg.PoolClient): Db {
   };
 }
 
-async function openPostgres(connectionString: string): Promise<Db> {
+/** How long start-up waits for the database, in steps: about two minutes in all. */
+const CONNECT_WAITS_MS = [2000, 4000, 6000, 8000, 10000, 12000, 14000, 15000, 15000, 15000, 15000];
+
+async function openPostgres(connectionString: string, onError: (message: string, err: unknown) => void): Promise<Db> {
   const pool = new pg.Pool({ connectionString, max: 10 });
-  await pool.query("select 1");
+  // A connection the server drops while idle (a database restart) must not bring the app down.
+  pool.on("error", (err) => onError("Database connection lost; it reconnects on the next query", err));
+  // After a deploy or a restart the database may still be starting.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await pool.query("select 1");
+      break;
+    } catch (err) {
+      const wait = CONNECT_WAITS_MS[attempt];
+      if (wait === undefined) {
+        await pool.end().catch(() => {});
+        throw err;
+      }
+      onError(`Database not reachable yet; trying again in ${wait / 1000} s`, err);
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
   return {
     async query<T>(sql: string, params: unknown[] = []) {
       const res = await pool.query(sql, params);

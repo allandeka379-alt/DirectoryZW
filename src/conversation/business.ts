@@ -15,7 +15,7 @@ import type { Taxonomy } from "../directory/taxonomy.js";
 import { eraseBusiness, eraseContact } from "../privacy.js";
 import { normalizeText, normalizeZimPhone } from "../text.js";
 import { createLoginLink, signInUrl } from "../web/owner-auth.js";
-import { completeWebRegistration, REGISTRATION_CODE } from "../web/registration.js";
+import { codeSender, completeWebRegistration, REGISTRATION_CODE, WRONG_CODES_PER_DAY } from "../web/registration.js";
 import type { Turn } from "./context.js";
 import * as copy from "./copy.js";
 import { Ids, parseAction } from "./ids.js";
@@ -73,6 +73,8 @@ export async function handleBusinessTurn(t: T): Promise<void> {
   if (contact.phone) await claimBusinessesByPhone(svc.db, contact.id, contact.phone);
 
   const c = inbound.content;
+  // A reaction needs no answer; stickers, videos and documents aren't read.
+  if (c.type === "unsupported") return c.rawType === "reaction" ? undefined : t.reply(copy.bizTypeInstead());
   // Finishing a registration started on the website, or asking for a dashboard link, whatever else was going on.
   if (c.type === "text" && REGISTRATION_CODE.test(c.text)) return finishWebRegistration(t, c.text);
   if (c.type === "text" && DASHBOARD.has(normalizeText(c.text))) return sendDashboardLink(t);
@@ -101,7 +103,7 @@ export async function handleBusinessTurn(t: T): Promise<void> {
   if (c.type === "image" || c.type === "audio") return t.reply(copy.bizTypeInstead());
   if (c.type === "text") {
     const cmd = normalizeText(c.text);
-    if (state.stage && ["cancel", "stop"].includes(cmd)) {
+    if (state.stage && ["cancel", "stop", "back", "exit", "quit", "menu"].includes(cmd)) {
       const wasEditing = !state.stage.startsWith("reg_");
       state.stage = undefined;
       state.draft = undefined;
@@ -118,6 +120,8 @@ export async function handleBusinessTurn(t: T): Promise<void> {
       state.draft = undefined;
       return showMenu(t);
     }
+    // "help" halfway through: the question again, with how to stop (never a business called "help").
+    if (state.stage && cmd === "help") return askCurrent(t);
     if (state.stage) return continueStage(t, c.text);
     if (REGISTER_WORDS.includes(cmd)) return startRegistration(t);
     if (["summary", "stats"].includes(cmd)) return withBusiness(t, (b) => sendSummary(t, b));
@@ -242,8 +246,9 @@ async function weekStats(t: T, b: Business): Promise<{ shown: number; intros: nu
 
 /** The last 30 days' customers, by reference code, newest first. */
 async function showCustomers(t: T, b: Business): Promise<void> {
-  const leads = await t.svc.db.query<{ ref: string; at: Date; what: string | null; outcome: string | null }>(
-    `SELECT i.ref_code AS ref, i.created_at AS at, r.raw_text AS what, i.outcome
+  // Never how each customer answered our follow-up: the owner knows who a reference belongs to.
+  const leads = await t.svc.db.query<{ ref: string; at: Date; what: string | null }>(
+    `SELECT i.ref_code AS ref, i.created_at AS at, r.raw_text AS what
        FROM introductions i LEFT JOIN requests r ON r.id = i.request_id
       WHERE i.business_id = $1 AND i.created_at > now() - interval '30 days'
       ORDER BY i.created_at DESC LIMIT 15`,
@@ -483,14 +488,26 @@ async function sendDashboardLink(t: T): Promise<void> {
 /** The owner sent the code shown after registering on the website: create the listing, owned by this number. */
 async function finishWebRegistration(t: T, text: string): Promise<void> {
   const { svc, contact, state } = t;
+  const sender = codeSender(contact.wa_id);
+  const dayAgo = new Date(svc.now().getTime() - 24 * 3600_000);
+  const [wrong] = await svc.db.query<{ n: number }>("SELECT count(*)::int AS n FROM code_attempts WHERE sender = $1 AND created_at > $2", [sender, dayAgo]);
+  if ((wrong?.n ?? 0) >= WRONG_CODES_PER_DAY) return t.reply(copy.webRegTooMany());
   const result = await completeWebRegistration({ db: svc.db, gazetteer: svc.gazetteer }, text, contact.id, svc.now());
-  if (!("businessId" in result)) return t.reply(copy.webRegProblem(result.status, `${svc.config.publicBaseUrl}/register`));
+  if (!("businessId" in result)) {
+    await svc.db.query("INSERT INTO code_attempts (sender, created_at) VALUES ($1, $2)", [sender, svc.now()]);
+    return t.reply(copy.webRegProblem(result.status, `${svc.config.publicBaseUrl}/register`));
+  }
+  if (result.status === "claimed") {
+    svc.log.info({ contactId: contact.id, businessId: result.businessId }, "Listing claimed with its registration code");
+    svc.alerts.send(`claimed:${result.businessId}`, `${result.name} is now managed from WhatsApp: someone sent its registration code. Check it under Businesses if that's unexpected.`);
+  }
   await setConsent(svc.db, contact.id);
   state.stage = undefined;
   state.draft = undefined;
   state.selectedBusinessId = result.businessId;
   if (result.status === "created") svc.log.info({ contactId: contact.id, name: result.name }, "Business registered on the website");
   const url = await dashboardUrl(t);
+  if (result.status === "claimed") return t.reply(copy.webRegClaimed(result.name, url));
   return t.reply(result.status === "created" ? copy.webRegDone(result.name, url) : copy.webRegAlready(result.name, url));
 }
 
@@ -521,7 +538,8 @@ async function sendSummary(t: T, b: Business): Promise<void> {
 }
 
 async function setPaused(t: T, b: Business, paused: boolean): Promise<void> {
-  await setBusinessStatus(t.svc.db, b.id, paused ? "paused" : "active");
+  if (!paused && b.status === "paused" && b.paused_by && b.paused_by !== "owner") return t.reply(copy.bizPausedByTeam(b.name));
+  await setBusinessStatus(t.svc.db, b.id, paused ? "paused" : "active", "owner");
   return t.reply(paused ? copy.bizPaused() : copy.bizResumed());
 }
 

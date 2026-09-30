@@ -15,6 +15,8 @@ export interface Contact {
   consent_at: Date | null;
   last_inbound_at: Date | null;
   is_blocked: boolean;
+  /** When they last typed "stop": no follow-ups for what they did before it. */
+  stopped_at?: Date | null;
   created_at: Date;
 }
 

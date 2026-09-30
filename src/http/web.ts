@@ -46,6 +46,7 @@ import {
   type Owner,
 } from "../web/owner-auth.js";
 import { clearFailedPhotoLinks, photoLinkStatus, retryPhotoLinks } from "../web/photo-links.js";
+import { privacyPage, termsPage, type LegalValues } from "../web/legal.js";
 import { REGISTRATION_HOURS, startWebRegistration, WebRegistration } from "../web/registration.js";
 import { productsChanged } from "../conversation/alerts.js";
 import * as copy from "../conversation/copy.js";
@@ -107,6 +108,17 @@ export function registerWeb(server: FastifyInstance, app: App): void {
   // ----- Pages and files -----
   servePage(server, app, "/", "site/index.html");
   servePage(server, app, "/register", "site/register.html");
+  // The privacy notice and business terms, with the retention periods from the settings.
+  const legal = (): LegalValues => ({
+    brand: app.config.brandName,
+    contactEmail: app.config.contactEmail,
+    whatsappNumber: app.config.whatsapp.transport === "off" ? undefined : app.config.whatsapp.number,
+    messageDays: app.config.retention.messageDays,
+    requestDays: app.config.retention.requestDays,
+    year: app.services.now().getFullYear(),
+  });
+  server.get("/privacy", async (_req, reply) => reply.type("text/html; charset=utf-8").header("Cache-Control", "no-cache").send(privacyPage(legal())));
+  server.get("/terms", async (_req, reply) => reply.type("text/html; charset=utf-8").header("Cache-Control", "no-cache").send(termsPage(legal())));
   serveFile(server, "/assets/base.css", "web/base.css");
   serveFile(server, "/assets/site.css", "site/site.css");
   serveFile(server, "/assets/register.js", "site/register.js");
@@ -237,8 +249,8 @@ function servePage(server: FastifyInstance, app: App, route: string, file: strin
       // "off" before launch: the pages hide what needs WhatsApp.
       whatsapp: app.config.whatsapp.transport === "off" ? "off" : "on",
       wa: app.config.whatsapp.number,
-      terms: app.config.businessTermsUrl ?? "/#faq",
-      privacy: app.config.privacyUrl ?? "/#faq",
+      terms: app.config.businessTermsUrl,
+      privacy: app.config.privacyUrl,
       year: String(app.services.now().getFullYear()),
     };
     const page = html.replace(/\{\{(\w+)\}\}/g, (m, key: string) => (key in values ? escapeHtml(values[key]!) : m));
@@ -255,8 +267,8 @@ function options(app: App) {
     brand: app.config.brandName,
     whatsapp: live,
     whatsappNumber: live ? app.config.whatsapp.number : null,
-    termsUrl: app.config.businessTermsUrl ?? null,
-    privacyUrl: app.config.privacyUrl ?? null,
+    termsUrl: app.config.businessTermsUrl,
+    privacyUrl: app.config.privacyUrl,
     categories: app.services.taxonomy
       .searchable()
       .filter((c) => c.risk !== "restricted" && c.risk !== "blocked")
@@ -290,8 +302,8 @@ function registerOwnerRoutes(api: FastifyInstance, app: App): void {
   }
 
   api.get("/me", async (req) => {
-    const businesses = await db.query<{ id: string; name: string; verification: string; status: string; area_id: number | null; products: number }>(
-      `SELECT b.id, b.name, b.verification, b.status, b.area_id,
+    const businesses = await db.query<{ id: string; name: string; verification: string; status: string; paused_by: string | null; area_id: number | null; products: number }>(
+      `SELECT b.id, b.name, b.verification, b.status, b.paused_by, b.area_id,
               (SELECT count(*)::int FROM offerings o WHERE o.business_id = b.id AND o.archived_at IS NULL) AS products
          FROM businesses b WHERE b.owner_contact_id = $1 AND b.status <> 'removed' ORDER BY b.created_at`,
       [req.owner!.contactId],
@@ -378,7 +390,11 @@ function registerOwnerRoutes(api: FastifyInstance, app: App): void {
     if (!b) return;
     const body = z.object({ live: z.boolean() }).safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "Say whether the listing is live" });
-    await setBusinessStatus(db, b.id, body.data.live ? "active" : "paused");
+    // A pause after customer reports or a check by our team is for our team to lift.
+    if (body.data.live && b.status === "paused" && b.paused_by && b.paused_by !== "owner") {
+      return reply.code(409).send({ error: "Our team paused this listing, so only our team can switch it back on. Contact us if you think it's a mistake." });
+    }
+    await setBusinessStatus(db, b.id, body.data.live ? "active" : "paused", "owner");
     return { ok: true, status: body.data.live ? "active" : "paused" };
   });
 

@@ -1,6 +1,6 @@
 import type { Db } from "../db/client.js";
 import { one } from "../db/client.js";
-import { isUuid } from "./businesses.js";
+import { isUuid, markCatalogDirty } from "./businesses.js";
 
 /** Reports this customer has made since `since`, for the daily limit. */
 export async function reportsSince(db: Db, contactId: string, since: Date): Promise<number> {
@@ -38,7 +38,8 @@ export async function fileReport(
       [r.businessId],
     );
     if ((credible?.n ?? 0) < pauseAfter) return { paused: false, businessName: business.name };
-    await tx.query("UPDATE businesses SET status = 'paused', updated_at = now() WHERE id = $1", [r.businessId]);
+    await tx.query("UPDATE businesses SET status = 'paused', paused_by = 'system', updated_at = now() WHERE id = $1", [r.businessId]);
+    await markCatalogDirty(tx, r.businessId);
     await tx.query(
       "INSERT INTO ops_audit (actor, action, target, details) VALUES ('system', 'business.auto_pause', $1, $2)",
       [r.businessId, JSON.stringify({ reports: credible?.n })],

@@ -110,7 +110,7 @@ export function registerWebAdminRoutes(ops: FastifyInstance, app: App): void {
     const params = z.object({ id: z.string().refine(isUuid), photoId: z.string().refine(isUuid) }).safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "Not a valid ID" });
     // A product's photo is taken off the product first.
-    await app.db.query("UPDATE offerings SET photo_id = NULL, updated_at = $3 WHERE business_id = $1 AND photo_id = $2", [
+    await app.db.query("UPDATE offerings SET photo_id = NULL, updated_at = $3, catalog_dirty = true WHERE business_id = $1 AND photo_id = $2", [
       params.data.id,
       params.data.photoId,
       now(),

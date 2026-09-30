@@ -63,7 +63,7 @@ export async function startWebRegistration(
 }
 
 export type CompleteResult =
-  | { status: "created" | "exists"; businessId: string; name: string }
+  | { status: "created" | "exists" | "claimed"; businessId: string; name: string }
   | { status: "unknown" | "expired" | "used" };
 
 interface RegistrationRow {
@@ -89,9 +89,42 @@ export async function completeWebRegistration(
     [`REG-${digits}`],
   );
   if (!reg) return { status: "unknown" };
-  if (reg.completed_at) return { status: "used" };
-  if (new Date(reg.expires_at) <= now) return { status: "expired" };
+  if (new Date(reg.expires_at) <= now) return { status: reg.completed_at ? "used" : "expired" };
+  if (reg.completed_at) return claimListing(deps.db, reg, ownerContactId);
   return listRegistration(deps, reg, ownerContactId, now);
+}
+
+/**
+ * The code of a registration our team listed before launch: whoever sends it becomes the owner,
+ * while nobody manages the listing yet (they may message us from another number than the
+ * business's). Sending it again later is the listing they already have.
+ */
+async function claimListing(db: Db, reg: RegistrationRow, contactId: string): Promise<CompleteResult> {
+  if (!reg.business_id) return { status: "used" };
+  const claimed = await one<{ id: string; name: string }>(
+    db,
+    `UPDATE businesses SET owner_contact_id = $2, updated_at = now()
+      WHERE id = $1 AND owner_contact_id IS NULL AND status <> 'removed' RETURNING id, name`,
+    [reg.business_id, contactId],
+  );
+  if (claimed) {
+    await db.query("INSERT INTO ops_audit (actor, action, target, details) VALUES ('system', 'business.claimed', $1, '{}')", [claimed.id]);
+    return { status: "claimed", businessId: claimed.id, name: claimed.name };
+  }
+  const own = await one<{ id: string; name: string }>(
+    db,
+    "SELECT id, name FROM businesses WHERE id = $1 AND owner_contact_id = $2 AND status <> 'removed'",
+    [reg.business_id, contactId],
+  );
+  return own ? { status: "exists", businessId: own.id, name: own.name } : { status: "used" };
+}
+
+/** Wrong registration codes a number may send in a day: six digits could otherwise be guessed. */
+export const WRONG_CODES_PER_DAY = 5;
+
+/** Wrong codes are counted by a hash of the WhatsApp ID, so deleting their data doesn't reset the count. */
+export function codeSender(waId: string): string {
+  return crypto.createHash("sha256").update(`code:${waId}`).digest("hex");
 }
 
 /**

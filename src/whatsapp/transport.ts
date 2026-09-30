@@ -31,7 +31,19 @@ export class WhatsAppOffError extends Error {
 export function isRetryable(err: unknown): boolean {
   if (err instanceof WhatsAppOffError) return false;
   if (!(err instanceof WhatsAppApiError)) return true;
-  return err.status === 429 || err.status >= 500 || isAuthError(err);
+  return err.status === 429 || err.status >= 500 || isAuthError(err) || RATE_LIMITS.has(metaErrorCode(err) ?? 0);
+}
+
+/**
+ * Meta's rate limits, which come back as 400s: too many calls (4), the account's limit (80007),
+ * the number's throughput (130429), spam protection (131048), and too many messages to one person
+ * (131056). They pass.
+ */
+const RATE_LIMITS = new Set([4, 80007, 130429, 131048, 131056]);
+
+export function metaErrorCode(err: WhatsAppApiError): number | undefined {
+  const code = (err.body as { error?: { code?: unknown } } | null | undefined)?.error?.code;
+  return typeof code === "number" ? code : undefined;
 }
 
 export function isAuthError(err: unknown): boolean {

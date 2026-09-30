@@ -243,9 +243,11 @@ function renderShell() {
       { class: cls, "aria-label": "Dashboard" },
       NAV.map(([key, label, shortLabel]) => h("a", { href: `#/${key}`, "aria-current": r.name === key ? "page" : false }, icon(key), short ? shortLabel : label)),
     );
+  const teamPause = b.status === "paused" && b.paused_by && b.paused_by !== "owner";
   const live = h("input", {
     type: "checkbox",
     checked: b.status === "active",
+    disabled: Boolean(teamPause),
     "aria-label": "Listing live",
     onchange: async (e) => {
       const want = e.target.checked;
@@ -258,7 +260,10 @@ function renderShell() {
       }
     },
   });
-  const liveText = h("span", { class: "muted", text: b.status === "active" ? "Live: customers can find you" : "Paused: hidden from customers" });
+  const liveText = h("span", {
+    class: "muted",
+    text: b.status === "active" ? "Live: customers can find you" : teamPause ? "Paused by our team: contact us to put it back" : "Paused: hidden from customers",
+  });
   root.replaceChildren(
     h(
       "div",
@@ -995,7 +1000,7 @@ const UNITS = ["each", "per kg", "per litre", "per pack", "per box", "per bag", 
 
 /** Add a product, or edit one: name, price, unit, category, code, description, stock and a photo. */
 async function openProduct(existing) {
-  const editing = Boolean(existing);
+  let editing = Boolean(existing);
   let photo = editing && existing.photoId ? { url: photoUrl(existing.photoId), saved: true } : null;
   let pendingPhoto = null;
   let removePhoto = false;
@@ -1140,11 +1145,18 @@ async function openProduct(existing) {
             description: description.value.trim(),
             inStock: inStock.checked,
           };
+          const adding = !editing;
           const saved = editing ? await api("PUT", `/businesses/${bid()}/products/${existing.id}`, payload) : await api("POST", `/businesses/${bid()}/products`, payload);
+          if (adding) {
+            // It's saved: if the photo fails next, "Save" tries the photo again and never adds the product twice.
+            existing = saved;
+            editing = true;
+            save.textContent = "Save";
+          }
           if (pendingPhoto) await api("PUT", `/businesses/${bid()}/products/${saved.id}/photo`, { contentType: pendingPhoto.contentType, dataBase64: pendingPhoto.dataBase64 });
           else if (removePhoto) await api("DELETE", `/businesses/${bid()}/products/${saved.id}/photo`);
           sheet.close();
-          toast(editing ? "Product saved." : `${saved.name} added.`);
+          toast(adding ? `${saved.name} added.` : "Product saved.");
           if (route().name === "products") await S.reloadProducts?.();
           else location.hash = "#/products";
         }),
@@ -1284,7 +1296,7 @@ function openUpload() {
     sheet.setBody(
       h("p", { class: "muted", text: `${num(u.rows.length)} row${u.rows.length === 1 ? "" : "s"} found. Check where each column goes.` }),
       table,
-      h("label", { class: "check" }, update, h("span", { text: "Update products I've already listed (matched by code, or else by name). Columns you leave out stay as they are." })),
+      h("label", { class: "check" }, update, h("span", { text: "Update products I've already listed (matched by code, or else by name). Columns you leave out, and empty cells, stay as they are; to take a price off, write ask." })),
     );
     sheet.setFoot(
       h("button", { class: "btn btn-ghost", type: "button", onclick: stepChoose }, "Back"),
@@ -1807,13 +1819,6 @@ function openAdjust(ids) {
 
 // ---------- Customers ----------
 
-const OUTCOMES = {
-  sorted: ["good", "Yes, sorted"],
-  couldnt_help: ["bad", "Couldn't help"],
-  no_reply: ["warn", "No reply"],
-  not_yet: ["", "Not yet"],
-};
-
 async function renderCustomers(view, params, ticket) {
   const redo = () => renderCustomers(view, params, ++S.ticket);
   view.replaceChildren(pageHead("Customers", "Everyone we sent to you, with their reference code", periodControl(redo)), h("div", { class: "skeleton", style: "height:260px" }));
@@ -1829,7 +1834,7 @@ async function renderCustomers(view, params, ticket) {
   if (!rows.length) {
     return view.replaceChildren(
       head,
-      h("div", { class: "card" }, emptyState("customers", "No customers in this period", "When we send you a customer, they appear here with the reference code in their first message, what they asked for, and how it went.")),
+      h("div", { class: "card" }, emptyState("customers", "No customers in this period", "When we send you a customer, they appear here with the reference code in their first message and what they asked for.")),
     );
   }
   view.replaceChildren(
@@ -1840,21 +1845,20 @@ async function renderCustomers(view, params, ticket) {
       h(
         "table",
         { class: "table stack" },
-        h("thead", {}, h("tr", {}, h("th", { text: "When" }), h("th", { text: "Reference" }), h("th", { text: "What they asked" }), h("th", { text: "How it went" }))),
+        h("thead", {}, h("tr", {}, h("th", { text: "When" }), h("th", { text: "Reference" }), h("th", { text: "What they asked" }))),
         h(
           "tbody",
           {},
-          rows.map((r) => {
-            const [cls, label] = OUTCOMES[r.outcome] ?? ["", "Waiting to hear"];
-            return h(
+          // How each customer answered our follow-up stays private; the Overview shows the totals.
+          rows.map((r) =>
+            h(
               "tr",
               {},
               h("td", { class: "when", "data-label": "When", text: `${shortDate(r.at)} · ${ago(r.at)}` }),
               h("td", { "data-label": "Reference" }, h("span", { class: "mono", text: r.ref })),
               h("td", { "data-label": "Asked", text: r.what ?? "–" }),
-              h("td", { "data-label": "How it went" }, h("span", { class: `badge ${cls}`, text: label }), r.rating ? h("span", { class: "muted", style: "margin-left:8px", text: `${r.rating} ★` }) : null),
-            );
-          }),
+            ),
+          ),
         ),
       ),
     ),
@@ -2206,10 +2210,11 @@ window.addEventListener("hashchange", () => {
 });
 
 async function boot() {
-  const params = new URLSearchParams(location.search);
-  const token = params.get("signin");
+  // Sign-in links carry the token after "#" (never sent to a server); older ones had "?signin=".
+  const fromHash = location.hash.startsWith("#signin=") ? new URLSearchParams(location.hash.slice(1)).get("signin") : null;
+  const token = fromHash || new URLSearchParams(location.search).get("signin");
   if (token) {
-    history.replaceState(null, "", `/app/${location.hash}`);
+    history.replaceState(null, "", fromHash ? "/app/" : `/app/${location.hash}`);
     showSigningIn();
     try {
       await api("POST", "/auth/exchange", { token });

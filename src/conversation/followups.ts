@@ -25,6 +25,14 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
         getContactById(svc.db, intro.contact_id),
       ]);
       if (!business || !customer || customer.is_blocked) return;
+      // They typed "stop" after connecting: no follow-up.
+      if (customer.stopped_at && new Date(customer.stopped_at) >= new Date(intro.created_at)) return;
+      // Claimed first, so a second job for this introduction (or a replayed one) never asks twice.
+      const claimed = await svc.db.query("UPDATE introductions SET followed_up_at = $2 WHERE id = $1 AND followed_up_at IS NULL RETURNING id", [
+        intro.id,
+        svc.now(),
+      ]);
+      if (!claimed.length) return;
       // Sent inside the window "Connect me" opened, it's free (FOLLOW_UP_DELAY_HOURS, default 20).
       // Later than that, it's a paid template, sent only with PAID_FOLLOW_UPS.
       const sent = await svc.messenger.notify(
@@ -41,9 +49,12 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
           ],
         },
         { freeOnly: !svc.config.paidFollowUps },
-      );
+      ).catch(async (err: unknown) => {
+        // Not sent: the retry may ask.
+        await svc.db.query("UPDATE introductions SET followed_up_at = NULL WHERE id = $1", [intro.id]);
+        throw err;
+      });
       if (sent === "skipped") svc.log.info({ introductionId: intro.id }, "Follow-up skipped: the customer's free window had closed");
-      await svc.db.query("UPDATE introductions SET followed_up_at = now() WHERE id = $1", [intro.id]);
     },
 
     /** A WhatsApp send that failed with an error worth retrying. */
@@ -58,7 +69,7 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
         const result = await applyRetention(svc.db, now, svc.config.retention);
         svc.log.info({ ...result }, "Retention clean-up done");
       } finally {
-        await svc.jobs.enqueue("retention", {}, nextDailyRun(now));
+        await svc.jobs.enqueueOnce("retention", NEXT_RUN, {}, nextDailyRun(now));
       }
     },
 
@@ -78,7 +89,7 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
           );
         }
       } finally {
-        await svc.jobs.enqueue("report_reminders", {}, new Date(svc.now().getTime() + 3600_000));
+        await svc.jobs.enqueueOnce("report_reminders", NEXT_RUN, {}, new Date(svc.now().getTime() + 3600_000));
       }
     },
 
@@ -87,7 +98,7 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
       try {
         if (svc.config.local.classifierMin > 0) svc.classifier = await trainClassifier({ ...svc });
       } finally {
-        await svc.jobs.enqueue("retrain_classifier", {}, new Date(svc.now().getTime() + 3600_000));
+        await svc.jobs.enqueueOnce("retrain_classifier", NEXT_RUN, {}, new Date(svc.now().getTime() + 3600_000));
       }
     },
 
@@ -130,7 +141,7 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
           await svc.jobs.enqueueOnce("catalog_sync", "all", {}, now);
         }
       } finally {
-        await svc.jobs.enqueue("catalog_reconcile", {}, nextDailyRun(now));
+        await svc.jobs.enqueueOnce("catalog_reconcile", NEXT_RUN, {}, nextDailyRun(now));
       }
     },
 
@@ -140,7 +151,7 @@ export function jobHandlers(svc: Services): Record<string, JobHandler> {
       try {
         await sendWeeklySummaries(svc, new Date(now.getTime() - 7 * 24 * 3600_000));
       } finally {
-        await svc.jobs.enqueue("weekly_summaries", {}, nextWeeklyRun(now));
+        await svc.jobs.enqueueOnce("weekly_summaries", NEXT_RUN, {}, nextWeeklyRun(now));
       }
     },
   };
@@ -205,6 +216,12 @@ export async function scheduleRecurringJobs(svc: Services): Promise<void> {
   ];
   for (const [kind, runAt] of recurring) {
     const queued = await svc.db.query("SELECT 1 FROM jobs WHERE kind = $1 AND status IN ('queued', 'running') LIMIT 1", [kind]);
-    if (!queued.length) await svc.jobs.enqueue(kind, {}, runAt);
+    if (!queued.length) await svc.jobs.enqueueOnce(kind, NEXT_RUN, {}, runAt);
   }
 }
+
+/**
+ * The key of a recurring job's next run. Each run books the next one when it ends, even if it
+ * failed; a failed run is also retried, and the key keeps that from booking a second next run.
+ */
+const NEXT_RUN = "next";

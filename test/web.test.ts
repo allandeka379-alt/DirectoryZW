@@ -62,7 +62,7 @@ async function registerOnWhatsApp(owner: string, name: string): Promise<void> {
 
 /** The token in the last sign-in link we sent this person. */
 function tokenIn(text: string): string {
-  const m = /\/app\/\?signin=([\w%-]+)/.exec(text);
+  const m = /\/app\/#signin=([\w%-]+)/.exec(text);
   if (!m) throw new Error(`No sign-in link in: ${text}`);
   return decodeURIComponent(m[1]!);
 }
@@ -527,6 +527,7 @@ describe("analytics", () => {
     expect(customers[0].ref).toMatch(/^[A-Z0-9]{5}$/);
     expect(customers[0].what).toContain("plumber");
     expect(JSON.stringify(customers)).not.toContain(customer); // never the customer's number
+    expect(Object.keys(customers[0]).sort()).toEqual(["at", "ref", "what"]); // nor how they answered our follow-up
 
     expect((await owner.get(`/businesses/${plumber!.id}/analytics?days=5`)).statusCode).toBe(400);
   });
@@ -580,9 +581,11 @@ describe("registering on the website", () => {
     // The link in the reply signs the owner in.
     expect((await exchange(token)).statusCode).toBe(200);
 
-    // The code works once.
+    // The code works once: again from the owner's number it's the listing they have; from another number it's used.
     await say(ownerPhone, code);
-    expect(lastText(ownerPhone)).toContain("That code has already been used");
+    expect(lastText(ownerPhone)).toContain("is already registered to this number");
+    await say("263779990001", code);
+    expect(lastText("263779990001")).toContain("That code has already been used");
     await say(ownerPhone, "REG-000000");
     expect(lastText(ownerPhone)).toContain("We couldn't find that registration code");
   });

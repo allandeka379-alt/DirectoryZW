@@ -175,14 +175,16 @@ Step by step in [docs/LAUNCH.md](docs/LAUNCH.md); hosting, backups and monitorin
    - `DATABASE_URL` pointing at Postgres (required in production)
    - `OPS_TOKEN`
    - `PUBLIC_BASE_URL`: your HTTPS address, used in agents' setup links and owners' dashboard sign-in links
-   - `BUSINESS_TERMS_URL` and `PRIVACY_URL`: the website and the registration form link to them
+   - `CONTACT_EMAIL`: where people write about their data and listings. The app serves the privacy notice at `/privacy` and the business terms at `/terms` (a lawyer should review both); `PRIVACY_URL` and `BUSINESS_TERMS_URL` point elsewhere instead
    - `STORAGE=s3` with the `S3_*` settings (or `UPLOADS_DIR` on a disk that survives redeploys)
    - `ANTHROPIC_API_KEY` for Claude (wording the local engine can't read), with `CLAUDE_DAILY_BUDGET_USD`
    - `ALERT_WEBHOOK_URL` for alerts
    - `SEED_SAMPLE_DATA=false`
    - `NODE_ENV=production`
 
-   Run `npm run build`, then `npm start`. Health checks: `/health` (the process is up) and `/ready` (it can reach the database).
+   Run `npm run build`, then `npm start`. Health checks: `/health` (the process is up) and `/ready` (it can reach the database). On Railway, `railway.json` sets the health check and restarts.
+
+   GitHub Actions type-checks and runs the tests on every push (`.github/workflows/ci.yml`). Turn on **Wait for CI** in the Railway service's settings, so a commit that fails them is never deployed.
 6. Create the first admin with `node dist/ops/user-cli.js add --email … --name … --role admin`.
 7. For WhatsApp's product cards (optional), connect a catalog to the number in Meta's Commerce Manager and set `WHATSAPP_CATALOG_ID`. The access token needs `catalog_management`. Products go in within a minute of a change; **Health and costs** shows what's in and what Meta refused. Without a catalog, replies still show products and prices as text.
 

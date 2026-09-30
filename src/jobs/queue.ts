@@ -55,7 +55,7 @@ export class JobQueue {
   /** Run every job that is due. Returns how many were attempted. */
   async runDue(handlers: Record<string, JobHandler>, limit = 20): Promise<number> {
     const jobs = await this.db.query<Job>(
-      `UPDATE jobs SET status = 'running', attempts = attempts + 1
+      `UPDATE jobs SET status = 'running', attempts = attempts + 1, started_at = $1
         WHERE id IN (SELECT id FROM jobs WHERE status = 'queued' AND run_at <= $1
                      ORDER BY run_at LIMIT $2 FOR UPDATE SKIP LOCKED)
         RETURNING *`,
@@ -83,11 +83,16 @@ export class JobQueue {
     return jobs.length;
   }
 
-  /** After a crash, put jobs left "running" for over 10 minutes back in the queue. */
-  async recoverStuck(): Promise<void> {
-    await this.db.query(
-      "UPDATE jobs SET status = 'queued' WHERE status = 'running' AND run_at < $1",
-      [new Date(this.now().getTime() - 10 * 60_000)],
+  /**
+   * Put jobs that started running over 15 minutes ago back in the queue: a crash or a restart left
+   * them. Run at start-up and every few minutes; no job takes that long.
+   */
+  async recoverStuck(): Promise<number> {
+    const rows = await this.db.query(
+      "UPDATE jobs SET status = 'queued' WHERE status = 'running' AND coalesce(started_at, run_at) < $1 RETURNING id",
+      [new Date(this.now().getTime() - 15 * 60_000)],
     );
+    if (rows.length) this.log.warn({ jobs: rows.length }, "Jobs left running by a crash or restart are queued again");
+    return rows.length;
   }
 }

@@ -863,3 +863,35 @@
   font-size: 14px;
   color: var(--text-2);
 }
+
+/* ---------- Privacy notice and business terms ---------- */
+.legal {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 48px 0 72px;
+}
+.legal h1 {
+  font-size: clamp(1.9rem, 4vw, 2.5rem);
+  margin: 0 0 4px;
+}
+.legal h1 + .muted {
+  margin: 0 0 24px;
+}
+.legal h2 {
+  font-size: 1.2rem;
+  margin: 32px 0 8px;
+}
+.legal p,
+.legal li {
+  line-height: 1.65;
+}
+.legal ul {
+  padding-left: 1.25rem;
+}
+.legal li + li {
+  margin-top: 6px;
+}
+.legal a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

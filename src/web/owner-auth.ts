@@ -22,9 +22,13 @@ function newToken(): string {
   return crypto.randomBytes(32).toString("base64url");
 }
 
-/** The link we send on WhatsApp. The page trades the token for a session with a POST, so link previews can't use it up. */
+/**
+ * The link we send on WhatsApp. The page trades the token for a session with a POST, so link
+ * previews can't use it up. The token goes after "#", which browsers never send to a server, so
+ * it stays out of every request log on the way.
+ */
 export function signInUrl(publicBaseUrl: string, token: string): string {
-  return `${publicBaseUrl}/app/?signin=${encodeURIComponent(token)}`;
+  return `${publicBaseUrl}/app/#signin=${encodeURIComponent(token)}`;
 }
 
 export async function createLoginLink(db: Db, contactId: string, now: Date, minutes = LOGIN_LINK_MINUTES): Promise<string> {
@@ -104,7 +108,13 @@ export function readCookie(header: string | undefined, name: string): string {
   if (!header) return "";
   for (const part of header.split(";")) {
     const [k, ...v] = part.trim().split("=");
-    if (k === name) return decodeURIComponent(v.join("="));
+    if (k !== name) continue;
+    try {
+      return decodeURIComponent(v.join("="));
+    } catch {
+      // A mangled cookie is no session, not a server error.
+      return "";
+    }
   }
   return "";
 }

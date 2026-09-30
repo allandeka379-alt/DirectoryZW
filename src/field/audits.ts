@@ -1,6 +1,6 @@
 import type { Db } from "../db/client.js";
 import { one } from "../db/client.js";
-import { isUuid } from "../directory/businesses.js";
+import { isUuid, markCatalogDirty } from "../directory/businesses.js";
 
 export const AUDIT_OUTCOMES = ["confirmed", "details_wrong", "wrong_number", "not_a_business", "refused"] as const;
 export type AuditOutcome = (typeof AUDIT_OUTCOMES)[number];
@@ -60,10 +60,12 @@ export async function recordAudit(
     ]);
     const hide = audit.outcome === "wrong_number" || audit.outcome === "not_a_business";
     await tx.query(
-      `UPDATE businesses SET audit_status = $2, status = CASE WHEN $3 THEN 'paused' ELSE status END, updated_at = now()
+      `UPDATE businesses SET audit_status = $2, status = CASE WHEN $3 THEN 'paused' ELSE status END,
+              paused_by = CASE WHEN $3 THEN 'team' ELSE paused_by END, updated_at = now()
         WHERE id = $1`,
       [businessId, audit.outcome === "confirmed" ? "passed" : "failed", hide],
     );
+    if (hide) await markCatalogDirty(tx, businessId);
     return true;
   });
 }

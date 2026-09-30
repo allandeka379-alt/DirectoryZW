@@ -1,6 +1,6 @@
 import type { Db } from "../db/client.js";
 import { one } from "../db/client.js";
-import { isUuid } from "./businesses.js";
+import { isUuid, markCatalogDirty } from "./businesses.js";
 
 /**
  * Keeping the promise the welcome message makes: businesses we verify are genuine and reliable,
@@ -167,8 +167,10 @@ export async function recordRecheck(
         [businessId],
       );
     } else {
-      await tx.query("UPDATE businesses SET status = 'paused', updated_at = now() WHERE id = $1", [businessId]);
+      await tx.query("UPDATE businesses SET status = 'paused', paused_by = 'team', updated_at = now() WHERE id = $1", [businessId]);
     }
+    // Its products' place in the WhatsApp catalog follows its status and badge.
+    await markCatalogDirty(tx, businessId);
     await tx.query("UPDATE reports SET status = $2 WHERE business_id = $1 AND status = 'open'", [
       businessId,
       r.outcome === "still_good" ? "reviewed" : "actioned",

@@ -15,6 +15,9 @@ export interface BusinessView {
   verifiedAt?: Date | null;
   /** How customers got on with it recently (cards only). */
   record?: { answered: number; sorted: number };
+  /** Street address and opening hours, as the business gave them (cards only). */
+  address?: string | null;
+  hours?: string | null;
   /** The product it lists for what was asked (results lists). */
   product?: ListedProduct | null;
 }
@@ -167,6 +170,16 @@ export function askLocation(need: Need): OutboundMessage {
   return { kind: "location_request", body: `Where should I look for *${need.text}*? Share your location, or type your suburb or town.` };
 }
 
+/** A typed answer to "Where should I look?" that isn't a place we know: the request waits. */
+export function unknownPlace(): OutboundMessage {
+  return {
+    kind: "location_request",
+    body:
+      'I don\'t know that place yet. Type the nearest suburb or town (for example "Avondale" or "Bulawayo CBD"), ' +
+      "share your location, or type *anywhere* to search everywhere.",
+  };
+}
+
 export function locationSaved(place: string): OutboundMessage {
   return { kind: "text", text: `Thanks, I'll search near *${place}*. What are you looking for?` };
 }
@@ -275,14 +288,18 @@ export function productResults(
   hits: BusinessView[],
   need: Need,
   place: string | undefined,
-  opts: { budget?: number | null; sells?: string } = {},
+  /** retailInstead: a business looking for supplies that no wholesaler has; these are retail stores. */
+  opts: { budget?: number | null; sells?: string; retailInstead?: boolean } = {},
 ): OutboundMessage {
   const shown = hits.slice(0, 9);
   const listed = shown.filter((h) => h.product);
   const verified = shown.filter((h) => h.verification === "verified");
   const unchecked = shown.filter((h) => h.verification !== "verified");
   const near = place ? ` near ${place}` : "";
-  const noun = (n: number) => (need.trade ? (n === 1 ? "supplier" : "suppliers") : n === 1 ? "store" : "stores");
+  const service = need.kind === "service";
+  const suppliers = need.trade && !opts.retailInstead;
+  const noun = (n: number) =>
+    suppliers ? (n === 1 ? "supplier" : "suppliers") : service ? (n === 1 ? "business" : "businesses") : n === 1 ? "store" : "stores";
   const n = listed.length;
   const amounts = listed.map((h) => h.product!.amount).filter((a): a is number => a != null);
   const from = amounts.length ? Math.min(...amounts) : null;
@@ -302,15 +319,22 @@ export function productResults(
   }
   const others = shown.length - n;
   if (others > 0) {
-    body += ` ${capitalize(inWords(others))} more ${noun(others)} ${opts.sells ? `${others === 1 ? "sells" : "sell"} ${opts.sells}` : "may have it"}, but ${others === 1 ? "hasn't" : "haven't"} listed it.`;
+    const maybe = service ? "may offer it" : "may have it";
+    body += ` ${capitalize(inWords(others))} more ${noun(others)} ${opts.sells ? `${others === 1 ? "sells" : "sell"} ${opts.sells}` : maybe}, but ${others === 1 ? "hasn't" : "haven't"} listed it.`;
   }
-  body += ` The stores set their own prices, so confirm with them. Tap ${shown.length === 1 ? "it" : "one"} to connect.`;
-  if (unchecked.length) body += "\n\n⚠️ Don't pay a deposit before you see the item.";
+  body += ` The ${noun(2)} set their own prices, so confirm with them. Tap ${shown.length === 1 ? "it" : "one"} to connect.`;
+  if (unchecked.length) body += `\n\n⚠️ Don't pay a deposit before you see ${service ? "the item or the work" : "the item"}.`;
+  if (opts.retailInstead) {
+    body =
+      (service
+        ? `No wholesaler we list offers *${need.text}* yet, so here are businesses that do.\n\n`
+        : `No wholesaler we list has *${need.text}* yet, so here are retail stores that do.\n\n`) + body;
+  }
 
   return {
     kind: "list",
     body,
-    button: need.trade ? "See suppliers" : "See stores",
+    button: suppliers ? "See suppliers" : service ? "See businesses" : "See stores",
     sections: [
       { title: "Verified by our team", rows: businessRows(requestId, verified) },
       { title: "Not checked yet", rows: businessRows(requestId, unchecked) },
@@ -356,6 +380,7 @@ export function businessCard(requestId: string, b: BusinessView, prices?: PriceV
       ? `✅ Verified by our team in ${b.verifiedAt.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "Africa/Harare" })}`
       : badge(b);
   const details = [verified, b.areaName, distance(b) ? `${distance(b)} away` : null, rating(b)].filter(Boolean).join(" · ");
+  const where = [b.address ? `📍 ${b.address}` : null, b.hours ? `🕒 ${b.hours}` : null].filter(Boolean).join("\n");
   const record =
     b.record && b.record.answered >= TRACK_RECORD_SHOWN_FROM
       ? `\n👍 ${b.record.sorted} of the last ${b.record.answered} customers we sent them got what they needed`
@@ -372,7 +397,7 @@ export function businessCard(requestId: string, b: BusinessView, prices?: PriceV
     : "";
   return {
     kind: "buttons",
-    body: `*${b.name}*\n${details}${record}${b.description ? `\n\n${b.description}` : ""}${priceLines}${b.verification === "verified" ? "" : `\n\n${UNVERIFIED_WARNING}`}`,
+    body: `*${b.name}*\n${details}${where ? `\n${where}` : ""}${record}${b.description ? `\n\n${b.description}` : ""}${priceLines}${b.verification === "verified" ? "" : `\n\n${UNVERIFIED_WARNING}`}`,
     buttons,
   };
 }
@@ -790,7 +815,8 @@ export function bizHowItWorks(brand: string): OutboundMessage {
       "*How it works*\n" +
       `1. Customers tell ${brand} what they need on WhatsApp.\n` +
       "2. We show matching businesses nearby, verified ones first.\n" +
-      "3. When a customer taps *Connect me*, they message you directly and we let you know here.\n\n" +
+      "3. When a customer taps *Connect me*, they message you directly on WhatsApp, with our reference code in their first message. " +
+      "Type *my customers* to see everyone who found you through us.\n\n" +
       "Listing is free. A field agent may visit to verify you, which moves you up the results.",
     buttons: [{ id: Ids.register, title: "List my business" }],
   };
@@ -1025,16 +1051,14 @@ export function bizSummary(name: string, shown: number, intros: number, ratingAv
  * Customers who contacted the business through us, by reference code. Lead notices go out only
  * when they're free, so this is where an owner can always check.
  */
-export function myCustomers(businessName: string, leads: { ref: string; at: Date; what: string | null; outcome: string | null }[]): OutboundMessage {
+export function myCustomers(businessName: string, leads: { ref: string; at: Date; what: string | null }[]): OutboundMessage {
   if (!leads.length) {
     return { kind: "text", text: `No customers have contacted *${businessName}* through us in the last 30 days yet. Type *menu* for your options.` };
   }
-  const outcome: Record<string, string> = { sorted: " · ✅ sorted", couldnt_help: " · couldn't help", no_reply: " · said you didn't reply" };
   const lines = leads.map(
     (l) =>
       `• *${l.ref}* · ${l.at.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Harare" })}` +
-      (l.what ? ` · ${l.what.length > 50 ? `${l.what.slice(0, 49)}…` : l.what}` : "") +
-      (l.outcome ? (outcome[l.outcome] ?? "") : ""),
+      (l.what ? ` · ${l.what.length > 50 ? `${l.what.slice(0, 49)}…` : l.what}` : ""),
   );
   return {
     kind: "text",
@@ -1046,6 +1070,13 @@ export function myCustomers(businessName: string, leads: { ref: string; at: Date
 
 export function bizPaused(): OutboundMessage {
   return { kind: "text", text: "Your listing is paused. Customers won't see it until you type *resume*." };
+}
+
+export function bizPausedByTeam(name: string): OutboundMessage {
+  return {
+    kind: "text",
+    text: `Our team paused *${name}* after a check or customer reports, so only our team can switch it back on. If you think it's a mistake, reply here and we'll look into it.`,
+  };
 }
 
 export function bizResumed(): OutboundMessage {
@@ -1114,6 +1145,23 @@ export function webRegAlready(name: string, url: string): OutboundMessage {
   return {
     kind: "text",
     text: `*${name}* is already registered to this number. Here's your dashboard (the link works once, for 15 minutes):\n${url}`,
+  };
+}
+
+export function webRegClaimed(name: string, url: string): OutboundMessage {
+  return {
+    kind: "text",
+    text:
+      `Welcome! You now manage *${name}* from this number.\n\n` +
+      `Add your products and prices on your dashboard:\n${url}\n\n` +
+      "The link works once, for 15 minutes. Type *dashboard* any time for a new one, or *my business* for your business menu.",
+  };
+}
+
+export function webRegTooMany(): OutboundMessage {
+  return {
+    kind: "text",
+    text: "Several codes from this number didn't match today. Check the code on the page where you registered, and try again tomorrow.",
   };
 }
 

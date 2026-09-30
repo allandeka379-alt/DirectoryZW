@@ -16,13 +16,21 @@ export interface Business {
   /** Who it sells to: the public ("retail"), other businesses ("wholesale"), or both. */
   trade: Trade;
   status: "active" | "paused" | "removed";
+  /** Who paused it: an owner can switch back on only a pause of their own. */
+  paused_by: PausedBy | null;
   source: "field" | "self" | "import";
   owner_contact_id: string | null;
   opted_in_at: Date | null;
   response_score: number;
   rating_sum: number;
   rating_count: number;
+  /** Street address and opening hours, as the owner or our team wrote them. */
+  address: string | null;
+  hours: string;
 }
+
+/** The owner (dashboard or WhatsApp), our team (ops console, re-checks, call-backs), or customer reports. */
+export type PausedBy = "owner" | "team" | "system";
 
 export const TRADES = ["retail", "wholesale", "both"] as const;
 export type Trade = (typeof TRADES)[number];
@@ -112,8 +120,11 @@ export async function markCatalogDirty(db: Db, businessId: string): Promise<void
   await db.query("UPDATE offerings SET catalog_dirty = true WHERE business_id = $1 AND archived_at IS NULL", [businessId]);
 }
 
-export async function setBusinessStatus(db: Db, id: string, status: Business["status"]): Promise<void> {
-  await db.query("UPDATE businesses SET status = $2, updated_at = now() WHERE id = $1", [id, status]);
+export async function setBusinessStatus(db: Db, id: string, status: Business["status"], by: PausedBy = "team"): Promise<void> {
+  await db.query(
+    "UPDATE businesses SET status = $2, paused_by = CASE WHEN $2 = 'paused' THEN $3 ELSE NULL END, updated_at = now() WHERE id = $1",
+    [id, status, by],
+  );
   await markCatalogDirty(db, id);
 }
 
@@ -166,6 +177,8 @@ export async function updateBusinessLocation(db: Db, id: string, loc: { areaId: 
     loc.lat,
     loc.lng,
   ]);
+  // The store's area is on its products in the WhatsApp catalog.
+  await markCatalogDirty(db, id);
 }
 
 export async function categoriesOf(db: Db, businessId: string): Promise<string[]> {

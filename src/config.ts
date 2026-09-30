@@ -20,6 +20,7 @@ const EnvSchema = z.object({
   BRAND_NAME: z.string().default("FindZim"),
   PRIVACY_URL: optionalString,
   BUSINESS_TERMS_URL: optionalString,
+  CONTACT_EMAIL: optionalString,
   DATABASE_URL: optionalString,
   PGLITE_DIR: z.string().default("./.data/pglite"),
   UPLOADS_DIR: z.string().default("./.data/uploads"),
@@ -86,8 +87,11 @@ export interface Config {
   port: number;
   host: string;
   brandName: string;
-  privacyUrl?: string;
-  businessTermsUrl?: string;
+  /** The privacy notice and business terms: our own pages (/privacy, /terms) unless set. */
+  privacyUrl: string;
+  businessTermsUrl: string;
+  /** Where people write to us about their data and listings, shown on those pages. */
+  contactEmail?: string;
   databaseUrl?: string;
   pgliteDir: string;
   /** Where field photos are stored (local disk for now). */
@@ -180,17 +184,19 @@ export interface Config {
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
   const e = EnvSchema.parse(env);
+  const publicBaseUrl = (e.PUBLIC_BASE_URL ?? `http://localhost:${e.PORT}`).replace(/\/+$/, "");
   const config: Config = {
     env: e.NODE_ENV,
     port: e.PORT,
     host: e.HOST,
     brandName: e.BRAND_NAME,
-    privacyUrl: e.PRIVACY_URL,
-    businessTermsUrl: e.BUSINESS_TERMS_URL,
+    privacyUrl: e.PRIVACY_URL ?? `${publicBaseUrl}/privacy`,
+    businessTermsUrl: e.BUSINESS_TERMS_URL ?? `${publicBaseUrl}/terms`,
+    contactEmail: e.CONTACT_EMAIL,
     databaseUrl: e.DATABASE_URL,
     pgliteDir: e.PGLITE_DIR,
     uploadsDir: e.UPLOADS_DIR,
-    publicBaseUrl: (e.PUBLIC_BASE_URL ?? `http://localhost:${e.PORT}`).replace(/\/+$/, ""),
+    publicBaseUrl,
     seedSampleData: e.SEED_SAMPLE_DATA,
     anthropicApiKey: e.ANTHROPIC_API_KEY,
     claudeModel: e.CLAUDE_MODEL,

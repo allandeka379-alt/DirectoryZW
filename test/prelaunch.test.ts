@@ -89,7 +89,7 @@ describe("pre-launch mode", () => {
     // The team hands the owner a link: it signs them in as the owner of that business, once.
     const link = (await ops("POST", `/businesses/${listed.json().businessId}/owner/link`)).json();
     expect(new Date(link.expiresAt).getTime() - app.clock.now.getTime()).toBe(24 * 3600_000);
-    const token = new URL(link.url).searchParams.get("signin")!;
+    const token = new URLSearchParams(new URL(link.url).hash.slice(1)).get("signin")!;
     const exchanged = await server.inject({ method: "POST", url: "/app/api/auth/exchange", payload: { token } });
     expect(exchanged.statusCode).toBe(200);
     const cookie = `dz_owner=${/dz_owner=([^;]+)/.exec([exchanged.headers["set-cookie"]].flat().join("; "))![1]}`;
@@ -101,7 +101,7 @@ describe("pre-launch mode", () => {
 
     // A second link for the same business keeps the same owner.
     const second = (await ops("POST", `/businesses/${listed.json().businessId}/owner/link`)).json();
-    const token2 = new URL(second.url).searchParams.get("signin")!;
+    const token2 = new URLSearchParams(new URL(second.url).hash.slice(1)).get("signin")!;
     expect((await server.inject({ method: "POST", url: "/app/api/auth/exchange", payload: { token: token2 } })).statusCode).toBe(200);
     const owners = await app.db.query("SELECT 1 FROM contacts WHERE channel = 'business' AND wa_id = '263772111222'");
     expect(owners).toHaveLength(1);

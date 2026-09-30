@@ -3,8 +3,8 @@ import type { RequestInterpretation } from "../ai/types.js";
 import type { ReaderContext, ReadingSummary, Understanding, UnderstoodBy } from "../ai/understanding.js";
 import { one } from "../db/client.js";
 import { adjustResponseScore, businessesOwnedBy, getBusiness, recordRating, type Business } from "../directory/businesses.js";
-import { haversineKm } from "../directory/gazetteer.js";
-import { createIntroduction, getIntroduction, waMeLink } from "../directory/introductions.js";
+import { haversineKm, type Area } from "../directory/gazetteer.js";
+import { createIntroduction, getIntroduction, waMeLink, type Introduction } from "../directory/introductions.js";
 import { priceOf, productQuery, productsOf, searchProducts, wordsToMatch, type ProductHit, type ProductMatch, type ProductQuery } from "../directory/products.js";
 import { createRecommendation } from "../directory/recommendations.js";
 import { fileReport, reportsSince } from "../directory/reports.js";
@@ -13,7 +13,7 @@ import { mergeSuppliers, type Supplier } from "../directory/suppliers.js";
 import { trackRecord } from "../directory/trust.js";
 import type { Category } from "../directory/taxonomy.js";
 import { eraseContact } from "../privacy.js";
-import { containsPhrase, normalizeText, normalizeZimPhone } from "../text.js";
+import { containsPhrase, normalizeMessage, normalizeText, normalizeZimPhone } from "../text.js";
 import { whenTeamReplies } from "../time.js";
 import type { OutboundMessage } from "../whatsapp/outbound.js";
 import { setAlerts } from "./alerts.js";
@@ -64,7 +64,10 @@ export interface CustomerState {
   choice?: Choice;
   lastRequestId?: string;
   lastQuery?: string;
-  location?: { lat: number; lng: number; areaId: number | null; label: string };
+  /** Where they said they are, and when (ISO): used for later searches for a while (LOCATION_TTL_MS). */
+  location?: Place & { at?: string };
+  /** When they last wrote while a question of ours waited for its answer (ISO); see STAGE_TTL_MS. */
+  stageAt?: string;
   reportBusinessId?: string;
   /** A recommendation being written. */
   rec?: { name?: string; what?: string; areaText?: string | null; areaId?: number | null };
@@ -99,6 +102,32 @@ const FRUSTRATED = [
 ];
 
 const ALERTS_OFF = ["alerts off", "stop alerts", "no alerts", "no more alerts", "turn off alerts"];
+/** Agreeing in words, once they've seen the notice, works like the *I agree* button. */
+const AGREE = ["i agree", "agree", "yes i agree", "ok i agree", "i accept", "accept", "yes", "ok", "okay", "hongu", "ehe", "ndinobvuma", "yebo", "ngiyavuma"];
+/** "Where should I look?" answered with "anywhere": the search runs without a place. */
+const ANYWHERE = ["anywhere", "any where", "everywhere", "any place", "anyplace", "all over", "anywhere in zimbabwe", "all of zimbabwe", "nationwide", "countrywide"];
+/**
+ * A question we asked (where, which one, what went wrong, a recommendation's details) waits this
+ * long after their last message; after that a message is a fresh start, never a late answer.
+ */
+const STAGE_TTL_MS = 60 * 60_000;
+const LAPSING = new Set<CustomerState["stage"]>(["awaiting_area", "awaiting_choice", "awaiting_report", "rec_name", "rec_what", "rec_area", "rec_phone"]);
+/** A place they gave is used for their other searches that day, not for ever. */
+const LOCATION_TTL_MS = 12 * 3600_000;
+/** Words around a place name in an answer to "Where should I look?": "I'm in Avondale, Harare". */
+const PLACE_WORDS = new Set([
+  "in", "at", "near", "around", "by", "from", "the", "my", "our", "i", "im", "am", "we", "are", "is", "its", "it", "me",
+  "area", "suburb", "town", "city", "location", "place", "side", "here", "live", "stay", "staying", "living", "based",
+  "please", "ok", "okay", "thanks", "thank", "you", "and", "zimbabwe", "ndiri", "ndinogara", "tiri", "ngise", "ngihlala",
+]);
+/** A typed answer to our follow-up, when one is waiting: what the buttons would have said. */
+const FOLLOW_UP_WORDS: [string, string[]][] = [
+  ["sorted", ["yes", "yes sorted", "sorted", "yes thanks", "yes thank you", "yes i did", "i did", "yes i got it", "got it", "it worked", "yes it worked", "hongu", "yebo", "ehe"]],
+  ["not_yet", ["not yet", "no not yet", "still waiting", "not yet sorted", "i havent yet", "havent yet"]],
+  ["failed", ["no", "it didnt work out", "didnt work out", "it didnt work", "no it didnt", "they didnt reply", "no reply", "kwete", "aiwa", "hatshi"]],
+];
+/** "No" to "What's their number?" means they don't have it, not "cancel the recommendation". */
+const NO_PHONE = ["skip", "dont know", "i dont know", "no idea", "no", "none", "nope", "no number", "not sure", "dont have it", "i dont have it", "dont have", "i dont have", "i dont have their number", "unknown"];
 /** A product's code as its page on our website shows it. */
 export const PRODUCT_CODE = /\bP-([0-9a-f]{8})\b/i;
 
@@ -114,8 +143,29 @@ export const ERASE_WORDS = [
 ];
 
 export async function handleCustomerTurn(t: T): Promise<void> {
-  const { contact, inbound, state } = t;
+  const { contact, inbound, state, svc } = t;
   if (contact.is_blocked) return;
+  // A reaction to one of our messages needs no answer.
+  if (inbound.content.type === "unsupported" && inbound.content.rawType === "reaction") return;
+  lapseStaleStage(t);
+  try {
+    await customerTurn(t);
+  } finally {
+    // A question of ours keeps waiting while they write; STAGE_TTL_MS counts from their last message.
+    state.stageAt = state.stage ? svc.now().toISOString() : undefined;
+  }
+}
+
+/** A question left unanswered for a while is dropped: "Avondale" a day later is a new request. */
+function lapseStaleStage(t: T): void {
+  const { state, svc } = t;
+  if (!state.stage || !LAPSING.has(state.stage) || !state.stageAt) return;
+  if (svc.now().getTime() - Date.parse(state.stageAt) < STAGE_TTL_MS) return;
+  resetSearch(state);
+}
+
+async function customerTurn(t: T): Promise<void> {
+  const { contact, inbound, state } = t;
 
   // Deleting their data works at any point, even before consent or while a person is handling the chat.
   const c0 = inbound.content;
@@ -124,14 +174,7 @@ export async function handleCustomerTurn(t: T): Promise<void> {
     return eraseAnswer(t, c0.id === Ids.eraseYes);
   }
 
-  // A person from the team is handling this chat; only "menu" brings the assistant back.
-  if (state.stage === "handoff") {
-    if (inbound.content.type === "text" && isCommand(inbound.content.text, ["menu", "bot", "assistant"])) {
-      state.stage = undefined;
-      await t.reply(copy.welcomeBack());
-    }
-    return;
-  }
+  if (state.stage === "handoff") return duringHandoff(t);
 
   if (!contact.consent_at) return consentGate(t);
 
@@ -154,25 +197,53 @@ export async function handleCustomerTurn(t: T): Promise<void> {
       return onAction(t, c.id);
     case "location":
       return onLocation(t, c.lat, c.lng);
-    // Typed messages only, for now: voice notes and photos aren't read.
+    // Typed messages only, for now: voice notes, photos, stickers, videos and documents aren't read.
     case "image":
     case "audio":
+    case "unsupported":
       return t.reply(copy.typeInstead());
     default:
       return t.reply(copy.help(t.svc.config.brandName));
   }
 }
 
+/**
+ * A person from the team is handling this chat, so the assistant stays quiet. "menu" brings it
+ * back; "stop" and "alerts off" still work, and so do answers to our follow-ups and alerts (the
+ * chat stays with the team).
+ */
+async function duringHandoff(t: T): Promise<void> {
+  const { inbound, state } = t;
+  const c = inbound.content;
+  if (c.type === "text") {
+    if (isCommand(c.text, ["menu", "bot", "assistant"])) {
+      state.stage = undefined;
+      return t.reply(copy.welcomeBack());
+    }
+    if (isCommand(c.text, ["stop", "unsubscribe", ...ALERTS_OFF])) return onText(t, c.text);
+    return;
+  }
+  if (c.type === "button_reply" || c.type === "list_reply") {
+    const { action } = parseAction(c.id);
+    if (action !== "fb" && action !== "rate" && action !== "alerts") return;
+    await onAction(t, c.id);
+    if (!state.stage) state.stage = "handoff";
+  }
+}
+
 async function consentGate(t: T): Promise<void> {
   const { contact, inbound, state, svc } = t;
   const c = inbound.content;
-  if (c.type === "button_reply" && c.id === Ids.consent) {
+  // The button, or agreeing in words once they've seen the notice ("I agree", "yes", "ndinobvuma").
+  const typed = c.type === "text" && state.stage === "awaiting_consent" && isCommand(c.text, AGREE);
+  if ((c.type === "button_reply" && c.id === Ids.consent) || typed) {
     await setConsent(svc.db, contact.id);
     contact.consent_at = svc.now();
     const { pendingText } = state;
     state.stage = undefined;
     state.pendingText = undefined;
-    if (pendingText) return onText(t, pendingText);
+    // Their first message is the request, unless it was only "ok" or "yes".
+    if (pendingText && !isCommand(pendingText, AGREE)) return onText(t, pendingText);
     return t.reply(copy.askWhatYouNeed(contact.profile_name));
   }
   if (!state.pendingText && c.type === "text") state.pendingText = c.text.slice(0, 500);
@@ -187,8 +258,9 @@ async function onText(t: T, text: string): Promise<void> {
 
   if (isCommand(raw, ["stop", "unsubscribe"])) {
     resetSearch(state);
-    // "I won't message you unless you write to me again": no alerts either.
+    // "I won't message you unless you write to me again": no alerts, and no follow-ups (see followups.ts).
     await setAlerts(svc.db, contact.id, false, svc.now());
+    await svc.db.query("UPDATE contacts SET stopped_at = $2 WHERE id = $1", [contact.id, svc.now()]);
     return t.reply(copy.stopped());
   }
   if (isCommand(raw, ALERTS_OFF)) {
@@ -239,16 +311,24 @@ async function onText(t: T, text: string): Promise<void> {
   }
 
   if (state.stage === "awaiting_area" && state.pending) {
-    const area = svc.gazetteer.match(raw, { fuzzy: true });
     const pending = state.pending;
+    const anywhere = isCommand(raw, ANYWHERE);
+    const place = anywhere ? undefined : placeAnswer(t, raw);
+    if (anywhere || place) return answerWhere(t, pending, place);
+    // More than a place: a new request ("a plumber in Avondale"), or a place we don't know yet.
+    // A reading the engine isn't sure of (it would ask "Which of these?") is taken for a place.
+    const understood = await svc.understanding.understand(raw, readerContext(t));
+    const { intent, category_slug } = understood.interpretation;
+    const newRequest = !understood.options?.length && (intent === "search" ? !!category_slug : intent !== "unclear");
+    if (!newRequest) {
+      const area = svc.gazetteer.match(raw, { fuzzy: true });
+      if (area) return answerWhere(t, pending, placeOf(area));
+      // The request waits: they can type a place we know, share their location, or say "anywhere".
+      return t.reply(copy.unknownPlace());
+    }
     state.stage = undefined;
     state.pending = undefined;
-    if (area) {
-      const place = { areaId: area.id, lat: area.lat, lng: area.lng, label: area.name };
-      state.location = place;
-      return runSearch(t, pending.raw, pending.interpretation, pending.by, place, pending.reading);
-    }
-    // Not a place we know: treat it as a new request.
+    return handleInterpretation(t, raw, understood.interpretation, understood.by, understood.reading);
   }
 
   if (state.stage === "awaiting_choice" && state.choice) {
@@ -258,6 +338,18 @@ async function onText(t: T, text: string): Promise<void> {
     // They may answer in words ("hire", "yes"). If that settles it, it's their pick; otherwise it's a new request.
     const picked = pickInWords(t, raw, choice);
     if (picked !== undefined) return answerChoice(t, choice, picked);
+  }
+
+  // "Yes" or "not yet" typed under our follow-up, instead of tapping a button.
+  const answer = FOLLOW_UP_WORDS.find(([, words]) => isCommand(raw, words))?.[0];
+  if (answer) {
+    const asked = await one<{ id: string }>(
+      svc.db,
+      `SELECT id FROM introductions WHERE contact_id = $1 AND outcome IS NULL AND followed_up_at > $2
+        ORDER BY followed_up_at DESC LIMIT 1`,
+      [contact.id, new Date(svc.now().getTime() - 3 * 24 * 3600_000)],
+    );
+    if (asked) return feedback(t, asked.id, answer);
   }
 
   // Local engine first; then the phrasebook, a question for the customer, and Claude only for what's left.
@@ -390,13 +482,13 @@ async function handleInterpretation(
   state.unclear = undefined;
 
   const area = (interpretation.area && svc.gazetteer.match(interpretation.area)) || svc.gazetteer.match(raw);
-  const place: Place | undefined = area ? { areaId: area.id, lat: area.lat, lng: area.lng, label: area.name } : state.location;
+  const place: Place | undefined = area ? placeOf(area) : savedPlace(t);
   if (!place && category?.needsLocation !== false) {
     state.stage = "awaiting_area";
     state.pending = { raw, interpretation, by, reading };
     return t.reply(copy.askLocation(need(interpretation, category, by)));
   }
-  if (area) state.location = place;
+  if (area && place) rememberPlace(t, place);
   return runSearch(t, raw, interpretation, by, category?.needsLocation === false && !area ? undefined : place, reading);
 }
 
@@ -437,14 +529,55 @@ async function onLocation(t: T, lat: number, lng: number): Promise<void> {
   const area = svc.gazetteer.nearest(lat, lng);
   if (state.stage === "rec_area") return setRecommendationArea(t, area?.name ?? null, area?.id ?? null);
   const place = { areaId: area?.id ?? null, lat, lng, label: area?.name ?? "your location" };
-  state.location = place;
-  if (state.stage === "awaiting_area" && state.pending) {
-    const pending = state.pending;
-    state.stage = undefined;
-    state.pending = undefined;
-    return runSearch(t, pending.raw, pending.interpretation, pending.by, place, pending.reading);
-  }
+  if (state.stage === "awaiting_area" && state.pending) return answerWhere(t, state.pending, place);
+  rememberPlace(t, place);
   return t.reply(copy.locationSaved(place.label));
+}
+
+/** The answer to "Where should I look?": the waiting request runs there (or anywhere, without a place). */
+async function answerWhere(t: T, pending: NonNullable<CustomerState["pending"]>, place: Place | undefined): Promise<void> {
+  t.state.stage = undefined;
+  t.state.pending = undefined;
+  if (place) rememberPlace(t, place);
+  return runSearch(t, pending.raw, pending.interpretation, pending.by, place, pending.reading);
+}
+
+/**
+ * A place, when that's all they wrote ("Avondale", "I'm in Hillside, Bulawayo"), or one word or
+ * two that are a misspelt place ("Mabelrein"). Anything more may be a new request.
+ */
+function placeAnswer(t: T, raw: string): Place | undefined {
+  const { gazetteer } = t.svc;
+  const words = normalizeMessage(raw).split(" ").filter(Boolean);
+  const places = gazetteer.locateAll(words);
+  const named = new Set(places.flatMap((p) => Array.from({ length: p.end - p.start }, (_, k) => p.start + k)));
+  const rest = words.filter((w, i) => !named.has(i) && !PLACE_WORDS.has(w));
+  if (places[0] && !rest.length) return placeOf(places[0].area);
+  if (!places.length && rest.length && rest.length <= 2) {
+    const area = gazetteer.match(rest.join(" "), { fuzzy: true });
+    if (area) return placeOf(area);
+  }
+  return undefined;
+}
+
+function placeOf(area: Area): Place {
+  return { areaId: area.id, lat: area.lat, lng: area.lng, label: area.name };
+}
+
+function rememberPlace(t: T, place: Place): void {
+  t.state.location = { ...place, at: t.svc.now().toISOString() };
+}
+
+/**
+ * Where they said they were, if it was recently enough to still be true. A business looking for
+ * supplies searches near itself (see business.ts) for as long as the search goes on.
+ */
+function savedPlace(t: T): Place | undefined {
+  const saved = t.state.location;
+  if (!saved) return undefined;
+  const recent = !!saved.at && t.svc.now().getTime() - Date.parse(saved.at) <= LOCATION_TTL_MS;
+  if (!recent && !t.state.buying) return undefined;
+  return { areaId: saved.areaId, lat: saved.lat, lng: saved.lng, label: saved.label };
 }
 
 /**
@@ -587,7 +720,18 @@ async function connect(t: T, requestId: string, businessId: string): Promise<voi
   const business = await getBusiness(svc.db, businessId);
   if (!business || business.status !== "active") return t.reply(copy.noLongerAvailable());
   const request = await ownRequest(t, requestId);
-  const intro = await createIntroduction(svc.db, { requestId: request?.id ?? null, contactId: contact.id, businessId });
+  // "Connect me" tapped again (or the turn replayed after a crash): the same link. The business was
+  // told and the follow-up is booked already.
+  const earlier = request
+    ? await one<Introduction>(
+        svc.db,
+        `SELECT * FROM introductions WHERE contact_id = $1 AND request_id = $2 AND business_id = $3
+            AND outcome IS NULL AND created_at > $4
+          ORDER BY created_at DESC LIMIT 1`,
+        [contact.id, request.id, business.id, new Date(svc.now().getTime() - 24 * 3600_000)],
+      )
+    : undefined;
+  const intro = earlier ?? (await createIntroduction(svc.db, { requestId: request?.id ?? null, contactId: contact.id, businessId: business.id }));
   if (request) await setRequestStatus(svc.db, request.id, "connected");
 
   const summary = truncate(request?.raw_text ?? "your products or services", 160);
@@ -600,6 +744,7 @@ async function connect(t: T, requestId: string, businessId: string): Promise<voi
     : copy.prefilledMessage(brand, business.name, intro.ref_code, summary);
   const link = waMeLink(business.phone, prefilled);
   await t.reply(copy.connectLink(view, link, intro.ref_code));
+  if (earlier) return;
 
   const place = request?.area_id != null ? svc.gazetteer.get(request.area_id)?.name : null;
   const neededBy = request?.interpretation?.needed_by ?? null;
@@ -613,7 +758,7 @@ async function connect(t: T, requestId: string, businessId: string): Promise<voi
     { freeOnly: svc.config.leadNotices === "free_only" },
   );
   const runAt = new Date(svc.now().getTime() + svc.config.followUpDelayHours * 3600_000);
-  await svc.jobs.enqueue("follow_up", { introductionId: intro.id }, runAt);
+  await svc.jobs.enqueueOnce("follow_up", intro.id, { introductionId: intro.id }, runAt);
 }
 
 async function reshowResults(t: T, requestId: string): Promise<void> {
@@ -637,19 +782,23 @@ async function reshowResults(t: T, requestId: string): Promise<void> {
     return t.reply(copy.relatedResults(request.id, rows.map((b) => viewOf(t, b, request)), what, relatedLabel(t, category), place));
   }
   // What each business lists now: a price changed or a product sold out since the first list shows as it is.
+  const retailInstead = request.match === "retail";
   const live = await safeProducts(t, {
     query: productQueryFor(t, request.interpretation, request.raw_text, request.query),
     businessIds: rows.map((b) => b.id),
     lat: request.lat ?? undefined,
     lng: request.lng ?? undefined,
     maxKm: 1e6,
+    trade: request.buyer_business_id && !retailInstead ? "wholesale" : "retail",
   });
   const byBusiness = new Map(live.map((p) => [p.businessId, p.best]));
   const views = rows.map((b) => ({ ...viewOf(t, b, request), product: byBusiness.has(b.id) ? listed(t, byBusiness.get(b.id)!) : null }));
   if (views.some((v) => v.product)) {
-    return t.reply(copy.productResults(request.id, views, what, place, { budget: request.interpretation?.budget_usd, sells: category?.goods ? category.phrase : undefined }));
+    return t.reply(
+      copy.productResults(request.id, views, what, place, { budget: request.interpretation?.budget_usd, sells: category?.goods ? category.phrase : undefined, retailInstead }),
+    );
   }
-  return t.reply(copy.results(request.id, views, what, place, { retailInstead: request.match === "retail" }));
+  return t.reply(copy.results(request.id, views, what, place, { retailInstead }));
 }
 
 /**
@@ -717,7 +866,8 @@ async function eraseAnswer(t: T, yes: boolean): Promise<void> {
 async function continueRecommendation(t: T, text: string): Promise<void> {
   const { svc, state } = t;
   const rec = (state.rec ??= {});
-  if (isCommand(text, ["cancel", "stop", "no"])) {
+  const noPhone = state.stage === "rec_phone" && isCommand(text, NO_PHONE);
+  if (!noPhone && isCommand(text, ["cancel", "stop", "no"])) {
     state.stage = undefined;
     state.rec = undefined;
     return t.reply(copy.recCancelled());
@@ -737,7 +887,7 @@ async function continueRecommendation(t: T, text: string): Promise<void> {
       return setRecommendationArea(t, area?.name ?? text.slice(0, 80), area?.id ?? null);
     }
     case "rec_phone": {
-      if (isCommand(text, ["skip", "dont know", "i dont know", "no idea"])) return saveRecommendation(t, null);
+      if (noPhone) return saveRecommendation(t, null);
       const phone = normalizeZimPhone(text);
       if (!phone) return t.reply(copy.recBadPhone());
       return saveRecommendation(t, phone);
@@ -808,8 +958,12 @@ async function feedback(t: T, introId: string, outcome: string): Promise<void> {
     default:
       return;
   }
-  await svc.db.query("UPDATE introductions SET outcome = $2 WHERE id = $1", [intro.id, outcome]);
-  const change = outcome === "no_reply" ? -0.1 : outcome === "couldnt_help" ? -0.05 : outcome === "sorted" ? 0.05 : 0;
+  // Tapping again changes nothing; changing their answer moves the score by the difference.
+  const changed = await svc.db.query<{ id: string }>(
+    "UPDATE introductions SET outcome = $2 WHERE id = $1 AND outcome IS NOT DISTINCT FROM $3 RETURNING id",
+    [intro.id, outcome, intro.outcome],
+  );
+  const change = changed.length ? (OUTCOME_SCORE[outcome] ?? 0) - (OUTCOME_SCORE[intro.outcome ?? ""] ?? 0) : 0;
   if (change) await adjustResponseScore(svc.db, intro.business_id, change);
   if (outcome === "sorted") {
     const business = await getBusiness(svc.db, intro.business_id);
@@ -818,6 +972,9 @@ async function feedback(t: T, introId: string, outcome: string): Promise<void> {
   if (outcome === "not_yet") return t.reply(copy.notYet(intro.request_id));
   return t.reply(copy.letDown(intro.request_id, intro.business_id, outcome, goods));
 }
+
+/** How each answer to the follow-up moves a business's response score. */
+const OUTCOME_SCORE: Record<string, number> = { no_reply: -0.1, couldnt_help: -0.05, sorted: 0.05, not_yet: 0 };
 
 /** Ask what went wrong with a business; their next message is the report. A few a day at most. */
 async function startReport(t: T, businessId: string): Promise<void> {
@@ -962,15 +1119,15 @@ async function sendProductCards(t: T, suppliers: Supplier[], what: Need, query: 
  */
 async function askedAboutProduct(t: T, key: string, first?: OutboundMessage): Promise<void> {
   const { svc, contact, state } = t;
-  const product = /^[0-9a-f]{8}$/.test(key) || /^[0-9a-f-]{36}$/i.test(key) ? await liveProduct(t, key) : undefined;
+  const product = /^[0-9a-f]{8}$/.test(key) || /^[0-9a-f-]{36}$/i.test(key) ? await liveProduct(t, key, !!state.buying) : undefined;
   if (!product) return t.reply(copy.productGone());
   if (first) await t.reply(first);
   const shown = await one<{ id: string }>(
     svc.db,
     `SELECT r.id FROM requests r JOIN request_results rr ON rr.request_id = r.id
-      WHERE r.contact_id = $1 AND rr.business_id = $2 AND r.created_at > $3
+      WHERE r.contact_id = $1 AND rr.business_id = $2 AND rr.offering_id = $4 AND r.created_at > $3
       ORDER BY r.created_at DESC LIMIT 1`,
-    [contact.id, product.business_id, new Date(svc.now().getTime() - 7 * 24 * 3600_000)],
+    [contact.id, product.business_id, new Date(svc.now().getTime() - 7 * 24 * 3600_000), product.id],
   );
   let requestId = shown?.id;
   if (!requestId) {
@@ -999,16 +1156,20 @@ async function askedAboutProduct(t: T, key: string, first?: OutboundMessage): Pr
   return showBusiness(t, requestId, product.business_id);
 }
 
-/** A product customers can still buy, by its ID or the first 8 characters of it. */
-async function liveProduct(t: T, key: string): Promise<{ id: string; business_id: string; name: string } | undefined> {
+/**
+ * A product customers can still buy, by its ID or the first 8 characters of it. A store that
+ * sells only to businesses is for businesses looking for supplies.
+ */
+async function liveProduct(t: T, key: string, forBusiness: boolean): Promise<{ id: string; business_id: string; name: string } | undefined> {
   const exact = key.length === 36;
   return one<{ id: string; business_id: string; name: string }>(
     t.svc.db,
     `SELECT o.id, o.business_id, o.name FROM offerings o JOIN businesses b ON b.id = o.business_id
       WHERE ${exact ? "o.id::text = $1" : "o.id::text LIKE $1 || '%'"}
         AND o.archived_at IS NULL AND o.in_stock AND b.status = 'active'
+        AND ($2::boolean OR b.trade <> 'wholesale')
       ORDER BY o.updated_at DESC LIMIT 1`,
-    [key.toLowerCase()],
+    [key.toLowerCase(), forBusiness],
   );
 }
 
@@ -1043,7 +1204,7 @@ function resultsMessage(
 ): OutboundMessage {
   const views = suppliers.map((s) => supplierView(t, s));
   if (views.some((v) => v.product)) {
-    return copy.productResults(requestId, views, what, place, { budget: opts.budget, sells: category?.goods ? category.phrase : undefined });
+    return copy.productResults(requestId, views, what, place, { budget: opts.budget, sells: category?.goods ? category.phrase : undefined, retailInstead: opts.retailInstead });
   }
   return copy.results(requestId, views, what, place, { retailInstead: opts.retailInstead });
 }
@@ -1071,6 +1232,8 @@ function viewOf(t: T, b: Business, request?: RequestRow): BusinessView {
     distanceKm,
     ratingAvg: b.rating_count > 0 ? b.rating_sum / b.rating_count : null,
     ratingCount: b.rating_count,
+    address: b.address,
+    hours: b.hours,
   };
 }
 

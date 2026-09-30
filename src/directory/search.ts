@@ -84,8 +84,12 @@ export async function searchBusinesses(db: Db, taxonomy: Taxonomy, q: SearchQuer
         AND NOT EXISTS (
           SELECT 1 FROM business_categories bc JOIN categories c ON c.slug = bc.category_slug
            WHERE bc.business_id = b.id AND c.risk IN ('blocked', 'restricted'))
+      -- With many candidates, the ones kept are the category's, nearest first, then the best keyword matches.
+      ORDER BY category_match DESC,
+               CASE WHEN $5::float8 IS NULL OR b.lat IS NULL THEN 0 ELSE (b.lat - $5) ^ 2 + (b.lng - $6) ^ 2 END,
+               text_rank DESC
       LIMIT 300`,
-    [category?.slug ?? null, tsquery, q.excludeIds ?? [], q.trade === "wholesale" ? "retail" : "wholesale"],
+    [category?.slug ?? null, tsquery, q.excludeIds ?? [], q.trade === "wholesale" ? "retail" : "wholesale", q.lat ?? null, q.lng ?? null],
   );
 
   const located = q.lat != null && q.lng != null;

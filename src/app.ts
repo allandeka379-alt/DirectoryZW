@@ -62,7 +62,9 @@ export interface AppOptions {
 export async function createApp(config: Config, opts: AppOptions = {}): Promise<App> {
   const log = opts.log ?? consoleLogger;
   const now = opts.now ?? (() => new Date());
-  const db = opts.db ?? (await openDb({ databaseUrl: config.databaseUrl, pgliteDir: config.pgliteDir }));
+  const db =
+    opts.db ??
+    (await openDb({ databaseUrl: config.databaseUrl, pgliteDir: config.pgliteDir, onError: (message, err) => log.error({ err: String(err) }, message) }));
   await migrate(db);
   await seedReferenceData(db);
   if (config.seedSampleData) await seedSampleBusinesses(db);

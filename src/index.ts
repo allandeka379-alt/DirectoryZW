@@ -8,11 +8,26 @@ const server = createServer({ logger: true });
 const app = await createApp(config, { log: server.log });
 registerRoutes(server, app);
 
+// Photos are kept where they can be written: a mounted volume may belong to another user.
+try {
+  const probe = `probe-${process.pid}`;
+  await app.store.put(probe, Buffer.from("ok"));
+  await app.store.delete(probe);
+} catch (err) {
+  server.log.error({ err: String(err) }, `Photo storage (${app.store.name}) can't be written: photo uploads will fail until it's fixed`);
+}
+
 await app.services.jobs.recoverStuck();
-// Background work: due jobs every tick, and messages a crash or restart left unhandled.
+// Background work: due jobs every tick, and messages a crash or restart left unhandled. Every
+// few minutes, jobs a crash left "running" go back in the queue.
+let lastRecovery = Date.now();
 const tick = async () => {
   await app.runJobs();
   await app.engine.recover();
+  if (Date.now() - lastRecovery > 5 * 60_000) {
+    lastRecovery = Date.now();
+    await app.services.jobs.recoverStuck();
+  }
 };
 const timer = setInterval(() => {
   tick().catch((err) => server.log.error({ err: String(err) }, "Background work failed"));
@@ -48,3 +63,10 @@ async function shutdown(): Promise<void> {
 }
 process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());
+// A promise nobody waited for is logged, not fatal. An exception nothing caught leaves the
+// process in an unknown state: log it and exit, and the host starts a fresh one.
+process.on("unhandledRejection", (err) => server.log.error({ err: String(err) }, "Unhandled promise rejection"));
+process.on("uncaughtException", (err) => {
+  server.log.error({ err: String(err), stack: err.stack }, "Uncaught exception; restarting");
+  process.exit(1);
+});

@@ -118,9 +118,14 @@ export async function businessAnalytics(db: Db, business: { id: string; area_id:
 }
 
 /** Customers sent to this business, newest first, by reference code. */
+/**
+ * Everyone we sent to a business: when, their reference code and what they asked for. Never how
+ * each of them answered our follow-up or rated it: the business knows who a code belongs to, and
+ * customers answer honestly only if it stays private. The Overview shows the totals.
+ */
 export async function businessCustomers(db: Db, businessId: string, days: number, now: Date) {
-  const rows = await db.query<{ ref: string; at: Date; what: string | null; outcome: string | null; rating: number | null }>(
-    `SELECT i.ref_code AS ref, i.created_at AS at, coalesce(nullif(r.raw_text, ''), nullif(r.query, '')) AS what, i.outcome, i.rating
+  const rows = await db.query<{ ref: string; at: Date; what: string | null }>(
+    `SELECT i.ref_code AS ref, i.created_at AS at, coalesce(nullif(r.raw_text, ''), nullif(r.query, '')) AS what
        FROM introductions i LEFT JOIN requests r ON r.id = i.request_id
       WHERE i.business_id = $1 AND i.created_at >= $2
       ORDER BY i.created_at DESC LIMIT 500`,
