@@ -3,5 +3,9 @@
   "framework": null,
   "buildCommand": "",
   "installCommand": "",
+  "redirects": [
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "www.findzim.com" }], "destination": "https://findzim.com/$1", "permanent": true },
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "findzim.vercel.app" }], "destination": "https://findzim.com/$1", "permanent": true }
+  ],
   "rewrites": [{ "source": "/(.*)", "destination": "https://directoryzw-production.up.railway.app/$1" }]
 }

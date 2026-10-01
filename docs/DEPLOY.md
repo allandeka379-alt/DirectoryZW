@@ -64,10 +64,14 @@ GitHub Actions type-checks and runs the tests on every push to `main` (`.github/
 
 - **Railway**, project *positive-love*, runs the app. The service is still named DirectoryZW, and it deploys GitHub `main` with the `Dockerfile`.
   - Postgres is its own service there; `DATABASE_URL` refers to it.
-  - A volume is mounted at `/data`, and photos are kept in `/data/uploads` (`UPLOADS_DIR`), so they survive redeploys. The app runs as the `node` user: if the logs say photo storage can't be written, set `RAILWAY_RUN_UID=0` on the service.
+  - A volume is mounted at `/data`, and photos are kept in `/data/uploads` (`UPLOADS_DIR`), so they survive redeploys. The volume belongs to root, so the service has `RAILWAY_RUN_UID=0` (set on 30 September 2026, when the start-up check found photos couldn't be written).
   - `railway.json` in the repository sets the health check (`/ready`, up to 5 minutes for migrations) and restarts the app if it stops. Turn on **Wait for CI** in the service's settings so only commits that pass the tests are deployed.
   - Its own address is `https://directoryzw-production.up.railway.app`, pointed at port 3000 (`PORT=3000`).
-- **Vercel**, project *findzim*, gives the public address: `https://findzim.vercel.app` forwards every request to the Railway app (`deploy/vercel/vercel.json`).
+- **The address is `https://findzim.com`.** The domain is registered at Namecheap, and its DNS stays there:
+  - `A @ 76.76.21.21` and `A www 76.76.21.21` point both names at Vercel.
+  - Namecheap's email forwarding (its MX and SPF records) is left on, for addresses like hello@findzim.com.
+- **Vercel**, project *findzim*, serves `findzim.com` and forwards every request to the Railway app (`deploy/vercel/vercel.json`).
+  - `www.findzim.com` and the first address, `https://findzim.vercel.app`, redirect to `https://findzim.com` (permanent redirects that keep the path).
   - The website, the dashboard, the admin portal and WhatsApp's webhook share that one address. `PUBLIC_BASE_URL` is set to it, so links we send use it.
   - If the Railway address changes, edit `deploy/vercel/vercel.json`, then run `vercel deploy --prod` from `deploy/vercel`.
 - Until Meta approves the number, the app runs in pre-launch mode (`WHATSAPP_TRANSPORT=off`). The webhook can be registered with Meta before the switch: verification works with `WHATSAPP_VERIFY_TOKEN`, and signed calls are acknowledged and dropped until `WHATSAPP_TRANSPORT=cloud`.
