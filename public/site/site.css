@@ -681,10 +681,17 @@ main .stage-note {
     opacity: 0;
   }
 }
-/* site.js restarts the chat when the hero comes back into view. */
+/* site.js plays the chat in a loop: the conversation fades out ("clearing"), the animations
+   restart from the first message, and it fades back in as the first message arrives. */
 .hero-stage.restart *,
 .hero-stage.restart *::after {
   animation: none !important;
+}
+.chat-col {
+  transition: opacity 0.4s ease;
+}
+.hero-stage.clearing .chat-col {
+  opacity: 0;
 }
 
 /* Tablets and up: copy on the left, the phone on the right over the canopy. */
