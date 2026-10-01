@@ -21,8 +21,35 @@ function go(step) {
   $("back").hidden = step === 1;
   $("next").textContent = step === 3 ? "Register my business" : "Continue";
   showError("");
+  $("step-status").textContent = `Step ${step} of 3: ${stepper[step - 1].textContent}`;
   steps[step - 1].querySelector("input, select, textarea")?.focus();
 }
+
+const smooth = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+
+/** Show a "registered" panel. The form (and its focused button) is hidden, so move focus to the
+ *  panel's heading: screen readers then announce it, and the keyboard carries on from there. */
+function showDone(id) {
+  const panel = $(id);
+  panel.hidden = false;
+  const h = panel.querySelector("h1");
+  h.tabIndex = -1;
+  h.focus({ preventScroll: true });
+  panel.scrollIntoView({ behavior: smooth(), block: "start" });
+}
+
+// ---------- The preview in the aside: how customers will see the listing ----------
+
+function updatePreview() {
+  if (!$("pv-name")) return;
+  $("pv-name").textContent = $("name").value.trim() || "Your business name";
+  const first = state.options?.categories.find((c) => c.slug === state.categories[0]);
+  $("pv-cat").textContent = first ? first.name : "What you sell";
+  const o = $("area").selectedOptions[0];
+  $("pv-area").textContent = o && o.value ? o.textContent : "Your area";
+}
+$("name").addEventListener("input", updatePreview);
+$("area").addEventListener("change", updatePreview);
 
 // ---------- Categories: search, then up to three chips ----------
 
@@ -61,6 +88,7 @@ function renderChosen() {
       x.onclick = () => {
         state.categories = state.categories.filter((s) => s !== slug);
         renderChosen();
+        search.focus(); // the button is gone: keep the keyboard in the field
       };
       chip.append(x);
       return chip;
@@ -68,12 +96,14 @@ function renderChosen() {
   );
   search.disabled = state.categories.length >= 3;
   search.placeholder = state.categories.length >= 3 ? "Three chosen" : "Type to search: fridges, plumbing, cakes…";
+  updatePreview();
 }
 
 function renderMatches() {
   list.replaceChildren(
     ...matches.map((c, i) => {
       const li = document.createElement("li");
+      li.id = `cat-opt-${i}`;
       li.setAttribute("role", "option");
       li.setAttribute("aria-selected", String(i === active));
       li.append(Object.assign(document.createElement("span"), { textContent: c.name }), Object.assign(document.createElement("small"), { textContent: c.group }));
@@ -86,6 +116,8 @@ function renderMatches() {
   );
   list.hidden = matches.length === 0;
   search.setAttribute("aria-expanded", String(!list.hidden));
+  if (matches.length) search.setAttribute("aria-activedescendant", `cat-opt-${active}`);
+  else search.removeAttribute("aria-activedescendant");
 }
 
 function pick(c) {
@@ -192,19 +224,17 @@ form.addEventListener("submit", async (e) => {
     if (data.preLaunch) {
       // Before launch: no code to send on WhatsApp yet; the team calls.
       const n = phoneNumber();
-      $("done-prelaunch").hidden = false;
       $("prelaunch-code").textContent = data.code;
       $("prelaunch-phone").textContent = `+${n.slice(0, 3)} ${n.slice(3, 5)} ${n.slice(5, 8)} ${n.slice(8)}`;
-      $("done-prelaunch").scrollIntoView({ behavior: "smooth", block: "start" });
+      showDone("done-prelaunch");
       return;
     }
-    $("done").hidden = false;
     $("code").textContent = data.code;
     $("wa").href = data.whatsappLink;
     const n = data.whatsappNumber;
     $("wa-manual").textContent = `On a computer? From the WhatsApp you'll manage your listing from, send ${data.code} to +${n.slice(0, 3)} ${n.slice(3, 5)} ${n.slice(5, 8)} ${n.slice(8)}.`;
     $("expires").textContent = `The code works for 48 hours.`;
-    $("done").scrollIntoView({ behavior: "smooth", block: "start" });
+    showDone("done");
   } catch {
     showError("We couldn't reach the server. Check your connection and try again.");
   } finally {
@@ -233,4 +263,5 @@ form.addEventListener("submit", async (e) => {
     select.append(group);
   }
   renderChosen();
+  $("next").disabled = false; // off until the form has what it needs (and without JavaScript)
 })();

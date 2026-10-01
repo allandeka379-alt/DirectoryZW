@@ -1,39 +1,25 @@
-// Dark is our default look. Anyone can switch to light; we remember the choice on this device.
-// Loaded in <head>, before the page draws, so a light-mode visitor never sees a dark flash.
+// FindZim has one look: dark. There is no light mode and no switch.
+// Loaded in <head>, before the page draws. It clears a "light" choice saved by an older
+// version of the site, and makes sure nothing (an old saved choice, a "?theme=light" link)
+// can turn a page light.
 (function () {
   var KEY = "dz.theme";
+  var DARK = "#0c0a09";
   var root = document.documentElement;
 
-  function saved() {
-    try {
-      return localStorage.getItem(KEY);
-    } catch (e) {
-      return null; // private browsing, or storage switched off
-    }
+  try {
+    localStorage.removeItem(KEY);
+  } catch (e) {
+    /* private browsing, or storage switched off: nothing was saved */
   }
 
-  function apply(theme) {
-    if (theme === "light") root.setAttribute("data-theme", "light");
-    else root.removeAttribute("data-theme");
+  function keepDark() {
+    if (root.hasAttribute("data-theme")) root.removeAttribute("data-theme");
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", theme === "light" ? "#ffffff" : "#0c0a09");
+    if (meta && meta.getAttribute("content") !== DARK) meta.setAttribute("content", DARK);
   }
 
-  apply(saved());
-  document.addEventListener("DOMContentLoaded", function () {
-    apply(saved()); // the theme-color tag is parsed after this script runs
-  });
-
-  // Any button with data-theme-toggle switches, including ones the dashboard draws later.
-  document.addEventListener("click", function (e) {
-    var button = e.target.closest ? e.target.closest("[data-theme-toggle]") : null;
-    if (!button) return;
-    var next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
-    try {
-      localStorage.setItem(KEY, next);
-    } catch (err) {
-      /* the switch still works for this page */
-    }
-    apply(next);
-  });
+  keepDark();
+  // The theme-color tag is parsed after this script runs.
+  document.addEventListener("DOMContentLoaded", keepDark);
 })();

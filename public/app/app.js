@@ -20,7 +20,6 @@ import {
   shortDate,
   shrinkPhoto,
   store,
-  themeSwitch,
   toast,
 } from "/assets/ui.js";
 import { barChart } from "./charts.js";
@@ -284,7 +283,6 @@ function renderShell() {
             liveText,
             h("div", {}, verificationBadge(b)),
           ),
-          themeSwitch(true),
           h("button", { class: "btn btn-ghost btn-sm", type: "button", style: "justify-content:flex-start", onclick: signOut }, icon("out"), "Sign out"),
         ),
       ),
@@ -297,7 +295,6 @@ function renderShell() {
           h("a", { class: "brandmark", href: "#/overview", "aria-label": "Overview" }, h("img", { src: "/assets/logo.svg", alt: "" })),
           businessPicker("topbar-business"),
           h("span", { class: "spacer" }),
-          themeSwitch(false),
           h("button", { class: "btn btn-ghost btn-icon btn-sm", type: "button", "aria-label": "Sign out", onclick: signOut }, icon("out")),
         ),
         h("main", { class: "view", id: "view" }),

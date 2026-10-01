@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "findzim",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file=.claude/preview.env", "--import", "tsx", "src/index.ts"],
       "port": 3000
     }
   ]

@@ -368,6 +368,7 @@ On 29 September 2026 the project was named **FindZim** (`BRAND_NAME`; the GitHub
   - Admins hand owners a one-time dashboard link from the business's page. It works for a day, and the business's own number becomes its owner.
 - [x] Tests (261)
 - [x] Live before Meta: the app on Railway (positive-love) behind `https://findzim.vercel.app` (see [DEPLOY.md](DEPLOY.md))
+- [x] Our own address, `https://findzim.com` (1 October 2026): DNS at Namecheap points it at Vercel; `www` and the vercel.app address redirect to it, and `PUBLIC_BASE_URL` uses it
 - [ ] Switch to `WHATSAPP_TRANSPORT=cloud` once Meta's settings are in
 
 ## Photos in bulk
@@ -419,6 +420,21 @@ Still to do:
 - [ ] Decide the WhatsApp wording about listing being free (the website says nothing about it; WhatsApp still says "list it free" in places, including the terms step).
 - [ ] Railway: turn on **Wait for CI** and volume backups; if the logs say photo storage can't be written, set `RAILWAY_RUN_UID=0`; move photos to R2 before launch.
 - [ ] Related-category searches in one query instead of one per category.
+
+## The website, redesigned (1 October 2026)
+
+The user found the website flat, with no pictures. It now shows the product working instead of describing it:
+
+- [x] **Hero:** a phone where a customer asks for a fridge in Avondale and gets three stores with product pictures, prices, distance and a Verified mark, then a reference code; beside it, the first message the shop receives. Behind it, a redrawn night map of Harare that never reaches the text.
+- [x] **One colour language:** amber for a customer asking (pins, request chips, reference codes), green for a business answering.
+- [x] **New sections:** example requests in customers' own words with the categories we cover, and "Verified means we went there" with a seal.
+- [x] **Every claim has a picture:** mini screens for the three steps, the dashboard in a browser frame, micro-visuals on each feature, the founding partners' catalogue and monthly report as paper sheets.
+- [x] **Register page:** a preview of how customers will see the listing, and what happens next.
+- [x] Hand-written SVG, CSS and a 3 KB optional script (`public/site/assets`, served at `/assets/site/...`): the page works without JavaScript, follows dark and light, and stays still under reduced motion. About 27 KB compressed for the page and stylesheet.
+- [x] Files are revalidated with ETags, so a returning visitor downloads only what changed.
+- [x] **Photos of the formal sector** (same day, after the user's feedback): a hero of a customer asking on her phone in a store, with the chat showing the stores that answer; tiles for pharmacies, furniture showrooms, tiles and building supplies, and solar installers; a shop owner in the trust section; the Harare business district behind the closing call to action; a shop owner at his counter on the register page. No street vending, markets or roadside repairs. Licences and credits in [PHOTO_CREDITS.md](PHOTO_CREDITS.md).
+- [x] **A lighter hero:** one headline, one line, one button. The pre-launch note moved to the closing section.
+- [x] **Dark mode only**, everywhere: the website, the business dashboard, the admin portal and the field app. The light theme and every switch are gone.
 
 ## Later: monetization (only after traction)
 

@@ -48,7 +48,7 @@ function page(v: LegalValues, title: string, body: string): string {
         <a class="brandmark" href="/"><img src="/assets/logo.svg" alt="" />${brand}</a>
         <div class="nav-cta">
           <a class="btn btn-ghost btn-sm" href="/app/">Sign in</a>
-          <a class="btn btn-sm" href="/register">Register</a>
+          <a class="btn btn-sm btn-brand" href="/register">Register</a>
         </div>
       </div>
     </header>

@@ -1,35 +1,19 @@
+/* Dark only, like the rest of FindZim. */
 :root {
-  --bg: #f4f6f5;
-  --card: #ffffff;
-  --text: #13201b;
-  --muted: #5d6b65;
-  --line: #d9dfdc;
-  --accent: #0b6e4f;
-  --accent-text: #ffffff;
-  --warn-bg: #fff4e0;
-  --warn: #8a5300;
-  --bad-bg: #fde8e8;
-  --bad: #9b1c1c;
-  --ok-bg: #e3f4ec;
-  --ok: #0b6e4f;
-  color-scheme: light dark;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1614;
-    --card: #17211e;
-    --text: #e6eeea;
-    --muted: #97a8a1;
-    --line: #2b3934;
-    --accent: #2fb487;
-    --accent-text: #06120d;
-    --warn-bg: #3a2a0c;
-    --warn: #f3c56b;
-    --bad-bg: #3a1414;
-    --bad: #f5a3a3;
-    --ok-bg: #11342a;
-    --ok: #7fe0bd;
-  }
+  --bg: #0f1614;
+  --card: #17211e;
+  --text: #e6eeea;
+  --muted: #97a8a1;
+  --line: #2b3934;
+  --accent: #2fb487;
+  --accent-text: #06120d;
+  --warn-bg: #3a2a0c;
+  --warn: #f3c56b;
+  --bad-bg: #3a1414;
+  --bad: #f5a3a3;
+  --ok-bg: #11342a;
+  --ok: #7fe0bd;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }

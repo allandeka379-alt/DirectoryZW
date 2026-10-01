@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+<defs>
+<ellipse id="gs" cx="32" cy="58" rx="18" ry="2.5" fill="#000" opacity=".18"/>
+<rect id="leg" width="3" height="4" rx="1" fill="#3a3633"/>
+<g id="sack">
+<path id="sk" d="M3 1Q21-1 39 1Q42 1 42 4Q43 9 42 14Q42 17 39 17Q21 19 3 17Q0 17 0 14Q-1 9 0 4Q0 1 3 1z"/>
+<path d="M0 12Q21 14 42 12Q43 16 39 17Q21 19 3 17Q-1 16 0 12z" fill="#000" opacity=".1"/>
+<rect x="16" y="1" width="10" height="17" fill="#b9a887"/>
+<use href="#sk" fill="none" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M5 5v8M37 5v8" stroke="#8a7a62" stroke-width="1.5" stroke-dasharray="2 2"/>
+</g>
+</defs>
+
+<symbol id="fridge" viewBox="0 0 64 64">
+<use href="#gs"/>
+<rect x="18" y="8" width="28" height="48" rx="4" fill="#e7e5e4"/>
+<path d="M41 8h1a4 4 0 0 1 4 4v40a4 4 0 0 1-4 4h-1z" fill="#cfcac6"/>
+<path d="M18 26h28" stroke="#3a3633" stroke-width="1.5"/>
+<rect x="18" y="8" width="28" height="48" rx="4" fill="none" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<rect x="37" y="14" width="2" height="8" rx="1" fill="#3a3633"/>
+<rect x="37" y="31" width="2" height="12" rx="1" fill="#3a3633"/>
+</symbol>
+
+<symbol id="chest-freezer" viewBox="0 0 64 64">
+<use href="#gs"/>
+<use href="#leg" x="12" y="51"/>
+<use href="#leg" x="49" y="51"/>
+<rect x="9" y="27" width="46" height="25" rx="3" fill="#e7e5e4"/>
+<path d="M9 47h46v2a3 3 0 0 1-3 3H12a3 3 0 0 1-3-3z" fill="#cfcac6"/>
+<path d="M14 43h8M14 46h8" stroke="#cfcac6" stroke-width="1.5" stroke-linecap="round"/>
+<rect x="9" y="27" width="46" height="25" rx="3" fill="none" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<rect x="7" y="21" width="50" height="8" rx="3" fill="#e7e5e4" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M10 23h44" stroke="#cfcac6" stroke-width="1.5" stroke-linecap="round"/>
+<rect x="26" y="29" width="12" height="3" rx="1.5" fill="#3a3633"/>
+<circle cx="50" cy="43" r="1.5" fill="#3ecfa6"/>
+</symbol>
+
+<symbol id="tv" viewBox="0 0 64 64">
+<use href="#gs"/>
+<rect x="29" y="47" width="6" height="7" fill="#3a3633"/>
+<rect x="20" y="53" width="24" height="3" rx="1.5" fill="#3a3633"/>
+<rect x="6" y="16" width="52" height="31" rx="3" fill="#57534e" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<rect x="9" y="19" width="46" height="25" rx="1" fill="#1d2430"/>
+<path d="M9 19h22L9 38z" fill="#3ecfa6" opacity=".34"/>
+<path d="M35 19h6L9 44v-6z" fill="#3ecfa6" opacity=".16"/>
+<circle cx="32" cy="45.5" r=".8" fill="#3ecfa6"/>
+</symbol>
+
+<symbol id="inverter" viewBox="0 0 64 64">
+<use href="#gs"/>
+<rect x="26" y="54" width="3" height="3" fill="#1c1917"/>
+<rect x="35" y="54" width="3" height="3" fill="#1c1917"/>
+<rect x="14" y="10" width="36" height="44" rx="4" fill="#44403c" stroke="#1c1917" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M46 11.5a3 3 0 0 1 2.5 2.5v36a3 3 0 0 1-2.5 2.5z" fill="#3a3633"/>
+<path d="M18 12.5h26" stroke="#78716c" stroke-width="1.5" stroke-linecap="round"/>
+<rect x="20" y="17" width="24" height="10" rx="1.5" fill="#3ecfa6"/>
+<path d="M23 21h12M23 24h7" stroke="#0b5d4b" stroke-width="1.5" stroke-linecap="round"/>
+<circle cx="22" cy="33" r="1.5" fill="#3ecfa6"/>
+<circle cx="27" cy="33" r="1.5" fill="#f5b544"/>
+<circle cx="32" cy="33" r="1.5" fill="#78716c"/>
+<circle cx="41" cy="33" r="3" fill="#cfcac6" stroke="#2a2623" stroke-width="1"/>
+<path d="M20 42h24M20 45h24M20 48h24" stroke="#57534e" stroke-width="1.5" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="solar-panel" viewBox="0 0 64 64">
+<use href="#gs"/>
+<path d="M21 44v12M47 39v17" stroke="#3a3633" stroke-width="2.5" stroke-linecap="round"/>
+<path d="M10 18 52 12 56 40 14 46z" fill="#2f4b5c" stroke="#3a3633" stroke-width="5" stroke-linejoin="round"/>
+<path d="M20.5 16.5l4 28M31 15l4 28M41.5 13.5l4 28M11.3 27.3l42-6M12.7 36.7l42-6" stroke="#9fc3d6" stroke-width="1" opacity=".6"/>
+<path d="M10 18 52 12 56 40 14 46z" fill="none" stroke="#cfcac6" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="48" cy="16" r="2" fill="#f5b544"/>
+</symbol>
+
+<symbol id="gas-cylinder" viewBox="0 0 64 64">
+<use href="#gs"/>
+<rect x="30" y="7" width="4" height="5" rx="1" fill="#3a3633"/>
+<rect x="20" y="18" width="24" height="38" rx="10" fill="#2fb08c"/>
+<rect x="20" y="18" width="19" height="38" rx="9.5" fill="#3ecfa6"/>
+<rect x="20" y="30" width="24" height="4" fill="#0b5d4b"/>
+<rect x="20" y="18" width="24" height="38" rx="10" fill="none" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<rect x="24" y="12" width="16" height="6" rx="2" fill="#cfcac6" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M25 24v3" stroke="#e7e5e4" stroke-width="1.5" stroke-linecap="round" opacity=".7"/>
+</symbol>
+
+<symbol id="sofa" viewBox="0 0 64 64">
+<use href="#gs"/>
+<use href="#leg" x="11" y="52"/>
+<use href="#leg" x="50" y="52"/>
+<rect x="10" y="24" width="44" height="16" rx="4" fill="#0b5d4b" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<rect x="16" y="27" width="15.5" height="11" rx="3" fill="#127a62"/>
+<rect x="32.5" y="27" width="15.5" height="11" rx="3" fill="#127a62"/>
+<rect x="16" y="38" width="32" height="14" rx="2" fill="#0a4a3c" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<rect x="16" y="38" width="32" height="9" rx="2" fill="#127a62" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M32 39v7" stroke="#0b5d4b" stroke-width="1.5"/>
+<rect x="8" y="32" width="8" height="20" rx="3" fill="#0a4a3c" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+<rect x="48" y="32" width="8" height="20" rx="3" fill="#0a4a3c" stroke="#3a3633" stroke-width="1.5" stroke-linejoin="round"/>
+</symbol>
+
+<symbol id="cement-bag" viewBox="0 0 64 64">
+<use href="#gs"/>
+<use href="#sack" x="13" y="38" fill="#cdbd9f"/>
+<use href="#sack" x="8" y="21" fill="#d9cbb0"/>
+</symbol>
+</svg>

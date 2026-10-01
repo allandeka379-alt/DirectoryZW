@@ -1,8 +1,216 @@
-/* The public website: landing page and registration. Builds on /assets/base.css. */
+/* The public website: landing page, registration, legal pages and the public product page.
+   Builds on /assets/base.css (shared with the dashboard), which this file never changes. */
+
+/* ---------- Site tokens ----------
+   One colour language: amber is a customer asking (pins, request chips, reference codes),
+   teal/green is a business answering (shop pins, the verified seal, buttons). */
+:root {
+  --hero-top: #0a1412;
+  --hero-mid: #0b100f;
+  --hero-glow: rgb(62 207 166 / 0.14);
+  --ask: #f5b544;
+  --ask-deco: #f5b544;
+  --ask-soft: rgb(245 181 68 / 0.12);
+  --ask-line: rgb(245 181 68 / 0.35);
+  --ref-bg: #2e2208;
+  --ref-fg: #f5b544;
+  --sand: var(--bg-subtle);
+  --sand-2: #1a1714;
+  --line-warm: #2b2520;
+  --thumb: #18211e;
+  --thumb-b: #1d1f2a;
+  --thumb-c: #22201b;
+  --chat-wall: #0e1513;
+  --chat-head: #141b19;
+  --chat-title: #fafaf9;
+  --chat-status: #6fdcbc;
+  --bubble-in: #1b2220;
+  --bubble-in-fg: #ecebe9;
+  --bubble-out: #11463a;
+  --bubble-out-fg: #e6f6f0;
+  --phone-bezel: #0a0908;
+  --phone-edge: #2c2927;
+  --phone-shadow: 0 0 0 1px var(--phone-edge), 0 40px 80px -30px rgb(0 0 0 / 0.85), 0 0 120px -30px rgb(62 207 166 / 0.25);
+  --seal-bg: #0f2a23;
+  --seal-fg: #6fdcbc;
+  --paper: #1d1a17;
+  --paper-line: #34302b;
+  --paper-ink: var(--text);
+  --paper-soft: var(--text-2);
+  --card-hi: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --accent-grad: linear-gradient(95deg, #6fdcbc 0%, #3ecfa6 50%, #f5b544 100%);
+  --texture: rgb(250 250 249 / 0.07);
+  --cta-bg: linear-gradient(160deg, #0f1614, #0c0a09 70%);
+  --btn-glow: 0 10px 30px -10px rgb(62 207 166 / 0.55);
+}
 
 .wrap {
   width: min(1120px, 100% - 32px);
   margin: 0 auto;
+}
+main p {
+  font-size: 16px;
+}
+
+/* ---------- Shared parts ---------- */
+.icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: -3px;
+}
+.btn-brand {
+  box-shadow: var(--btn-glow);
+}
+.caption {
+  font-size: 13px;
+  color: var(--text-2);
+}
+/* A product picture tile: <span class="thumb"><svg><use href="/assets/site/products.svg#fridge"/></svg></span> */
+.thumb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 9px;
+  background: var(--thumb);
+}
+.thumb-b {
+  background: var(--thumb-b);
+}
+.thumb-c {
+  background: var(--thumb-c);
+}
+/* A reference code, like the one every customer arrives with. */
+.ref {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--ref-bg);
+  color: var(--ref-fg);
+  font-family: var(--mono);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+.seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--seal-fg);
+  font-weight: 600;
+}
+.seal .icon {
+  vertical-align: 0;
+}
+.seal-pill {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--seal-bg);
+  font-size: 11px;
+}
+/* Chat bubbles, used in the hero phone and the small mockups further down. */
+.msg {
+  max-width: 86%;
+  padding: 8px 10px;
+  border-radius: 14px 14px 14px 4px;
+  background: var(--bubble-in);
+  color: var(--bubble-in-fg);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 0.08);
+}
+.msg.me {
+  align-self: flex-end;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--bubble-out);
+  color: var(--bubble-out-fg);
+}
+.msg-time {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.75;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* One business in a reply: picture, name, meta line, price. */
+.result {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--bubble-in) 60%, var(--chat-wall));
+  border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+}
+.result .thumb {
+  width: 40px;
+  height: 40px;
+}
+.r-body {
+  display: grid;
+  min-width: 0;
+}
+.r-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.r-meta {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.r-price {
+  font-size: 14px;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+}
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--ask-line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  font-weight: 600;
+}
+/* The contour-line texture, as a mask so it takes the theme's colour. */
+.texture-host {
+  position: relative;
+  isolation: isolate;
+}
+.texture-host::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--texture);
+  -webkit-mask: url(/assets/site/contours.svg) 0 0 / 600px 600px repeat;
+  mask: url(/assets/site/contours.svg) 0 0 / 600px 600px repeat;
+  pointer-events: none;
+}
+/* Reveal on scroll: only when site.js runs, so nothing is hidden without it. */
+[data-reveal] {
+  transition: opacity 0.45s, transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition-delay: calc(var(--i, 0) * 80ms);
+}
+html.js [data-reveal]:not(.in) {
+  opacity: 0;
+  transform: translateY(12px);
+}
+/* site.js pauses loops that are off-screen. */
+.is-offscreen,
+.is-offscreen * {
+  animation-play-state: paused !important;
 }
 
 /* ---------- Header ---------- */
@@ -10,16 +218,39 @@
   position: sticky;
   top: 0;
   z-index: 10;
+  background: var(--bg); /* browsers without color-mix: solid, never see-through */
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: saturate(1.6) blur(14px);
   -webkit-backdrop-filter: saturate(1.6) blur(14px);
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.nav::after,
+.footer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--brand) 35%, var(--border)), transparent);
+  pointer-events: none;
+}
+.nav::after {
+  bottom: 0;
 }
 .nav-inner {
   display: flex;
   align-items: center;
   gap: 24px;
   height: 64px;
+}
+/* The home link is a full 44px tap target. */
+.nav .brandmark,
+.footer .brandmark {
+  min-height: 44px;
+}
+.nav .brandmark img,
+.footer .brandmark img {
+  border-radius: 8px;
+  box-shadow: 0 0 0 4px var(--brand-soft);
 }
 .nav-links {
   display: flex;
@@ -39,563 +270,2490 @@
 }
 .nav-cta {
   display: flex;
+  align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+.nav-signin .icon {
+  display: none;
 }
 @media (max-width: 760px) {
   .nav-links {
     display: none;
   }
 }
+@media (max-width: 480px) {
+  .nav-inner {
+    gap: 12px;
+  }
+}
+/* Phones: header buttons are full 44px tap targets, and no backdrop blur to redraw on every scroll. */
+@media (max-width: 767px) {
+  .nav {
+    background: var(--bg);
+    background: color-mix(in srgb, var(--bg) 96%, transparent);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .nav-cta .btn-sm {
+    --h: 44px;
+  }
+  .nav-cta .btn-icon,
+  .nav-signin {
+    min-width: 44px;
+  }
+}
+@media (max-width: 400px) {
+  .nav-signin {
+    width: var(--h);
+    padding: 0;
+  }
+  .nav-signin .icon {
+    display: inline-block;
+  }
+  .nav-signin-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
 
-/* ---------- Hero ---------- */
+/* ---------- Hero ----------
+   A shopper in a supermarket aisle reading her phone, full bleed, graded dark, under a dark
+   overlay; the headline, one line, one button; and the chat phone on the right. The lit,
+   soft-focus chiller cabinets sit under the copy; the shopper's face sits in the gap between
+   the copy and the chat, and the orange handle of her trolley shows near the bottom, so the
+   photo reads as a store. On phones the photo comes first, as a band above the headline.
+   The page background shows if the photo never loads. */
 .hero {
-  --map-grid: rgb(255 255 255 / 0.045);
-  --map-road: rgb(255 255 255 / 0.12);
-  --map-minor: rgb(255 255 255 / 0.06);
-  --map-label: rgb(255 255 255 / 0.32);
-  --map-glow: color-mix(in srgb, var(--brand) 20%, transparent);
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  padding: 88px 0 72px;
+  overflow: clip;
+  padding: 64px 0 80px;
+  background: var(--bg);
 }
-:root[data-theme="light"] .hero {
-  --map-grid: rgb(12 10 9 / 0.05);
-  --map-road: rgb(12 10 9 / 0.11);
-  --map-minor: rgb(12 10 9 / 0.06);
-  --map-label: rgb(12 10 9 / 0.38);
-  --map-glow: color-mix(in srgb, var(--brand) 12%, transparent);
+.hero-photo {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 63%;
 }
-/* Keeps the headline readable over the map, and fades the map into the page below. */
-.hero::after {
+.hero::before {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(0deg, var(--bg) 0%, transparent 18%),
-    linear-gradient(90deg, var(--bg) 0%, var(--bg) 28%, color-mix(in srgb, var(--bg) 55%, transparent) 50%, transparent 72%);
+    radial-gradient(ellipse 46% 34% at 22% 100%, rgb(12 10 9 / 0.55), rgb(12 10 9 / 0) 100%),
+    linear-gradient(90deg, rgb(12 10 9 / 0.84) 0%, rgb(12 10 9 / 0.7) calc(50% - 200px), rgb(12 10 9 / 0.44) calc(50% + 40px), rgb(12 10 9 / 0.12) calc(50% + 220px), rgb(12 10 9 / 0.3) 100%),
+    linear-gradient(180deg, rgb(12 10 9 / 0.5) 0%, rgb(12 10 9 / 0) 16%, rgb(12 10 9 / 0) 90%, var(--bg) 100%);
+}
+.hero .wrap {
+  width: min(1200px, 100% - 32px);
 }
 .hero-inner {
   position: relative;
+  z-index: 2;
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
-  gap: 56px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
 }
 .hero h1 {
-  margin: 0 0 18px;
-  font-size: clamp(38px, 6vw, 62px);
-  letter-spacing: -0.04em;
-  line-height: 1.02;
-  font-weight: 680;
+  font-size: clamp(40px, 2.8vw + 20px, 62px);
+  font-weight: 720;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
 }
-.hero h1 .soft {
-  color: var(--text-3);
+.hero h1 .accent {
+  display: block;
+  width: fit-content;
+  margin-top: 0.06em;
+  padding-bottom: 0.08em; /* room for descenders inside the clipped gradient */
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .hero h1 .accent {
+    background: none;
+    color: var(--brand-text);
+  }
+}
+@media (forced-colors: active) {
+  .hero h1 .accent {
+    background: none;
+    color: CanvasText;
+  }
 }
 .lede {
   max-width: 34em;
-  font-size: 18px;
+  margin-top: 20px;
+  font-size: 19px;
+  line-height: 1.55;
   color: var(--text-2);
+  text-wrap: pretty;
 }
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 28px;
+main .lede {
+  font-size: 19px;
 }
-@media (max-width: 900px) {
-  .hero {
-    padding-top: 48px;
-  }
-  .hero::after {
-    background:
-      linear-gradient(0deg, var(--bg) 0%, transparent 14%),
-      linear-gradient(180deg, color-mix(in srgb, var(--bg) 80%, transparent) 0%, color-mix(in srgb, var(--bg) 65%, transparent) 40%, transparent 58%);
-  }
-  .hero-inner {
-    grid-template-columns: 1fr;
-    gap: 40px;
-  }
+/* On the photo the line is near-white, not the muted grey. */
+.hero .lede {
+  max-width: 28em;
+  color: rgb(250 250 249 / 0.88);
+}
+.hero-cta {
+  margin-top: 32px;
 }
 
-/* The map behind the chat: Harare at night, with customers asking across the city */
-.hero-visual {
+/* The stage: the phone and its note, nothing else. */
+.hero-stage {
+  --phone-h: 610px;
+  --lift: 105px;
   position: relative;
-  justify-self: center;
-  width: min(380px, 100%);
-}
-.hero-map {
-  position: absolute;
-  z-index: -2;
-  top: 50%;
-  left: 50%;
-  width: 1120px;
-  max-width: none; /* wider than the phone column it's centred on */
-  height: 1120px;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  -webkit-mask-image: radial-gradient(closest-side, #000 62%, transparent);
-  mask-image: radial-gradient(closest-side, #000 62%, transparent);
-}
-.hero-map .map-grid {
-  fill: none;
-  stroke: var(--map-grid);
-  stroke-width: 1;
-}
-.hero-map .map-glow-a {
-  stop-color: var(--map-glow);
-}
-.hero-map .map-glow-b {
-  stop-color: transparent;
-}
-.hero-map .map-ring,
-.hero-map .map-minor,
-.hero-map .map-road,
-.hero-map .map-route {
-  fill: none;
-  stroke-linecap: round;
-}
-.hero-map .map-ring {
-  stroke: var(--map-minor);
-  stroke-width: 1.5;
-}
-.hero-map .map-minor {
-  stroke: var(--map-minor);
-  stroke-width: 1.5;
-}
-.hero-map .map-road {
-  stroke: var(--map-road);
-  stroke-width: 2.4;
-}
-.hero-map .map-route {
-  stroke: var(--brand);
-  stroke-width: 2;
-  stroke-dasharray: 3 7;
-  opacity: 0.8;
-  animation: map-route 1.6s linear infinite;
-}
-.hero-map .map-labels {
-  fill: var(--map-label);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-anchor: middle;
-}
-.hero-map .map-dot {
-  fill: var(--map-label);
-}
-.hero-map .map-pin {
-  fill: var(--brand);
-}
-.hero-map .map-halo {
-  opacity: 0.18;
-}
-.hero-map .map-ping {
-  fill: none;
-  stroke: var(--brand);
-  stroke-width: 2;
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: map-ping 2.8s ease-out infinite;
-}
-@keyframes map-ping {
-  from {
-    transform: scale(0.8);
-    opacity: 0.9;
-  }
-  to {
-    transform: scale(4);
-    opacity: 0;
-  }
-}
-@keyframes map-route {
-  to {
-    stroke-dashoffset: -20;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hero-map .map-route,
-  .hero-map .map-ping {
-    animation: none;
-  }
-  .hero-map .map-ping {
-    display: none;
-  }
-}
-@media (max-width: 900px) {
-  .hero-map {
-    width: 1000px;
-    height: 1000px;
-  }
+  width: 300px;
+  margin: 48px auto 0;
 }
 
-/* The example chat */
+/* The phone: a plain, brand-neutral handset. */
 .phone {
   position: relative;
-  padding: 14px;
-  border-radius: 34px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
+  z-index: 1;
+  width: 300px;
+  height: var(--phone-h);
+  padding: 9px;
+  border-radius: 44px;
+  background: var(--phone-bezel);
+  box-shadow: var(--phone-shadow);
 }
-.phone-top {
+.phone::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 2;
+  width: 72px;
+  height: 20px;
+  margin-left: -36px;
+  border-radius: 999px;
+  background: #000;
+}
+.phone-screen {
+  display: grid;
+  grid-template-rows: 26px 52px minmax(0, 1fr) 48px;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 36px;
+  background: var(--chat-wall);
+  color: var(--bubble-in-fg);
+}
+.phone-status,
+.phone-head {
+  background: var(--chat-head);
+  color: var(--chat-title);
+}
+.phone-status {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px 14px;
-  border-bottom: 1px solid var(--border);
+  justify-content: space-between;
+  padding: 2px 24px 0 26px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
-.phone-top img {
-  width: 36px;
-  height: 36px;
+.ps-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
-.phone-top div {
+.ps-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 10px;
+}
+.ps-bars i {
+  width: 3px;
+  height: 4px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.ps-bars i:nth-child(2) {
+  height: 6px;
+}
+.ps-bars i:nth-child(3) {
+  height: 8px;
+}
+.ps-bars i:nth-child(4) {
+  height: 10px;
+}
+.ps-batt {
+  position: relative;
+  width: 22px;
+  height: 11px;
+  padding: 1.5px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+.ps-batt::before {
+  content: "";
+  display: block;
+  width: 70%;
+  height: 100%;
+  border-radius: 1px;
+  background: currentColor;
+}
+.phone-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 6%, transparent);
+}
+.phone-head img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--chat-title) 22%, transparent);
+}
+.ph-title {
   display: grid;
   line-height: 1.25;
+}
+.ph-title b {
   font-size: 14px;
+  font-weight: 600;
 }
-.phone-top span {
-  font-size: 12px;
-  color: var(--good);
-}
-.chat {
+.ph-status {
   display: grid;
-  gap: 10px;
-  padding: 16px 6px 8px;
-  font-size: 13.5px;
-  line-height: 1.45;
+  font-size: 11.5px;
+  color: var(--chat-status);
 }
-.msg {
-  max-width: 88%;
-  padding: 10px 12px;
-  border-radius: 16px 16px 16px 4px;
-  background: var(--bg-muted);
+.ph-status > span {
+  grid-area: 1 / 1;
 }
-.msg.me {
-  justify-self: end;
-  border-radius: 16px 16px 4px 16px;
+.st-typing {
+  opacity: 0;
+  animation: st-typing 4.2s linear both;
+}
+.st-online {
+  animation: st-online 4.2s linear both;
+}
+.phone-chat {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1.2px) 0 0 / 14px 14px,
+    var(--chat-wall);
+  /* Messages that scroll off the top fade out under the header, as in a real chat. */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, transparent 8px, #000 48px);
+  mask-image: linear-gradient(180deg, transparent 0, transparent 8px, #000 48px);
+}
+.chat-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 12px;
+  transform: translateY(calc(-1 * var(--lift)));
+  animation: chat-lift 0.4s ease 3.1s both;
+}
+.phone .msg-wide {
+  max-width: 100%;
+}
+.results {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0;
+}
+.msg-foot {
+  display: block;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.msg-ref {
+  display: block;
+  margin-top: 6px;
+}
+.msg-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 7px -10px -2px;
+  padding-top: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--brand-text);
+  font-weight: 600;
+}
+.phone-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 4px;
+  background: var(--chat-wall);
+}
+.pi-field {
+  flex: 1;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--bubble-in);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 36px;
+}
+.pi-send {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
   background: var(--brand);
   color: var(--on-brand);
 }
-.msg ol {
-  margin: 8px 0;
-  padding-left: 18px;
-  display: grid;
-  gap: 4px;
+.anim {
+  animation: msg-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0s) both;
 }
-.msg em {
-  display: block;
-  font-style: normal;
-  font-size: 11.5px;
-  color: var(--text-3);
+/* The reference code rings once: a pseudo-element ring, transform and opacity only. */
+.ref.flash {
+  position: relative;
 }
-.phone-note {
-  padding: 4px 8px 2px;
-  font-size: 11.5px;
-  color: var(--text-3);
+.ref.flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--ask-line);
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  animation: ref-ring 0.5s ease-out 4.2s 1;
+}
+
+/* Under the phone: the chat is an example. */
+main .stage-note {
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: rgb(250 250 249 / 0.72);
   text-align: center;
 }
 
-/* ---------- The intent band ---------- */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+@keyframes chat-lift {
+  from {
+    transform: none;
+  }
+}
+@keyframes st-typing {
+  0%, 15.5% { opacity: 0; }
+  17.5%, 37% { opacity: 1; }
+  39%, 75.5% { opacity: 0; }
+  77.5%, 88.5% { opacity: 1; }
+  90.5%, 100% { opacity: 0; }
+}
+@keyframes st-online {
+  0%, 15.5% { opacity: 1; }
+  17.5%, 37% { opacity: 0; }
+  39%, 75.5% { opacity: 1; }
+  77.5%, 88.5% { opacity: 0; }
+  90.5%, 100% { opacity: 1; }
+}
+@keyframes ref-ring {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.25, 1.6);
+    opacity: 0;
+  }
+}
+/* site.js restarts the chat when the hero comes back into view. */
+.hero-stage.restart *,
+.hero-stage.restart *::after {
+  animation: none !important;
+}
+
+/* Tablets and up: copy on the left, the phone on the right over the canopy. */
+@media (min-width: 768px) {
+  .hero .wrap {
+    width: min(1200px, 100% - 48px);
+  }
+  .hero-inner {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 40px;
+    align-items: center;
+  }
+  .hero-copy {
+    max-width: 600px;
+  }
+  .hero-stage {
+    margin: 0;
+  }
+}
+@media (min-width: 1024px) {
+  .hero {
+    padding: 72px 0 88px;
+  }
+  .hero-inner {
+    grid-template-columns: minmax(0, 1.1fr) minmax(300px, 1fr);
+  }
+  /* The chat sits at the right edge, which leaves the shopper's face clear between it and the copy. */
+  .hero-stage {
+    justify-self: end;
+  }
+}
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .hero-photo {
+    object-position: 84% 63%;
+  }
+}
+/* Wide screens: the photo keeps the width it has at 1520px, centred on the content, and fades
+   into the page at both sides, so the face stays in the gap instead of sliding under the chat. */
+@media (min-width: 1520px) {
+  .hero-photo {
+    left: calc(50% - 760px);
+    width: 1520px;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+  }
+}
+/* Phones: the portrait crop comes first, as a lightly shaded band with the shopper and her phone;
+   the headline starts below her phone, where the photo darkens into the page, and the chat
+   phone follows on the plain page. */
+@media (max-width: 767px) {
+  .hero {
+    --band: min(125vw, 840px);
+    --pad: min(62.5vw, 420px);
+    padding: var(--pad) 0 56px;
+  }
+  .hero-photo {
+    height: var(--band);
+    object-position: 50% 0%;
+  }
+  .hero::before {
+    background: linear-gradient(180deg, rgb(12 10 9 / 0.5) 0, rgb(12 10 9 / 0.08) 72px, rgb(12 10 9 / 0.14) calc(var(--pad) - 40px), rgb(12 10 9 / 0.8) calc(var(--pad) + 26px), rgb(12 10 9 / 0.88) calc(var(--pad) + 180px), var(--bg) var(--band));
+  }
+  main .lede {
+    font-size: 17px;
+  }
+  .hero-stage {
+    --phone-h: 580px;
+    --lift: 136px;
+    margin-top: 44px;
+  }
+}
+@media (max-width: 479px) {
+  .hero-cta {
+    width: 100%;
+  }
+}
+
+/* ---------- The intent band: three promises, each with a small real-looking visual ---------- */
 .band {
-  border-block: 1px solid var(--border);
-  background: var(--bg-subtle);
+  border-block: 1px solid var(--line-warm);
+  background: var(--sand);
 }
 .band-inner {
   display: grid;
-  grid-template-columns: 1fr 1.4fr;
-  gap: 40px;
-  padding: 40px 0;
-  align-items: center;
+  gap: 28px;
+  padding: 48px 0;
 }
 .band-lead {
-  font-size: 22px;
+  max-width: 24em;
+  font-weight: 620;
   line-height: 1.3;
   letter-spacing: -0.02em;
-  font-weight: 600;
+  text-wrap: balance;
+}
+main .band-lead {
+  font-size: 24px;
 }
 .band-points {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
 }
-.band-points div {
+.point {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line-warm);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--card-hi);
+}
+.point-art {
+  display: grid;
+  place-items: center;
+  height: 76px;
+  border-radius: 12px;
+  background: var(--sand-2);
+}
+.point-text {
   display: grid;
   gap: 4px;
   font-size: 14px;
+  line-height: 1.45;
 }
-.band-points span {
+.point-text strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+.point-text span {
   color: var(--text-2);
 }
-@media (max-width: 900px) {
-  .band-inner,
+.point-art .msg {
+  align-self: center;
+  max-width: none;
+  font-size: 12.5px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+/* A price tag with a punched hole. */
+.price-tag {
+  position: relative;
+  display: grid;
+  align-content: center;
+  width: 104px;
+  height: 46px;
+  padding-left: 30px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  line-height: 1.1;
+  transform: rotate(-4deg);
+}
+.price-tag::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--sand-2);
+}
+.price-tag b {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.price-tag small,
+.ref-stack small {
+  font-size: 11px;
+  color: var(--text-2);
+}
+.ref-stack {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+}
+.ref-stack .ref {
+  font-size: 15px;
+  padding: 2px 9px;
+}
+@media (min-width: 1180px) {
+  .band-inner {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2.1fr);
+    gap: 32px;
+    align-items: center;
+  }
+}
+@media (max-width: 767px) {
+  main .band-lead {
+    font-size: 20px;
+  }
+}
+@media (max-width: 639px) {
   .band-points {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .point {
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: center;
+    gap: 14px;
+    padding: 12px;
+  }
+  .point-art {
+    height: 72px;
+  }
+  .point-art .msg {
+    white-space: normal;
+    width: 92px;
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+  .price-tag {
+    width: 100px;
+    padding-left: 23px;
+    white-space: nowrap;
+  }
+  .price-tag::before {
+    left: 8px;
   }
 }
 
 /* ---------- Sections ---------- */
-.section {
-  padding: 88px 0;
+/* One rhythm: every section has the same padding; two sections on the same background share it. */
+:root {
+  --sec-y: clamp(64px, 7vw, 96px);
+}
+.section,
+.asks,
+.trust {
+  padding-block: var(--sec-y);
+}
+.asks + .how,
+.partner-sec + .section,
+.faq-sec + .section {
+  padding-top: 0;
 }
 .section-muted {
-  background: var(--bg-subtle);
-  border-block: 1px solid var(--border);
+  background: var(--sand);
+  border-block: 1px solid var(--line-warm);
 }
 .section-head {
-  max-width: 640px;
-  margin-bottom: 40px;
+  max-width: 720px;
+  margin-bottom: 44px;
+}
+.section-head.center {
+  margin-inline: auto;
+  text-align: center;
 }
 .section-head h2,
 .faq h2,
 .final h2,
 .partner h2 {
-  font-size: clamp(28px, 4vw, 40px);
-  letter-spacing: -0.035em;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  font-size: clamp(30px, 2.2vw + 18px, 46px);
+  font-weight: 690;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+.section-head h2 {
+  max-width: 20ch;
+}
+.section-head.center h2 {
+  max-width: 26ch;
+  margin-inline: auto;
 }
 .section-head p {
   font-size: 17px;
+  text-wrap: pretty;
 }
 
-/* How it works */
-.steps {
+/* ---------- What people ask for: one marquee of requests, then the categories ---------- */
+.asks .section-head {
+  margin-bottom: 36px;
+}
+.marquee {
+  overflow: hidden;
+  padding: 6px 0;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 60s linear infinite;
+}
+.marquee-list {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+  padding: 0 12px 0 0; /* the gap after the last chip, so the loop is seamless */
+  list-style: none;
+}
+.ask-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 18px 0 14px;
+  border: 1px solid var(--ask-line);
+  border-radius: 999px;
+  background: var(--ask-soft);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 560;
+  white-space: nowrap;
+}
+.ask-chip::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ask-deco);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ask-deco) 22%, transparent);
+}
+.marquee:hover .marquee-track,
+.marquee-pause-input:checked ~ .marquee .marquee-track {
+  animation-play-state: paused;
+}
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+.asks-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 14px;
+}
+.marquee-pause {
+  position: relative;
+  display: inline-flex;
+  padding: 6px 0; /* a 44px tap target around the 32px pill */
+  cursor: pointer;
+}
+.mp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 560;
+}
+.marquee-pause:hover .mp-pill {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.marquee-pause-input:focus-visible ~ .wrap .mp-pill {
+  box-shadow: var(--focus);
+  border-color: var(--brand);
+}
+/* One label, "Pause", in both states (it names the switch). Paused: the play icon and a pressed look. */
+.mp-play,
+.marquee-pause-input:checked ~ .wrap .mp-pause {
+  display: none;
+}
+.marquee-pause-input:checked ~ .wrap .mp-play {
+  display: inline-block;
+}
+.marquee-pause-input:checked ~ .wrap .mp-pill {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--text);
+}
+.cats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: 920px;
+  margin: 36px auto 0;
+  padding: 0;
+  list-style: none;
+}
+.cat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--card-hi);
+  font-size: 14px;
+  font-weight: 560;
+}
+.cat-chip .icon {
+  color: var(--brand-text);
+  vertical-align: 0;
+}
+/* Four photo tiles: formal businesses people ask for. Category names only, no places. */
+.photo-cats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 36px;
+  padding: 0;
+  list-style: none;
+}
+.photo-cat {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: 18px;
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px rgb(250 250 249 / 0.07), 0 24px 48px -28px rgb(0 0 0 / 0.9);
+}
+.photo-cat img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.photo-cat::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgb(12 10 9 / 0) 34%, rgb(12 10 9 / 0.62) 64%, rgb(12 10 9 / 0.92) 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  pointer-events: none;
+}
+.photo-cat span {
+  position: absolute;
+  z-index: 1;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  color: #fafaf9;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 0.5);
+}
+@media (min-width: 900px) {
+  .photo-cats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 44px;
+  }
+  .photo-cat span {
+    left: 18px;
+    bottom: 16px;
+    font-size: 17px;
+  }
+}
+@media (max-width: 479px) {
+  .photo-cats {
+    gap: 10px;
+  }
+  .photo-cat {
+    border-radius: 14px;
+  }
+  .photo-cat span {
+    left: 12px;
+    right: 10px;
+    bottom: 10px;
+    font-size: 14px;
+  }
+}
+@media (max-width: 767px) {
+  .asks {
+    padding: 64px 0 48px;
+  }
+  /* Phones: the chip cloud and the steps heading need a clear break. */
+  .asks + .how {
+    padding-top: 56px;
+    border-top: 1px solid var(--line-warm);
+  }
+  .ask-chip {
+    height: 40px;
+    font-size: 14px;
+  }
+  .cat-chip {
+    height: 38px;
+    padding: 0 14px 0 11px;
+    font-size: 13.5px;
+  }
+}
+
+/* ---------- How it works: three steps, each with a small screen ---------- */
+.steps {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.steps li {
+/* The dashed line joining the three screens; it shows only in the gaps. */
+.steps::before {
+  content: "";
+  position: absolute;
+  top: 120px;
+  left: 16%;
+  right: 16%;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--border-strong) 0 6px, transparent 6px 14px);
+}
+.steps > li {
+  position: relative;
+  z-index: 1;
   display: grid;
-  gap: 10px;
-  align-content: start;
-  padding: 26px;
+  grid-template-rows: auto 1fr;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: 20px;
   background: var(--surface);
+  box-shadow: var(--card-hi);
+  transition-delay: calc(var(--i, 0) * 100ms);
 }
-.steps h3 {
-  font-size: 18px;
-}
-.step-no {
+.step-art {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  margin-bottom: 6px;
-  border-radius: 10px;
-  background: var(--inverse);
-  color: var(--on-inverse);
-  font-weight: 650;
-  font-size: 14px;
+  height: 240px;
+  overflow: hidden;
+  border-radius: 19px 19px 0 0;
+  border-bottom: 1px solid var(--line-warm);
+  background:
+    radial-gradient(var(--border) 1px, transparent 1.2px) 0 0 / 16px 16px,
+    var(--sand);
 }
-@media (max-width: 900px) {
+.step-body {
+  padding: 22px 24px 26px;
+}
+.step-body h3 {
+  margin: 14px 0 8px;
+  font-size: 18px;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+}
+.step-body p {
+  font-size: 15px;
+  line-height: 1.55;
+}
+.step-no {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-top: -39px;
+  border-radius: 10px;
+  background: var(--brand);
+  color: var(--on-brand);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 0 0 4px var(--surface);
+}
+main .steps-note {
+  margin-top: 14px;
+  text-align: right;
+}
+
+/* Step 1: the registration form, filled in. */
+.art-form {
+  display: grid;
+  gap: 7px;
+  width: 236px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.af-field {
+  display: grid;
+  gap: 3px;
+}
+.af-label {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-2);
+}
+.af-box {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 27px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.af-field:first-child .af-box {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+}
+.af-caret {
+  width: 1px;
+  height: 14px;
+  margin-left: 1px;
+  background: var(--brand-text);
+}
+.af-chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.af-select {
+  justify-content: space-between;
+}
+.af-select::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin: -3px 2px 0 0;
+  border-right: 1.5px solid var(--text-2);
+  border-bottom: 1.5px solid var(--text-2);
+  transform: rotate(45deg);
+}
+.af-btn {
+  justify-self: end;
+  display: grid;
+  place-items: center;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--on-brand);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+/* Step 2: a price list, uploaded from a file. */
+.art-prices {
+  position: relative;
+  display: grid;
+  width: 240px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.ap-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  height: 36px;
+  font-size: 12.5px;
+}
+.ap-row + .ap-row {
+  border-top: 1px solid var(--border);
+}
+.ap-row .thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+.ap-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ap-price {
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+}
+.art-prices .file-chip {
+  position: absolute;
+  top: -16px;
+  right: -22px;
+  transform: rotate(6deg);
+}
+.file-chip .icon {
+  color: var(--ask);
+  vertical-align: 0;
+}
+
+/* Step 3: the business in a reply, and the first message it gets. */
+.art-result {
+  display: grid;
+  width: 236px;
+}
+.art-result .msg {
+  max-width: none;
+  box-shadow: var(--shadow-sm);
+}
+.art-result > .msg:first-child {
+  padding: 6px;
+  border-radius: 14px 14px 14px 4px;
+}
+.art-result .result {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 6px;
+}
+.art-result .result .thumb {
+  width: 36px;
+  height: 36px;
+}
+.art-result .msg.me {
+  justify-self: end;
+  width: 218px;
+  margin: -10px -18px 0 0;
+  font-size: 12px;
+  position: relative;
+}
+
+/* Small motions, only when site.js reveals the card. */
+html.js .steps li .file-chip {
+  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.35s, opacity 0.3s 0.35s;
+}
+html.js .steps li:not(.in) .file-chip {
+  opacity: 0;
+  transform: translateY(-10px) rotate(14deg);
+}
+html.js .steps .ap-row {
+  transition: opacity 0.3s calc(0.2s + var(--r) * 60ms);
+}
+html.js .steps li:not(.in) .ap-row {
+  opacity: 0;
+}
+html.js .art-result .msg.me {
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) 0.3s, opacity 0.35s 0.3s;
+}
+html.js .steps li:not(.in) .art-result .msg.me {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+@media (max-width: 899px) {
   .steps {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .steps::before {
+    display: none;
+  }
+  .steps > li + li::before {
+    content: "";
+    position: absolute;
+    top: -21px;
+    left: 36px;
+    width: 2px;
+    height: 20px;
+    background: repeating-linear-gradient(180deg, var(--border-strong) 0 4px, transparent 4px 8px);
+  }
+  .step-art {
+    height: 230px;
+  }
+}
+@media (max-width: 767px) {
+  .step-body {
+    padding: 20px 20px 22px;
   }
 }
 
-/* The dashboard, as a bento grid */
-.bento {
+/* ---------- Trust: what "verified" means ---------- */
+.trust {
+  overflow: hidden;
+  border-top: 1px solid var(--line-warm);
+}
+.trust-inner {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  gap: 28px;
+  justify-items: center;
 }
-.tile {
+/* A photo of a shop as atmosphere only: no badge sits on it. The drawn seal belongs to the
+   heading in the copy column. */
+.trust-visual {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+}
+.trust-frame {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3; /* square from 900px; shorter on phones */
+  border-radius: 24px;
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px rgb(250 250 249 / 0.07), 0 40px 80px -40px rgb(0 0 0 / 0.9);
+}
+.trust-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(12 10 9 / 0) 50%, rgb(12 10 9 / 0.6) 100%);
+  pointer-events: none;
+}
+.trust-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 22%;
+}
+.trust-head {
   display: grid;
-  gap: 10px;
-  align-content: start;
-  padding: 26px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  justify-items: center;
+  gap: 14px;
 }
-.tile h3 {
-  font-size: 17px;
+.trust-seal {
+  flex: none;
+  width: 92px;
+  filter: drop-shadow(0 12px 24px rgb(0 0 0 / 0.55));
+  transition: opacity 0.9s, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.tile p {
-  font-size: 14.5px;
+html.js .trust-seal:not(.in) {
+  opacity: 0;
+  transform: rotate(-20deg);
 }
-.tile-wide {
-  grid-column: span 2;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  align-items: end;
+.trust-seal svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
 }
-.tile-full {
-  grid-column: 1 / -1;
+.ts-g0 {
+  stop-color: var(--brand);
+  stop-opacity: 0.16;
 }
-.tile-copy {
+.ts-g1 {
+  stop-color: var(--brand);
+  stop-opacity: 0;
+}
+.ts-line {
+  fill: none;
+  stroke: var(--brand-text);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.ts-thin {
+  stroke-width: 1.2;
+}
+.ts-face {
+  fill: var(--seal-bg);
+  stroke: var(--brand-text);
+  stroke-width: 1.2;
+}
+.ts-fill {
+  fill: var(--brand-text);
+}
+.ts-lamp {
+  fill: var(--ask-deco);
+}
+.ts-text {
+  fill: var(--brand-text);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+}
+.trust-copy {
+  width: 100%;
+  max-width: 700px;
+}
+.trust h2 {
+  font-size: clamp(30px, 2.2vw + 18px, 46px);
+  font-weight: 690;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  text-align: center;
+  text-wrap: balance;
+}
+.trust-rows {
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.trust-rows li {
   display: grid;
-  gap: 10px;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 14px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line-warm);
 }
-.tile-icon {
+.trust-rows li:last-child {
+  padding-bottom: 0;
+}
+.row-icon {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  margin-bottom: 6px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: var(--brand-soft);
   color: var(--brand-text);
 }
-.tile-icon svg {
-  width: 20px;
-  height: 20px;
+.row-icon .icon {
+  vertical-align: 0;
 }
-.mini-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  height: 120px;
-  padding: 10px 12px 0;
-  border-bottom: 1px solid var(--border);
+.trust-rows strong {
+  display: block;
+  margin: 6px 0 4px;
+  font-size: 16px;
+  font-weight: 650;
 }
-.mini-chart span {
-  flex: 1;
-  height: var(--h);
-  border-radius: 4px 4px 0 0;
-  background: var(--chart);
-  opacity: 0.85;
+main .trust-rows p {
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-2);
 }
-.mini-chart span:last-child {
-  opacity: 1;
-}
-.tile-dark {
-  background: var(--inverse);
-  color: var(--on-inverse);
-  border-color: var(--inverse);
-}
-.tile-dark p {
-  color: color-mix(in srgb, var(--on-inverse) 70%, transparent);
-}
-.demand {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-}
-.demand li {
-  display: grid;
-  grid-template-columns: 110px 1fr auto;
-  align-items: center;
-  gap: 10px;
-}
-.demand i {
-  height: 8px;
-  width: var(--w);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--on-inverse) 70%, transparent);
-}
-.demand b {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: #fdb022;
-  color: #1c1917;
-}
-@media (max-width: 900px) {
-  .bento {
-    grid-template-columns: 1fr;
+@media (min-width: 900px) {
+  .trust-inner {
+    grid-template-columns: minmax(0, 400px) minmax(0, 620px);
+    justify-content: center;
+    gap: 80px;
+    align-items: center;
+    justify-items: stretch;
   }
-  .tile-wide {
-    grid-column: auto;
-    grid-template-columns: 1fr;
+  .trust-frame {
+    aspect-ratio: 1;
+  }
+  .trust-head {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 22px;
+  }
+  .trust-seal {
+    width: 108px;
+  }
+  .trust h2 {
+    text-align: left;
+  }
+}
+@media (max-width: 767px) {
+  .trust {
+    padding: 64px 0;
   }
 }
 
-/* Founding partners */
-.partner {
+/* ---------- Features: the dashboard in a browser frame, four tiles, the demand card ---------- */
+.section-head p + p {
+  margin-top: 8px;
+}
+.dash {
+  max-width: 1120px;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg), var(--card-hi);
+}
+.dash-chrome {
+  position: relative;
   display: flex;
-  gap: 32px;
+  align-items: center;
+  height: 40px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.dc-dots {
+  display: flex;
+  gap: 6px;
+}
+.dc-dots i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.dc-url {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 300px;
+  height: 24px;
+  margin-left: -150px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 24px;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dash-body {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  min-height: 520px;
+}
+.dash-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 10px;
+  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.ds-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px 16px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.ds-brand img {
+  border-radius: 6px;
+}
+.ds-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ds-item .icon {
+  vertical-align: 0;
+}
+.ds-item.is-on {
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  font-weight: 600;
+}
+.dash-main {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 22px;
+  background: var(--bg-subtle);
+}
+.dash-top {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 40px;
-  border-radius: 24px;
+  gap: 12px;
+}
+.dt-title {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.dt-seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--bg-muted);
+  font-size: 12.5px;
+}
+.dt-seg span {
+  padding: 3px 10px;
+  border-radius: 7px;
+  color: var(--text-2);
+}
+.dt-seg .is-on {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.dash-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
   border: 1px solid var(--border);
-  background: linear-gradient(135deg, var(--brand-soft), var(--surface) 70%);
+  border-radius: 12px;
+  background: var(--surface);
 }
-.partner div {
-  max-width: 640px;
+.dc-title {
+  font-size: 13px;
+  font-weight: 600;
 }
-.partner p {
+.card-a {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.dc-chart {
+  align-self: end;
+  display: block;
+  width: 100%;
+  height: 90px;
+  overflow: visible;
+}
+.dc-days {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+/* Wider screens: the chart fills its card instead of sitting at the bottom of it. */
+@media (min-width: 768px) {
+  .card-a {
+    align-content: stretch;
+  }
+  .card-a .dc-chart {
+    align-self: stretch;
+    height: 100%;
+    min-height: 90px;
+  }
+}
+.dc-grid {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.dc-grid,
+.dc-line {
+  vector-effect: non-scaling-stroke; /* the chart stretches; its lines keep their width */
+}
+.dc-line {
+  fill: none;
+  stroke: var(--chart);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.dcf0 {
+  stop-color: var(--chart);
+  stop-opacity: 0.3;
+}
+.dcf1 {
+  stop-color: var(--chart);
+  stop-opacity: 0;
+}
+.cb-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.cb-row .ref,
+.art-customers .ref {
+  font-size: 11.5px;
+}
+.cb-what {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cb-when {
+  color: var(--text-2);
+}
+.cc-row {
+  display: grid;
+  gap: 5px;
+  font-size: 12.5px;
+}
+.cc-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  white-space: nowrap;
+}
+.nf {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--ref-bg);
+  color: var(--ref-fg);
+  font-size: 11px;
+  font-weight: 600;
+}
+/* A bar whose width is a style value only: no number is ever printed. */
+.bar {
+  position: relative;
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-muted);
+}
+.bar::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--w);
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--brand), color-mix(in srgb, var(--brand) 55%, transparent));
+  transform-origin: left;
+}
+.bar-ask::before {
+  background: var(--ask-deco);
+}
+.dash-products {
+  gap: 0;
+  padding: 4px 14px;
+}
+.dp-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 210px) minmax(0, 130px) 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  height: 46px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.dp-head {
+  height: 34px;
+  border-top: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.dp-row .thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.dp-name {
+  overflow: hidden;
+  font-weight: 560;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dp-price {
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+}
+.pill-good {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dash-toast {
+  position: absolute;
+  right: 40px;
+  bottom: 44px;
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  padding: 9px 14px 9px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+}
+.dash-toast b {
+  color: var(--brand-text);
+  font-weight: 600;
+}
+main .dash-note {
+  margin-top: 12px;
+  text-align: center;
+}
+
+/* Reveal motion, only when site.js runs: the chart draws, the bars grow, the toast drops in. */
+html.js .dc-line {
+  stroke-dasharray: 1;
+  transition: stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1) 0.3s;
+}
+html.js .dash:not(.in) .dc-line {
+  stroke-dashoffset: 1;
+}
+html.js .dc-area {
+  transition: opacity 0.6s 0.9s;
+}
+html.js .dash:not(.in) .dc-area {
+  opacity: 0;
+}
+html.js .bar::before {
+  transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) calc(0.3s + var(--b, 0) * 90ms);
+}
+html.js .dash:not(.in) .bar::before {
+  transform: scaleX(0);
+}
+html.js .dash-toast {
+  transition: opacity 0.4s 0.9s, transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) 0.9s;
+}
+html.js .dash:not(.in) .dash-toast {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+/* Four tiles, each with a small picture of the feature. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 28px;
+}
+.tile {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--card-hi);
+  transition: opacity 0.45s, transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), translate 0.15s, border-color 0.15s;
+  transition-delay: calc(var(--i, 0) * 80ms), calc(var(--i, 0) * 80ms), 0s, 0s;
+}
+@media (hover: hover) {
+  .tile:hover {
+    translate: 0 -2px;
+    border-color: var(--border-strong);
+  }
+}
+.tile-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 88px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--sand-2);
+}
+.tile h3 {
+  font-size: 17px;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+}
+main .tile p {
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+/* 1: a sheet and the file it came from */
+.au-inner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 44px);
+  height: 88px;
+}
+.au-inner > * {
+  position: absolute;
+}
+/* One column of tiles on phones: the wide box would dwarf the small sheet, so draw it larger. */
+@media (max-width: 639px) {
+  .art-upload {
+    height: 112px;
+  }
+  .au-inner {
+    transform: scale(1.25);
+  }
+}
+.mini-sheet {
+  bottom: 12px;
+  left: calc(50% - 109px);
+  display: grid;
+  grid-template-columns: repeat(4, 20px);
+  grid-auto-rows: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.mini-sheet i {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(var(--border-strong), var(--border-strong)) 4px 50% / 55% 2px no-repeat;
+}
+.mini-sheet i:nth-child(4n) {
+  border-right: 0;
+}
+.mini-sheet i:nth-child(n + 9) {
+  border-bottom: 0;
+}
+.mini-sheet i:nth-child(-n + 4) {
+  background: var(--brand-soft) linear-gradient(var(--brand-text), var(--brand-text)) 4px 50% / 50% 2px no-repeat;
+}
+.up-arrow {
+  top: 34px;
+  left: calc(50% - 28px);
+}
+.up-arrow path {
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.up-arrow path:first-child {
+  stroke-dasharray: 3 3;
+}
+.art-upload .file-chip {
+  top: 12px;
+  right: calc(50% - 109px);
+  padding: 4px 8px;
+  font-size: 11.5px;
+  transform: rotate(4deg);
+}
+/* 2: a whole category up 5% */
+.ch-card {
+  display: grid;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.ch-top,
+.ch-prices {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ch-cat {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.ch-pct {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+.ch-prices {
+  font-variant-numeric: tabular-nums;
+}
+.ch-prices s {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.ch-prices .icon {
+  color: var(--text-2);
+  vertical-align: 0;
+}
+.ch-prices b {
   font-size: 16px;
+  font-weight: 700;
 }
-@media (max-width: 760px) {
-  .partner {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 28px;
+/* 3: three product photos */
+.art-photos {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.art-photos .thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: 0 0 0 3px var(--sand-2), var(--shadow);
+  transform: rotate(-4deg);
+}
+.art-photos .thumb + .thumb {
+  margin-left: -8px;
+  transform: translateY(-4px);
+}
+.art-photos .thumb + .thumb + .thumb {
+  transform: rotate(4deg);
+}
+/* 4: customers, each with a reference */
+.art-customers {
+  align-content: center;
+  gap: 6px;
+}
+.cu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 132px;
+  padding: 4px 10px 4px 5px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  font-size: 12.5px;
+}
+.cu-row + .cu-row {
+  margin-left: 18px;
+}
+
+/* The demand near you. */
+.demand-card {
+  display: grid;
+  gap: 32px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  align-items: center;
+  margin-top: 16px;
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: radial-gradient(80% 120% at 100% 0%, var(--brand-soft), var(--surface) 60%);
+  box-shadow: var(--card-hi);
+}
+.demand-card h3 {
+  margin-bottom: 8px;
+  font-size: 22px;
+  font-weight: 660;
+  letter-spacing: -0.025em;
+}
+main .demand-card p {
+  max-width: 30em;
+  font-size: 15.5px;
+  line-height: 1.55;
+}
+/* Requests as they arrive, by suburb: what to stock next. Different from the dashboard's bars above. */
+.demand-asks {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+.da-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.da-head::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ask-deco);
+  box-shadow: 0 0 0 3px var(--ask-soft);
+}
+.da-ask {
+  display: grid;
+  gap: 6px;
+  max-width: 100%;
+  padding: 11px 14px 10px;
+  border: 1px solid var(--ask-line);
+  border-radius: 16px 16px 16px 4px;
+  background: var(--surface);
+  background: color-mix(in srgb, var(--ask-deco) 9%, var(--surface));
+  box-shadow: var(--shadow), var(--card-hi);
+}
+.da-ask:nth-of-type(3) {
+  margin-left: 36px;
+}
+.da-ask:nth-of-type(4) {
+  margin-left: 12px;
+}
+.da-q {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+.da-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.da-meta .icon {
+  color: var(--ask-deco);
+}
+.da-meta b {
+  margin-left: 4px;
+}
+.da-ask .nf {
+  border: 1px solid var(--ask-line);
+}
+.da-have {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--seal-bg);
+  color: var(--seal-fg);
+  font-size: 11px;
+  font-weight: 600;
+}
+main .demand-card .demand-note {
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+html.js .da-ask {
+  transition: opacity 0.4s calc(0.2s + var(--b, 0) * 120ms), transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) calc(0.2s + var(--b, 0) * 120ms);
+}
+html.js .demand-card:not(.in) .da-ask {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+@media (max-width: 1023px) {
+  .dash-body {
+    grid-template-columns: 60px minmax(0, 1fr);
+  }
+  .dash-side {
+    align-items: center;
+    padding: 16px 0;
+  }
+  .ds-brand {
+    padding: 2px 0 16px;
+  }
+  .ds-brand span,
+  .ds-item span {
+    display: none;
+  }
+  .ds-item {
+    justify-content: center;
+    width: 38px;
+    padding: 0;
+  }
+  .dash-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .card-c {
+    display: none;
+  }
+}
+@media (max-width: 1179px) {
+  .dash-toast {
+    display: none;
+  }
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 767px) {
+  .dash {
+    max-width: 420px;
+  }
+  .dc-dots,
+  .dash-side,
+  .card-c,
+  .dash-products {
+    display: none;
+  }
+  .dc-url {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    margin-left: 0;
+  }
+  .dash-body {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .dash-main {
+    padding: 14px;
+  }
+  .dash-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .demand-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+    padding: 22px;
+  }
+}
+@media (max-width: 639px) {
+  .tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 479px) {
+  .da-ask:nth-of-type(3) {
+    margin-left: 20px;
+  }
+  .da-ask:nth-of-type(4) {
+    margin-left: 8px;
   }
 }
 
-/* Questions */
+/* ---------- Founding partners: the loaded catalogue and the monthly report, as paper sheets ---------- */
+.partner {
+  display: grid;
+  gap: 32px;
+  overflow: hidden;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: linear-gradient(135deg, var(--brand-soft), var(--surface) 65%);
+  box-shadow: var(--card-hi);
+}
+.partner.texture-host::before {
+  inset: 0 0 0 45%;
+  -webkit-mask: url(/assets/site/contours.svg) 0 0 / 600px 600px repeat, linear-gradient(90deg, transparent, #000 30%);
+  -webkit-mask-composite: source-in;
+  mask: url(/assets/site/contours.svg) 0 0 / 600px 600px repeat, linear-gradient(90deg, transparent, #000 30%);
+  mask-composite: intersect;
+}
+.partner-copy {
+  position: relative;
+  max-width: 34em;
+}
+main .partner p {
+  font-size: 17px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.partner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 26px;
+}
+.partner-art {
+  position: relative;
+}
+.sheets {
+  position: relative;
+  height: 330px;
+}
+.sheet {
+  position: absolute;
+  top: 0;
+  display: grid;
+  align-content: start;
+  width: 240px;
+  height: 300px;
+  padding: 16px;
+  border: 1px solid var(--paper-line);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: var(--shadow-lg);
+  color: var(--paper-ink);
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.sheet-front {
+  z-index: 1;
+  left: calc(50% - 14px);
+  height: 312px;
+  transform: rotate(4deg);
+}
+.sheet-back {
+  left: calc(50% - 226px);
+  top: 22px;
+  transform: rotate(-5deg);
+}
+.sh-title {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.sh-big {
+  font-size: 14px;
+  font-weight: 700;
+}
+.sh-sub {
+  margin-top: 3px;
+  color: var(--paper-soft);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.sh-cat {
+  display: grid;
+  gap: 11px;
+  margin-top: 16px;
+}
+.sh-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 10px;
+}
+.sh-item .thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+.sh-item i {
+  display: block;
+  width: var(--w, 100%);
+  height: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper-ink) 13%, transparent);
+}
+.sh-item .sh-p {
+  background: color-mix(in srgb, var(--paper-ink) 22%, transparent);
+}
+.sh-bars {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.sh-bar {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+.sheet .bar {
+  height: 7px;
+  background: color-mix(in srgb, var(--paper-ink) 10%, transparent);
+}
+.sheet .bar::before {
+  background: var(--brand);
+}
+.sh-nf {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--paper-line);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.sh-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+main .partner .partner-note {
+  margin-top: 0;
+  font-size: 12.5px;
+  text-align: right;
+}
+html.js .partner-art:not(.in) .sheet {
+  transform: translateY(12px) rotate(0);
+}
+html.js .partner-art:not(.in) .bar::before {
+  transform: scaleX(0);
+}
+@media (hover: hover) {
+  .partner:hover .partner-art.in .sheet-front,
+  html:not(.js) .partner:hover .sheet-front {
+    transform: translateY(-4px) rotate(6deg);
+    transition-duration: 0.25s;
+  }
+}
+@media (min-width: 900px) {
+  .partner {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 40px;
+    align-items: center;
+    padding: 48px;
+  }
+}
+@media (max-width: 899px) {
+  .sheets {
+    max-width: 460px;
+    margin-inline: auto;
+  }
+}
+@media (max-width: 519px) {
+  .sheets {
+    height: 384px;
+  }
+  .sheet-front {
+    left: calc(50% - 86px);
+    top: 64px;
+  }
+  .sheet-back {
+    left: calc(50% - 150px);
+    top: 0;
+  }
+  .sheets {
+    transform: scale(0.86);
+    transform-origin: top center;
+    margin-bottom: -54px;
+  }
+}
+@media (max-width: 479px) {
+  .partner-actions .btn {
+    width: 100%;
+  }
+}
+
+/* ---------- Questions ---------- */
 .faq {
   display: grid;
-  grid-template-columns: 0.8fr 1.2fr;
-  gap: 40px;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 48px;
+}
+.faq-aside {
+  position: sticky;
+  top: 96px;
+  align-self: start;
+}
+main .faq-aside p {
+  font-size: 15px;
+}
+.faq-aside a {
+  color: var(--brand-text);
+  font-weight: 600;
+}
+.faq-art {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin-top: 32px;
+}
+.fa-b {
+  justify-self: start;
+  max-width: 78%;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+  border-radius: 14px 14px 14px 4px;
+  background: var(--bubble-in);
+  color: var(--bubble-in-fg);
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+.fa-me {
+  position: relative;
+  justify-self: end;
+  border-color: transparent;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--bubble-out);
+  color: var(--bubble-out-fg);
 }
 .faq-list {
   border-top: 1px solid var(--border);
 }
 .faq details {
   border-bottom: 1px solid var(--border);
+  transition: box-shadow 0.2s, padding 0.2s;
+}
+.faq details[open] {
+  padding-left: 14px;
+  box-shadow: inset 2px 0 0 var(--brand);
 }
 .faq summary {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 0;
-  font-weight: 560;
+  padding: 20px 0;
+  font-size: 16.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   cursor: pointer;
   list-style: none;
 }
 .faq summary::-webkit-details-marker {
   display: none;
 }
+.faq summary:focus-visible {
+  border-radius: 8px;
+}
 .faq summary::after {
-  content: "+";
-  color: var(--text-3);
-  font-size: 20px;
-  line-height: 1;
+  content: "";
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-2);
+  background:
+    linear-gradient(currentColor, currentColor) center / 12px 1.5px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 1.5px 12px no-repeat;
+  transition: transform 0.2s;
+}
+.faq summary:hover::after {
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 .faq details[open] summary::after {
-  content: "\2212";
+  transform: rotate(45deg);
+  border-color: transparent;
+  color: var(--brand-text);
+  background-color: var(--brand-soft);
 }
 .faq details p {
-  padding: 0 0 18px;
+  max-width: 40em;
+  padding: 0 44px 20px 0;
   color: var(--text-2);
+  line-height: 1.6;
 }
-@media (max-width: 900px) {
+@media (max-width: 899px) {
   .faq {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 24px;
+  }
+  .faq-aside {
+    position: static;
+  }
+  .faq-art {
+    display: none;
   }
 }
 
+/* ---------- The final call: the Harare business district behind a calm centre ---------- */
 .final {
+  position: relative;
+  isolation: isolate;
   display: grid;
   justify-items: center;
-  gap: 8px;
+  align-content: center;
+  gap: 10px;
+  overflow: hidden;
+  min-height: 420px;
+  padding: 88px 24px;
+  border: 1px solid rgb(250 250 249 / 0.08);
+  border-radius: 28px;
+  background: var(--cta-bg);
+  box-shadow: 0 40px 80px -48px rgb(0 0 0 / 0.9), var(--card-hi);
   text-align: center;
 }
+/* The picture wrapper takes no grid cell of its own; the photo is laid out by .final. */
+.final > picture {
+  display: contents;
+}
+.final-photo {
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 70%;
+}
+/* Darker at the edges, a little lighter in the centre; dark enough over the bright clouds
+   that the white heading and the muted line pass AA. */
+.final::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 55%, rgb(12 10 9 / 0.62), rgb(12 10 9 / 0.82));
+  pointer-events: none;
+}
+.final h2,
+.final p {
+  max-width: 560px;
+}
+.final h2 {
+  color: #fafaf9;
+  text-shadow: 0 2px 24px rgb(0 0 0 / 0.45);
+}
+main .final p {
+  font-size: 17px;
+  color: rgb(250 250 249 / 0.85);
+  text-shadow: 0 1px 14px rgb(0 0 0 / 0.5);
+}
 .final .btn {
-  margin-top: 16px;
+  margin-top: 18px;
+}
+@media (max-width: 767px) {
+  .final {
+    min-height: 0;
+    padding: 64px 20px;
+    border-radius: 22px;
+  }
+  /* Phones get the 5:6 crop of the towers. */
+  .final-photo {
+    object-position: 50% 100%;
+  }
 }
 
 /* ---------- Footer ---------- */
 .footer {
-  border-top: 1px solid var(--border);
-  padding: 32px 0;
+  position: relative;
+  padding: 40px 0;
+}
+.footer::before {
+  top: 0;
+}
+.footer .faint {
+  color: var(--text-2);
 }
 .footer-inner {
   display: flex;
@@ -606,10 +2764,15 @@
 .footer nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
+  gap: 0 18px;
   font-size: 14px;
 }
 .footer nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
   color: var(--text-2);
   text-decoration: none;
 }
@@ -620,10 +2783,68 @@
   margin-left: auto;
   font-size: 13px;
 }
+/* The photo credits: a quiet line of their own under everything else. */
+.footer .photo-credits {
+  width: 100%;
+  max-width: 72em;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--text-2) 82%, var(--bg));
+}
+.footer .photo-credits a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+}
+.footer .photo-credits a:hover {
+  color: var(--text);
+}
+@media (max-width: 640px) {
+  .footer p {
+    width: 100%;
+    margin-left: 0;
+  }
+}
 
 /* ---------- Registration ---------- */
 .reg {
+  position: relative;
+  isolation: isolate;
   padding: 48px 0 80px;
+}
+/* A soft glow and the contour texture behind the top of the page; nothing moves here. */
+.reg::before,
+.reg::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 auto 0;
+  height: 460px;
+  pointer-events: none;
+}
+.reg::before {
+  background:
+    radial-gradient(50% 60% at 88% 0%, var(--hero-glow), transparent 70%),
+    radial-gradient(40% 50% at 8% 6%, var(--ask-soft), transparent 70%);
+}
+.reg::after {
+  background: var(--texture);
+  -webkit-mask: url(/assets/site/contours.svg) 0 0 / 600px 600px repeat, linear-gradient(180deg, #000, transparent);
+  -webkit-mask-composite: source-in;
+  mask: url(/assets/site/contours.svg) 0 0 / 600px 600px repeat, linear-gradient(180deg, #000, transparent);
+  mask-composite: intersect;
+}
+.nav-note {
+  align-self: center;
+  color: var(--text-2);
+  font-size: 14px;
+}
+@media (max-width: 479px) {
+  .nav-note {
+    display: none;
+  }
 }
 .reg-grid {
   display: grid;
@@ -632,40 +2853,105 @@
   align-items: start;
 }
 .reg-card {
+  position: relative;
+  overflow: hidden;
   padding: 32px;
+  border-radius: 22px;
+  box-shadow: var(--shadow-lg), var(--card-hi);
+}
+.reg-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand), color-mix(in srgb, var(--brand) 25%, transparent));
 }
 .reg-card h1 {
-  font-size: 30px;
-  letter-spacing: -0.035em;
   margin-bottom: 6px;
+  font-size: clamp(28px, 3vw + 12px, 36px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+/* The "registered" heading takes focus from script (not a control): no ring. */
+.reg-card h1:focus {
+  outline: none;
+}
+.reg-card fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .stepper {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 24px 0 28px;
   padding: 0;
   list-style: none;
+  counter-reset: step;
 }
 .stepper li {
-  flex: 1;
-  display: grid;
+  position: relative;
+  display: flex;
+  align-items: center;
   gap: 8px;
+  color: var(--text-2);
   font-size: 12.5px;
-  color: var(--text-3);
+  counter-increment: step;
 }
 .stepper li::before {
-  content: "";
-  height: 4px;
-  border-radius: 999px;
-  background: var(--border);
+  content: counter(step);
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-muted);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
+  transition: background 0.3s, color 0.3s;
 }
-.stepper li.done,
+.stepper li:not(:last-child)::after {
+  content: "";
+  flex: 1;
+  min-width: 12px;
+  height: 2px;
+  margin-left: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 0.3s;
+}
 .stepper li.current {
   color: var(--text);
+  font-weight: 600;
 }
-.stepper li.done::before,
 .stepper li.current::before {
   background: var(--brand);
+  color: var(--on-brand);
+}
+.stepper li.done {
+  color: var(--text);
+}
+.stepper li.done::before {
+  background: var(--brand-soft);
+  color: var(--brand-text);
+}
+.stepper li.done::after {
+  background: var(--brand);
+}
+@media (max-width: 479px) {
+  .stepper li {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .stepper li:not(:last-child)::after {
+    display: none;
+  }
 }
 .form-grid {
   display: grid;
@@ -716,7 +3002,7 @@
   cursor: pointer;
 }
 .picker-list li small {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .picker-list li[aria-selected="true"],
 .picker-list li:hover {
@@ -753,6 +3039,29 @@
 .aside h2 {
   font-size: 17px;
 }
+/* A photo across the top of the card, fading into the card's surface. */
+.aside-photo {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 3 / 2;
+  margin: -28px -28px -4px;
+  border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
+  background: var(--surface-2);
+}
+.aside-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(22 20 19 / 0) 70%, rgb(22 20 19 / 0.55) 88%, var(--surface) 100%);
+  pointer-events: none;
+}
+.aside-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 50%;
+}
 .aside ol {
   display: grid;
   gap: 16px;
@@ -774,10 +3083,38 @@
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 9px;
-  background: var(--bg-muted);
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-text);
   font-weight: 650;
   font-size: 13px;
+}
+/* How customers will see you: a reply bubble that follows what is typed in the form. */
+.reg-preview {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border);
+}
+.preview-chat {
+  max-width: 360px;
+  padding: 12px;
+  border-radius: 14px;
+  background: radial-gradient(color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1.2px) 0 0 / 14px 14px, var(--chat-wall);
+}
+.preview-chat .msg {
+  max-width: 100%;
+  padding: 6px;
+}
+.preview-chat .result {
+  grid-template-columns: 40px minmax(0, 1fr);
+}
+.preview-chat .thumb {
+  color: var(--brand-text);
+}
+.pv-note {
+  color: var(--text-2);
+  font-size: 11.5px;
 }
 .aside li strong {
   display: block;
@@ -787,15 +3124,34 @@
   gap: 16px;
   justify-items: start;
 }
+/* The code, as a ticket with side notches and a dashed inner rule. */
 .code {
+  position: relative;
+  padding: 16px 34px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border-strong), var(--card-hi);
+  color: var(--ref-fg);
   font-family: var(--mono);
   font-size: clamp(30px, 6vw, 44px);
+  font-weight: 650;
   letter-spacing: 0.04em;
-  padding: 14px 22px;
-  border-radius: 16px;
+  font-variant-numeric: tabular-nums;
+  -webkit-mask:
+    radial-gradient(circle at 0 50%, transparent 10px, #000 10.5px) left / 51% 100% no-repeat,
+    radial-gradient(circle at 100% 50%, transparent 10px, #000 10.5px) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle at 0 50%, transparent 10px, #000 10.5px) left / 51% 100% no-repeat,
+    radial-gradient(circle at 100% 50%, transparent 10px, #000 10.5px) right / 51% 100% no-repeat;
+}
+.code::before {
+  content: "";
+  position: absolute;
+  inset: 6px 18px;
   border: 1px dashed var(--border-strong);
-  background: var(--bg-subtle);
-  font-weight: 600;
+  border-radius: 8px;
+  pointer-events: none;
 }
 @media (max-width: 900px) {
   .reg-grid {
@@ -858,11 +3214,6 @@
 [data-whatsapp="on"] .prelaunch-only {
   display: none !important;
 }
-.prelaunch-note {
-  margin-top: 16px;
-  font-size: 14px;
-  color: var(--text-2);
-}
 
 /* ---------- Privacy notice and business terms ---------- */
 .legal {
@@ -894,4 +3245,68 @@
 .legal a {
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* ---------- Reduced motion ----------
+   base.css already turns every animation and transition off; this shows each final state. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-col {
+    transform: translateY(calc(-1 * var(--lift)));
+  }
+  .st-typing {
+    opacity: 0;
+  }
+  .marquee {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .marquee-track {
+    width: auto;
+  }
+  .marquee-list {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: min(1120px, 100% - 32px);
+    margin: 0 auto;
+    padding: 0;
+  }
+  .marquee-list[aria-hidden="true"],
+  .marquee-pause,
+  .marquee-pause-input {
+    display: none;
+  }
+}
+
+/* ---------- Registration page: footer at the bottom, readable hints ---------- */
+.reg-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.reg-page main {
+  flex: 1 0 auto;
+}
+.reg .faint {
+  color: var(--text-2);
+}
+.reg .input::placeholder,
+.reg .textarea::placeholder {
+  color: color-mix(in srgb, var(--text-2) 85%, var(--surface));
+}
+main .noscript-note {
+  margin-top: 12px;
+  color: var(--text);
+}
+
+/* ---------- Focus and scrolling ----------
+   A solid outline on every control of the site, so no glow or ring from base.css can hide it.
+   base.css (shared with the dashboard) stays as it is. */
+html {
+  scroll-padding-top: 80px;
+}
+:where(.nav, main, .footer) :is(a, button, summary, input[type="checkbox"], input[type="radio"]):focus-visible,
+.marquee-pause-input:focus-visible ~ .wrap .mp-pill {
+  outline: 2px solid var(--brand-text);
+  outline-offset: 3px;
 }

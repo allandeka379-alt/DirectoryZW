@@ -22,7 +22,6 @@ import {
   saveFile,
   shortDate,
   store,
-  themeSwitch,
   toast,
 } from "/assets/ui.js";
 
@@ -375,7 +374,6 @@ function renderShell() {
             h("span", { class: "avatar", text: initials }),
             h("span", {}, h("strong", { text: S.me.name }), h("small", { text: S.me.role === "admin" ? "Admin" : "Staff" })),
           ),
-          themeSwitch(true),
           h("button", { class: "btn btn-ghost btn-sm", type: "button", style: "justify-content:flex-start", onclick: signOut }, icon("out"), "Sign out"),
         ),
       ),
@@ -398,7 +396,6 @@ function renderShell() {
           ),
           h("strong", { class: "topbar-business", text: "Admin" }),
           h("span", { class: "spacer" }),
-          themeSwitch(false),
         ),
         h("main", { class: "view", id: "view" }),
       ),

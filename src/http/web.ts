@@ -51,7 +51,7 @@ import { REGISTRATION_HOURS, startWebRegistration, WebRegistration } from "../we
 import { productsChanged } from "../conversation/alerts.js";
 import * as copy from "../conversation/copy.js";
 import type { Contact } from "../conversation/store.js";
-import { PUBLIC_DIR, serveFile } from "./static.js";
+import { PUBLIC_DIR, serveAssetFolder, serveFile } from "./static.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -125,6 +125,8 @@ export function registerWeb(server: FastifyInstance, app: App): void {
   serveFile(server, "/assets/theme.js", "web/theme.js");
   serveFile(server, "/assets/ui.js", "web/ui.js");
   serveFile(server, "/assets/logo.svg", "web/logo.svg");
+  // The website's illustrations, photos and script.
+  serveAssetFolder(server, "/assets/site", "site/assets");
   serveFile(server, "/favicon.svg", "web/logo.svg");
   server.get("/app", async (_req, reply) => reply.redirect("/app/"));
   serveFile(server, "/app/", "app/index.html");

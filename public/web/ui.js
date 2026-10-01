@@ -44,8 +44,6 @@ const ICONS = {
   whatsapp: '<path d="M3 21l1.7-5.1A8.5 8.5 0 1 1 8.1 19.3z"/><path d="M9 9.5c.3 1.6 1.9 3.6 3.9 4.4l1.3-1.2 2 .9c-.2 1.3-1.4 2-2.7 1.8-3-.5-5.7-3.2-6.2-6.2C7.1 7.9 7.9 6.7 9.2 6.5l.9 2z"/>',
   file: '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z"/>',
   pin: '<path d="M12 22s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/>',
-  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
   chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
   flag: '<path d="M4 22V4a1 1 0 0 1 1-1h13l-2.5 4.5L18 12H5"/>',
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
@@ -73,23 +71,6 @@ export function icon(name) {
   // A default size, so an icon never fills its box where no rule sizes it; CSS rules still win.
   tpl.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] ?? ""}</svg>`;
   return tpl.content.firstChild;
-}
-
-/** Switches between dark (our default) and light; /assets/theme.js handles the click. */
-export function themeSwitch(withText) {
-  const label = (cls, text) => h("span", { class: withText ? cls : `sr-only ${cls}`, text });
-  const sun = icon("sun");
-  sun.classList.add("show-dark");
-  const moon = icon("moon");
-  moon.classList.add("show-light");
-  return h(
-    "button",
-    { class: `btn btn-ghost btn-sm${withText ? "" : " btn-icon"}`, type: "button", "data-theme-toggle": "", style: withText ? "justify-content:flex-start" : null },
-    sun,
-    moon,
-    label("show-dark", "Light mode"),
-    label("show-light", "Dark mode"),
-  );
 }
 
 // ---------- Formatting ----------

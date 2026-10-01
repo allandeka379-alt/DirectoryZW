@@ -1,6 +1,6 @@
 /* Shared design system for the website and the business web app.
    System fonts (no downloads: data is expensive), neutral surfaces, one green accent.
-   Dark is the default look; light is there for anyone who switches to it (see theme.js). */
+   Dark is the only look: there is no light mode and no switch (see theme.js). */
 
 :root {
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -41,45 +41,6 @@
   --chart: #3ecfa6;
   --chart-muted: #44403c;
   color-scheme: dark;
-}
-
-:root[data-theme="light"] {
-  --bg: #ffffff;
-  --bg-subtle: #fafaf9;
-  --bg-muted: #f5f5f4;
-  --surface: #ffffff;
-  --surface-2: #fafaf9;
-  --border: #e7e5e4;
-  --border-strong: #d6d3d1;
-  --text: #0c0a09;
-  --text-2: #57534e;
-  --text-3: #a8a29e;
-  --brand: #0b5d4b;
-  --brand-strong: #084a3b;
-  --brand-soft: #e7f3ef;
-  --brand-text: #0b5d4b;
-  --on-brand: #ffffff;
-  --accent: #15907a;
-  --inverse: #0c0a09;
-  --on-inverse: #fafaf9;
-  --good: #067647;
-  --good-soft: #ecfdf3;
-  --warn: #b54708;
-  --warn-soft: #fffaeb;
-  --bad: #b42318;
-  --bad-soft: #fef3f2;
-  --shadow-sm: 0 1px 2px rgb(12 10 9 / 0.05);
-  --shadow: 0 1px 2px rgb(12 10 9 / 0.04), 0 8px 24px -12px rgb(12 10 9 / 0.14);
-  --shadow-lg: 0 24px 64px -24px rgb(12 10 9 / 0.28);
-  --chart: #15907a;
-  --chart-muted: #d6d3d1;
-  color-scheme: light;
-}
-
-/* Parts that only show in one theme, like the theme switch's sun and moon. */
-:root[data-theme="light"] .show-dark,
-:root:not([data-theme="light"]) .show-light {
-  display: none !important;
 }
 
 *,

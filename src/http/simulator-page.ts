@@ -15,10 +15,7 @@ const PAGE = String.raw`<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WhatsApp simulator</title>
 <style>
-:root { --bg:#efeae2; --panel:#ffffff; --in:#ffffff; --out:#d9fdd3; --text:#111b21; --muted:#667781; --accent:#008069; --border:#d1d7db; }
-@media (prefers-color-scheme: dark) {
-  :root { --bg:#0b141a; --panel:#111b21; --in:#202c33; --out:#005c4b; --text:#e9edef; --muted:#8696a0; --accent:#00a884; --border:#2a3942; }
-}
+:root { --bg:#0b141a; --panel:#111b21; --in:#202c33; --out:#005c4b; --text:#e9edef; --muted:#8696a0; --accent:#00a884; --border:#2a3942; color-scheme:dark; }
 * { box-sizing: border-box; }
 body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
 header { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding:10px 16px; background:var(--accent); color:#fff; }
