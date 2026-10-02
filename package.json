@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "db:migrate": "tsx src/db/migrate-cli.ts",
     "db:seed": "tsx src/db/seed-cli.ts",
+    "db:demo": "tsx src/db/demo-cli.ts",
     "ops:user": "tsx src/ops/user-cli.ts",
     "templates": "tsx src/whatsapp/templates-cli.ts",
     "eval": "tsx src/eval/run.ts",

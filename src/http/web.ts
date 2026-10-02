@@ -6,6 +6,7 @@ import { one } from "../db/client.js";
 import { categoriesOf, isUuid, markCatalogDirty, setBusinessStatus, TRADES, type Business } from "../directory/businesses.js";
 import { normalizeZimPhone } from "../text.js";
 import { businessAnalytics, businessCustomers } from "../web/analytics.js";
+import { PERIOD_DAYS } from "../web/periods.js";
 import {
   addBusinessPhoto,
   adjustPrices,
@@ -132,7 +133,8 @@ export function registerWeb(server: FastifyInstance, app: App): void {
   serveFile(server, "/app/", "app/index.html");
   serveFile(server, "/app/app.css", "app/app.css");
   serveFile(server, "/app/app.js", "app/app.js");
-  serveFile(server, "/app/charts.js", "app/charts.js");
+  serveFile(server, "/app/viz.js", "app/viz.js");
+  serveFile(server, "/app/viz.css", "app/viz.css");
   serveFile(server, "/app/sheets.js", "app/sheets.js");
   serveFile(server, "/app/photos.js", "app/photos.js");
   serveFile(server, "/app/products-template.csv", "app/products-template.csv", {
@@ -433,13 +435,13 @@ function registerOwnerRoutes(api: FastifyInstance, app: App): void {
 
   // ----- Analytics and customers -----
 
-  const Days = z.object({ days: z.coerce.number().int().refine((d) => [7, 30, 90].includes(d)).default(30) });
+  const Days = z.object({ days: z.coerce.number().int().refine((d) => (PERIOD_DAYS as readonly number[]).includes(d)).default(30) });
 
   api.get("/businesses/:id/analytics", async (req, reply) => {
     const b = await mine(req, reply);
     if (!b) return;
     const q = Days.safeParse(req.query);
-    if (!q.success) return reply.code(400).send({ error: "Pick 7, 30 or 90 days" });
+    if (!q.success) return reply.code(400).send({ error: "Pick 7, 30 or 90 days, or 12 months" });
     const [analytics, catalogue] = await Promise.all([businessAnalytics(db, b, q.data.days, now()), catalogHealth(db, b.id, now())]);
     return { ...analytics, catalogue };
   });
@@ -448,7 +450,7 @@ function registerOwnerRoutes(api: FastifyInstance, app: App): void {
     const b = await mine(req, reply);
     if (!b) return;
     const q = Days.safeParse(req.query);
-    if (!q.success) return reply.code(400).send({ error: "Pick 7, 30 or 90 days" });
+    if (!q.success) return reply.code(400).send({ error: "Pick 7, 30 or 90 days, or 12 months" });
     return businessCustomers(db, b.id, q.data.days, now());
   });
 

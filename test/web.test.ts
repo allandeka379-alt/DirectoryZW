@@ -530,6 +530,10 @@ describe("analytics", () => {
     expect(Object.keys(customers[0]).sort()).toEqual(["at", "ref", "what"]); // nor how they answered our follow-up
 
     expect((await owner.get(`/businesses/${plumber!.id}/analytics?days=5`)).statusCode).toBe(400);
+    const year = (await owner.get(`/businesses/${plumber!.id}/analytics?days=365`)).json();
+    expect(year.grain).toBe("week");
+    expect(year.daily).toHaveLength(52);
+    expect(year.measures.connections.value).toBe(1);
   });
 });
 
@@ -626,7 +630,7 @@ describe("the website and app pages", () => {
     expect((await server.inject({ url: "/app" })).statusCode).toBe(302);
     const shell = await server.inject({ url: "/app/" });
     expect(shell.body).toContain('src="/app/app.js"');
-    for (const url of ["/app/app.js", "/app/charts.js", "/app/sheets.js", "/app/app.css", "/assets/base.css", "/assets/site.css", "/assets/logo.svg"]) {
+    for (const url of ["/app/app.js", "/app/viz.js", "/app/viz.css", "/app/sheets.js", "/app/app.css", "/assets/base.css", "/assets/site.css", "/assets/logo.svg"]) {
       expect((await server.inject({ url })).statusCode, url).toBe(200);
     }
     const template = await server.inject({ url: "/app/products-template.csv" });

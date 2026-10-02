@@ -436,6 +436,27 @@ The user found the website flat, with no pictures. It now shows the product work
 - [x] **A lighter hero:** one headline, one line, one button. The pre-launch note moved to the closing section.
 - [x] **Dark mode only**, everywhere: the website, the business dashboard, the admin portal and the field app. The light theme and every switch are gone.
 
+## Executive dashboards (2 October 2026)
+
+The user asked for executive-level dashboards "like the one made by PowerBI", for the team and for the businesses that register. Details and definitions: [DASHBOARDS.md](DASHBOARDS.md).
+
+- [x] **A shared chart kit** (`public/app/viz.js`, `viz.css`), plain SVG with no dependencies:
+  - stat tiles with change and sparkline, and trend lines against the period before;
+  - columns, ranked bars, part-to-whole bars, a funnel, heatmaps, a bubble map and meters;
+  - a Chart/Table switch and CSV on every card, and Save as PDF.
+  - Colours are validated for colour-blind readers on the dark card.
+- [x] **Periods:** 7, 30 or 90 days by day, or 12 months by week, in Harare days. Each is compared with the period before; the day in progress is drawn lighter.
+- [x] **The business dashboard:**
+  - **Overview:** six tiles, the trend, the funnel from demand to customers, products that bring customers, follow-up answers, distance to customers, and catalogue health. How a shop's prices compare with other stores' was built, then taken out at the user's request: owners see nothing about other stores.
+  - **Insights:** market size and share, what people ask for, searches the shop missed (with "Add it" only when it doesn't list the thing), when people ask, and where.
+  - **Customers:** a daily chart and a CSV download.
+- [x] **The admin portal:**
+  - **Overview:** the executive summary.
+  - **Demand, Supply and Customer experience** reports.
+  - Filters for city and category in the address, cross-filtering by clicking, a map of towns and suburbs, a demand-against-supply table, "where to sign up next", a leaderboard, a needs-attention list and weekly cohorts. This covers the traffic-by-category screen the solar plan needed.
+- [x] **Sample activity for trying it:** `npm run db:demo` (local database only), and the `findzim-demo` preview on port 3001.
+- [x] Migration 017 (indexes); 11 new tests.
+
 ## Later: monetization (only after traction)
 
 - [ ] Featured placement, lead credits and sponsored slots, as priced in the feasibility study

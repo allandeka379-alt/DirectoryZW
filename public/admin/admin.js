@@ -2,7 +2,6 @@
 // account (email and password), never the WhatsApp links business owners use. Staff handle chats,
 // reports and listings; admins also manage field agents, the team, and people's data.
 
-import { barChart } from "/app/charts.js";
 import {
   ago,
   ApiError,
@@ -12,7 +11,6 @@ import {
   dateTime,
   h,
   icon,
-  longDate,
   money,
   num,
   openSheet,
@@ -24,6 +22,7 @@ import {
   store,
   toast,
 } from "/assets/ui.js";
+import { insightScreens } from "/admin/insights.js";
 
 const TOKEN_KEY = "ops.token"; // the same key as the first console, so a session carries over
 const root = document.getElementById("root");
@@ -279,6 +278,14 @@ async function signOut() {
 const NAV = [
   { items: [{ key: "overview", label: "Overview", icon: "overview" }] },
   {
+    group: "Analytics",
+    items: [
+      { key: "demand", label: "Demand", icon: "insights" },
+      { key: "supply", label: "Supply", icon: "products" },
+      { key: "experience", label: "Customer experience", icon: "user" },
+    ],
+  },
+  {
     group: "Customers",
     items: [
       { key: "chats", label: "Live chats", icon: "chat", count: "open_handoffs", hot: true },
@@ -427,12 +434,19 @@ function route() {
   return { name: known ? name : "overview", params: new URLSearchParams(query ?? "") };
 }
 
-async function renderRoute({ keepScroll = false } = {}) {
+/** The analytics pages: a wider canvas, and filter changes that keep the page in view while it updates. */
+const REPORTS = new Set(["overview", "demand", "supply", "experience"]);
+let shownRoute = null;
+
+async function renderRoute({ keepScroll = false, dim = false } = {}) {
   const view = document.getElementById("view");
   if (!view) return;
   stopCharts();
   const r = route();
+  shownRoute = r.name;
   const ticket = ++S.ticket;
+  view.classList.toggle("wide", REPORTS.has(r.name));
+  view.classList.toggle("is-loading", dim);
   for (const a of document.querySelectorAll(".nav a")) a.setAttribute("aria-current", a.getAttribute("href") === `#/${r.name}` ? "page" : "false");
   if (!keepScroll) {
     view.replaceChildren(h("div", { class: "skeleton", style: "height:120px;margin-bottom:16px" }), h("div", { class: "skeleton", style: "height:320px" }));
@@ -448,144 +462,14 @@ async function renderRoute({ keepScroll = false } = {}) {
   } catch (err) {
     if (err.status === 401 || stale(ticket)) return;
     view.replaceChildren(pageHead("Something went wrong"), h("p", { class: "notice bad", text: err.message }));
+  } finally {
+    if (!stale(ticket)) view.classList.remove("is-loading");
   }
   if (r.name !== "overview") refreshCounts();
 }
 
 /** Show the same page again with fresh data, where the person was. */
 const refresh = () => renderRoute({ keepScroll: true });
-
-// ---------- Overview ----------
-
-async function overview(params, ticket) {
-  const period = days(params);
-  const [s, trend] = await Promise.all([get("/summary"), get(`/trends?days=${period}`)]);
-  if (stale(ticket)) return [];
-  S.counts = s;
-  updateBadges();
-
-  const waiting = [
-    [s.open_handoffs, plural(s.open_handoffs, "customer waiting for a person", "customers waiting for a person"), "chats"],
-    [s.open_reports, `${plural(s.open_reports, "open report", "open reports")}${s.reports_over_a_day ? `, ${num(s.reports_over_a_day)} waiting over a day` : ""}`, "reports"],
-    [s.to_verify, plural(s.to_verify, "business that signed up itself, to verify", "businesses that signed up themselves, to verify"), "verify"],
-    [s.web_registrations_pending, plural(s.web_registrations_pending, "website sign-up waiting for its WhatsApp code", "website sign-ups waiting for their WhatsApp code"), "signups"],
-    [s.new_recommendations, plural(s.new_recommendations, "new customer tip", "new customer tips"), "tips"],
-  ].filter(([n]) => n > 0);
-
-  const measures = [
-    ["requests", "Requests"],
-    ["connections", "Connections"],
-    ["businesses", "New businesses"],
-    ["webSignUps", "Website sign-ups"],
-  ];
-  let metric = "requests";
-  const chartBox = h("div", { style: "min-height:200px" });
-  let stopChart = () => {};
-  S.cleanup.push(() => stopChart());
-  const draw = () => {
-    stopChart();
-    if (!chartBox.isConnected) return; // the page moved on before the chart was drawn
-    const label = measures.find(([k]) => k === metric)[1].toLowerCase();
-    stopChart = barChart(
-      chartBox,
-      trend.map((d) => ({ label: shortDate(d.date), long: longDate(d.date), value: d[metric], tip: `${num(d[metric])} ${label}` })),
-      { title: `${measures.find(([k]) => k === metric)[1]} per day` },
-    );
-  };
-  const toggle = h("div", { class: "segmented", role: "group", "aria-label": "Measure" });
-  const drawToggle = () =>
-    toggle.replaceChildren(
-      ...measures.map(([k, label]) =>
-        h(
-          "button",
-          {
-            type: "button",
-            "aria-pressed": String(k === metric),
-            onclick: () => {
-              metric = k;
-              drawToggle();
-              draw();
-            },
-          },
-          label,
-        ),
-      ),
-    );
-  drawToggle();
-  setTimeout(draw, 0); // once the box is on the page
-
-  return [
-    pageHead(
-      "Overview",
-      "Everything happening on the service, and what's waiting for the team.",
-      segmented(
-        [
-          [7, "7 days"],
-          [30, "30 days"],
-          [90, "90 days"],
-        ],
-        period,
-        (d) => go("overview", { days: d }),
-        "Period",
-      ),
-    ),
-    waiting.length
-      ? h(
-          "section",
-          { class: "card panel" },
-          h("div", { class: "panel-head" }, h("div", {}, h("h2", { text: "Waiting for the team" }))),
-          h(
-            "ul",
-            { class: "rows" },
-            waiting.map(([, text, key]) => h("li", {}, h("a", { href: `#/${key}` }, h("span", { text }), h("strong", { text: "Open" })))),
-          ),
-        )
-      : h("p", { class: "notice", text: "Nothing is waiting for the team." }),
-    h(
-      "div",
-      { class: "tiles section-gap" },
-      kpi("Live businesses", num(s.verified_businesses + s.registered_businesses), `${num(s.verified_businesses)} verified`, { href: "#/businesses" }),
-      kpi("Requests, 7 days", num(s.requests_7d), `${num(s.no_results_7d)} found nobody`, { href: "#/requests" }),
-      kpi("Customers connected, 7 days", num(s.introductions_7d), "sent to a business"),
-      kpi("Products listed", num(s.products_listed), `by ${plural(s.businesses_with_products, "business", "businesses")}`),
-      kpi("Owners using the dashboard", num(s.owners_on_dashboard_30d), "signed in, last 30 days"),
-      kpi("Active field agents", num(s.active_agents), null, { href: isAdmin() ? "#/agents" : null }),
-    ),
-    h(
-      "section",
-      { class: "card panel section-gap" },
-      h("div", { class: "panel-head" }, h("div", {}, h("h2", { text: "Day by day" }), h("p", { text: "Tap or hover over a day for its number. Harare time." })), toggle),
-      chartBox,
-    ),
-    launchPanel(s),
-  ];
-}
-
-function launchPanel(s) {
-  const rate = (n, of) => (of ? Math.round((100 * n) / of) : null);
-  const ratio = s.verified_businesses ? s.connections_verified_30d / s.verified_businesses : null;
-  const perBusiness = ratio == null ? null : ratio >= 10 ? Math.round(ratio) : ratio.toFixed(ratio >= 1 ? 1 : 2);
-  const rows = [
-    ["Follow-up answers that say \"Yes, sorted\"", rate(s.sorted_30d, s.answered_30d), "%", "60% or more", (v) => v >= 60, `${s.sorted_30d} of ${s.answered_30d} final answers`],
-    ["Customers who came back on another day", rate(s.returning_30d, s.customers_30d), "%", "25% or more", (v) => v >= 25, `${s.returning_30d} of ${s.customers_30d} customers`],
-    ["Owners who wrote to us", rate(s.owners_active_30d, s.owners), "%", "half or more", (v) => v >= 50, `${s.owners_active_30d} of ${s.owners} owners`],
-    ["Connections per verified business", perBusiness, "", "no target yet", null, `${s.verified_connected_30d} of ${s.verified_businesses} verified businesses got at least one`],
-  ];
-  return panel(
-    "Launch measures, last 30 days",
-    "Final answers leave out \"Not yet\". An owner counts once they've written to us in the last 30 days.",
-    table(
-      [
-        { label: "Measure", render: (r) => r[0] },
-        { label: "Now", num: true, render: (r) => (r[1] == null ? "no data yet" : `${r[1]}${r[2]}`) },
-        { label: "Target", render: (r) => r[3] },
-        { label: "", render: (r) => (r[1] == null || !r[4] ? "" : r[4](r[1]) ? badge("On target", "good") : badge("Not yet", "warn")) },
-        { label: "Based on", render: (r) => h("span", { class: "muted", text: r[5] }) },
-      ],
-      rows,
-    ),
-  );
-}
 
 // ---------- Customers ----------
 
@@ -2596,8 +2480,22 @@ async function account() {
   ];
 }
 
+const INSIGHTS = insightScreens({
+  get,
+  track: (fn) => S.cleanup.push(fn),
+  stale,
+  onSummary: (summary) => {
+    S.counts = summary;
+    updateBadges();
+  },
+  openBusiness,
+});
+
 const SCREENS = {
-  overview,
+  overview: INSIGHTS.overview,
+  demand: INSIGHTS.demand,
+  supply: INSIGHTS.supply,
+  experience: INSIGHTS.experience,
   chats,
   reports,
   people,
@@ -2623,7 +2521,10 @@ const SCREENS = {
 // ---------- Start ----------
 
 window.addEventListener("hashchange", () => {
-  if (S.me) renderRoute();
+  if (!S.me) return;
+  // A new filter on the same report keeps the page in view, dimmed, until the new numbers arrive.
+  const same = route().name === shownRoute && REPORTS.has(shownRoute);
+  renderRoute(same ? { keepScroll: true, dim: true } : {});
 });
 
 async function boot() {

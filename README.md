@@ -276,6 +276,7 @@ The field app talks to `/field/api` with the agent's token:
 | `npm run typecheck` | Type-check everything |
 | `npm run build` / `npm start` | Compile to `dist/` and run it |
 | `npm run db:migrate` / `npm run db:seed` | Apply migrations / load reference data (and sample businesses when enabled) |
+| `npm run db:demo [-- --days 120 \| --clear]` | Fill the local database with months of sample activity to try the dashboards, or remove it ([docs/DASHBOARDS.md](docs/DASHBOARDS.md)); refuses to run against production |
 | `npm run ops:user -- add\|reset\|list` | Admin portal accounts from the command line |
 | `npm run templates [-- --create]` | Check (or submit) the WhatsApp message templates |
 | `npm run eval [-- --claude --model …]` | Score request understanding on `evals/requests.jsonl`, and show what the ladder does with each: answered locally, "Did you mean…?", or passed on (free; `--trust-drafts` as if the Shona words were approved; `--claude` calls the API) |

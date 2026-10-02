@@ -752,4 +752,16 @@ CREATE TABLE IF NOT EXISTS code_attempts (
 CREATE INDEX IF NOT EXISTS code_attempts_sender_idx ON code_attempts (sender, created_at);
 `,
   },
+  {
+    id: "017_dashboards",
+    sql: /* sql */ `
+-- The dashboards count requests and connections by date, across every category and place, and by
+-- category and date for the demand pages.
+CREATE INDEX IF NOT EXISTS requests_created_idx ON requests (created_at);
+CREATE INDEX IF NOT EXISTS requests_category_created_idx ON requests (category_slug, created_at);
+CREATE INDEX IF NOT EXISTS introductions_created_idx ON introductions (created_at);
+-- "Did this request lead to a connection?", asked of every request a dashboard counts.
+CREATE INDEX IF NOT EXISTS introductions_request_idx ON introductions (request_id);
+`,
+  },
 ];

@@ -9,11 +9,9 @@ import {
   confirmDialog,
   h,
   icon,
-  longDate,
   money,
   num,
   openSheet,
-  pct,
   pickFile,
   present,
   readPrice,
@@ -22,7 +20,7 @@ import {
   store,
   toast,
 } from "/assets/ui.js";
-import { barChart } from "./charts.js";
+import { ACCENT, beforeName, bucketLabels, columnChart, downloadCsv, filterBar, funnel, heatmap, lineChart, meter, MUTED, periodName, periodRange, rankedBars, shareBar, statTile, STATUS, vizCard } from "./viz.js";
 import { matchPhotos } from "./photos.js";
 import { FIELDS, guessMapping, hasHeadings, parseSheet, toImportRows } from "./sheets.js";
 
@@ -314,6 +312,8 @@ function renderRoute() {
   document.querySelectorAll(".nav a, .tabbar a").forEach((a) => a.setAttribute("aria-current", a.getAttribute("href") === `#/${r.name}` ? "page" : "false"));
   const ticket = ++S.ticket;
   const pages = { overview: renderOverview, products: renderProducts, customers: renderCustomers, insights: renderInsights, profile: renderProfile };
+  view.classList.toggle("wide", r.name === "overview" || r.name === "insights");
+  view.classList.remove("is-loading");
   view.replaceChildren();
   window.scrollTo(0, 0);
   pages[r.name](view, r.params, ticket);
@@ -323,27 +323,6 @@ const stale = (ticket) => ticket !== S.ticket;
 
 function pageHead(title, subtitle, ...actions) {
   return h("div", { class: "page-head" }, h("div", {}, h("h1", { text: title }), subtitle ? h("p", { text: subtitle }) : null), h("div", { class: "actions" }, actions));
-}
-
-function periodControl(onChange) {
-  const box = h("div", { class: "segmented", role: "group", "aria-label": "Period" });
-  for (const d of [7, 30, 90]) {
-    box.append(
-      h(
-        "button",
-        {
-          type: "button",
-          "aria-pressed": String(S.period === d),
-          onclick: () => {
-            S.period = d;
-            onChange();
-          },
-        },
-        `${d} days`,
-      ),
-    );
-  }
-  return box;
 }
 
 function skeletonCards(n = 4) {
@@ -361,33 +340,59 @@ function emptyState(iconName, title, text, ...actions) {
   );
 }
 
-function delta(now, before, days) {
-  if (!before) return h("span", { text: `Last ${days} days` });
-  const change = (now - before) / before;
-  const cls = change > 0.005 ? "up" : change < -0.005 ? "down" : "";
-  return h("span", {}, h("span", { class: `delta ${cls}`, text: `${change > 0 ? "+" : ""}${Math.round(change * 100)}%` }), ` vs the ${days} days before`);
+// ---------- Dashboard pieces ----------
+
+/** Save the page as a PDF through the browser's print dialog: a report to share. */
+function pdfButton() {
+  return h("button", { class: "btn btn-secondary btn-sm no-print", type: "button", onclick: () => window.print() }, icon("download"), "Save as PDF");
 }
 
-function kpi(label, value, foot) {
-  return h("div", { class: "card kpi" }, h("span", { class: "kpi-label", text: label }), h("span", { class: "kpi-value", text: value }), h("span", { class: "kpi-foot" }, foot));
+/** The row above a dashboard page: the period and its dates, when it was updated, and what it's compared with. */
+function periodBar(redo, a, { compared = true } = {}) {
+  const range = periodRange(a.buckets, a.grain);
+  return filterBar({
+    days: a.days,
+    onPeriod: (d) => {
+      S.period = d;
+      redo();
+    },
+    note: compared ? `${range}, compared with ${beforeName(a.days)}` : range,
+    updatedAt: new Date(),
+    onRefresh: redo,
+  });
 }
 
-function barList(items, { amountOf = (x) => x.n, labelOf = (x) => x.what, extra } = {}) {
-  const max = Math.max(1, ...items.map(amountOf));
-  return h(
-    "ul",
-    { class: "bars" },
-    items.map((it) =>
-      h(
-        "li",
-        {},
-        h("div", { class: "bar-label" }, h("span", { text: labelOf(it) }), extra?.(it)),
-        h("span", { class: "bar-value", text: num(amountOf(it)) }),
-        h("div", { class: "bar-track" }, h("div", { class: "bar-fill", style: `width:${Math.max(2, (amountOf(it) / max) * 100)}%` })),
-      ),
-    ),
-  );
+/** A dashboard page's data: placeholders the first time; after that the page stays, dimmed, until it's back. */
+async function loadPage(view, ticket, head, path) {
+  const holding = Boolean(view.querySelector(".dash"));
+  if (holding) view.classList.add("is-loading");
+  else view.replaceChildren(head, skeletonCards(6));
+  try {
+    return await api("GET", path);
+  } catch (err) {
+    if (!stale(ticket)) view.append(h("p", { class: "notice bad", text: err.message }));
+    return null;
+  } finally {
+    if (!stale(ticket)) view.classList.remove("is-loading");
+  }
 }
+
+/** Put cards on the page and remember their charts, to stop them when the page changes. */
+function cards(...list) {
+  for (const c of list) S.cleanup.push(c.cleanup);
+  return list.map((c) => c.el);
+}
+
+const unitText = (unit) => (unit && unit !== "each" ? ` ${unit}` : "");
+
+const DEFINITIONS = {
+  shown: "How many times your business was in our reply to someone's search.",
+  connections: "Customers who chose your business and got your WhatsApp link, each with a reference code.",
+  chosen: "Of the searches you came up in, the share where the customer then chose you.",
+  satisfaction: "Of the customers who answered our follow-up, the share who said “Yes, sorted”. “Not yet” doesn't count.",
+  share: "Of the requests for your categories in your city, the share where your business came up.",
+  position: "Your place in our list of up to three businesses, on average. 1 is the top.",
+};
 
 // ---------- Overview ----------
 
@@ -399,18 +404,15 @@ async function renderOverview(view, _params, ticket) {
   stopCharts();
   const b = business();
   const redo = () => renderOverview(view, _params, ++S.ticket);
-  view.replaceChildren(pageHead("Overview", `${b.name}${b.area ? ` · ${b.area}` : ""}`, periodControl(redo)), skeletonCards());
-  let a;
-  try {
-    a = await api("GET", `/businesses/${bid()}/analytics?days=${S.period}`);
-  } catch (err) {
-    if (!stale(ticket)) view.append(h("p", { class: "notice bad", text: err.message }));
-    return;
-  }
-  if (stale(ticket)) return;
-  const k = a.kpis;
-  const answered = k.outcomes.sorted + k.outcomes.couldntHelp + k.outcomes.noReply;
-  const nodes = [pageHead("Overview", `${b.name}${b.area ? ` · ${b.area}` : ""}`, periodControl(redo))];
+  const head = pageHead("Overview", `${b.name}${b.area ? ` · ${b.area}` : ""}`, pdfButton());
+  const a = await loadPage(view, ticket, head, `/businesses/${bid()}/analytics?days=${S.period}`);
+  if (!a || stale(ticket)) return;
+  stopCharts();
+  const m = a.measures;
+  const buckets = bucketLabels(a.buckets, a.grain);
+  const before = bucketLabels(a.prevBuckets, a.grain, { current: false });
+  const each = a.grain === "week" ? "week" : "day";
+  const nodes = [head, periodBar(redo, a)];
 
   if (a.catalogue.total === 0) {
     nodes.push(
@@ -445,89 +447,214 @@ async function renderOverview(view, _params, ticket) {
   nodes.push(
     h(
       "div",
-      { class: "grid grid-4" },
-      kpi("Shown in searches", num(k.shown), delta(k.shown, k.shownPrev, a.days)),
-      kpi("Customers sent to you", num(k.connections), delta(k.connections, k.connectionsPrev, a.days)),
-      kpi("Connection rate", pct(k.connectionRate), h("span", { text: "Of the searches you came up in" })),
-      k.rating
-        ? kpi("Rating", `${k.rating.average.toFixed(1)} ★`, h("span", { text: `From ${num(k.rating.count)} customer${k.rating.count === 1 ? "" : "s"}` }))
-        : kpi("Said “Yes, sorted”", answered ? pct(k.outcomes.sorted / answered) : "–", h("span", { text: answered ? `${num(k.outcomes.sorted)} of ${num(answered)} follow-up answers` : "No follow-up answers yet" })),
+      { class: "viz-tiles cols-3" },
+      statTile({ label: "Shown in searches", measure: m.shown, definition: DEFINITIONS.shown }),
+      statTile({ label: "Customers sent to you", measure: m.connections, definition: DEFINITIONS.connections }),
+      statTile({ label: "Chosen when shown", measure: m.chosen, format: "share", definition: DEFINITIONS.chosen }),
+      statTile({ label: "Said “Yes, sorted”", measure: m.satisfaction, format: "share", definition: DEFINITIONS.satisfaction }),
+      statTile({ label: "Share of demand", measure: m.share, format: "share", definition: DEFINITIONS.share }),
+      statTile({ label: "Average position", measure: m.position, format: "position", better: "down", definition: DEFINITIONS.position }),
     ),
   );
 
-  // Day by day, one measure at a time (never two scales on one chart).
-  let metric = "shown";
-  const chartBox = h("div", { style: "min-height:200px" });
-  let stopChart = () => {};
-  S.cleanup.push(() => stopChart());
-  const drawChart = () => {
-    stopChart();
-    const pts = a.daily.map((d) => ({
-      label: shortDate(d.date),
-      long: longDate(d.date),
-      value: d[metric],
-      tip: metric === "shown" ? `${num(d.shown)} search${d.shown === 1 ? "" : "es"}` : `${num(d.connections)} customer${d.connections === 1 ? "" : "s"}`,
-    }));
-    stopChart = barChart(chartBox, pts, { title: metric === "shown" ? "Searches you came up in, per day" : "Customers sent to you, per day" });
+  // Over time: one measure at a time, with the period before in grey (never two scales on one chart).
+  const MEASURES = [
+    ["connections", "Customers", "Customers sent to you"],
+    ["shown", "Searches", "Searches you came up in"],
+  ];
+  let metric = "connections";
+  const drawTrend = (box) => {
+    const [, , name] = MEASURES.find(([k]) => k === metric);
+    return lineChart(box, {
+      buckets,
+      title: `${name}, each ${each}`,
+      height: 300,
+      series: [
+        { name: "The period before", values: a.previous.map((d) => d[metric]), muted: true, labelAt: (i) => before[i]?.long ?? "" },
+        { name, values: a.daily.map((d) => d[metric]), area: true },
+      ],
+    });
   };
   const toggle = h("div", { class: "segmented", role: "group", "aria-label": "Measure" });
-  for (const [key, label] of [
-    ["shown", "Searches"],
-    ["connections", "Customers"],
-  ]) {
+  const trend = vizCard({
+    title: "Over time",
+    subtitle: `Each ${each}, with ${beforeName(a.days)} in grey`,
+    span: 8,
+    actions: [toggle],
+    draw: drawTrend,
+    table: () => ({
+      columns: [{ label: a.grain === "week" ? "Week of" : "Day" }, { label: "Searches you came up in", num: true }, { label: "Customers sent to you", num: true }],
+      rows: a.daily.map((d, i) => [buckets[i].long, d.shown, d.connections]),
+    }),
+    csv: `customers-by-${each}`,
+  });
+  for (const [key, label] of MEASURES) {
     toggle.append(
       h(
         "button",
         {
           type: "button",
-          "aria-pressed": String(metric === key),
+          "aria-pressed": String(key === metric),
           onclick: (e) => {
             metric = key;
             toggle.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === e.currentTarget)));
-            drawChart();
+            trend.redraw(drawTrend);
           },
         },
         label,
       ),
     );
   }
-  nodes.push(
-    h(
-      "div",
-      { class: "card panel section-gap" },
-      h("div", { class: "panel-head" }, h("div", {}, h("h2", { text: "Day by day" }), h("p", { text: "Tap or hover over a day for its number." })), toggle),
-      chartBox,
-    ),
-  );
+
+  const funnelCard = vizCard({
+    title: "From demand to customers",
+    subtitle: "Requests in your categories, in your city",
+    span: 4,
+    empty: a.funnel[0].value ? null : { title: "No requests in your categories yet", text: "When people ask for what you sell, you'll see how many found you and chose you." },
+    draw: () => funnel({ stages: a.funnel }),
+    table: () => ({ columns: [{ label: "Stage" }, { label: "Requests", num: true }], rows: a.funnel.map((s) => [s.label, s.value]) }),
+    csv: "from-demand-to-customers",
+  });
+
+  const products = vizCard({
+    title: "Products that bring customers",
+    subtitle: "How often each was in our replies, and how often the customer then chose you",
+    span: 7,
+    empty: a.products.length ? null : { title: "No products in our replies yet", text: "When a product of yours matches what someone asks for, we show it with its price." },
+    draw: () =>
+      rankedBars({
+        rows: a.products.map((p) => ({
+          key: p.id,
+          label: p.name,
+          sub: p.price == null ? "No price" : `${money(p.price)}${unitText(p.unit)}`,
+          value: p.shown,
+          note: `${num(p.chosen)} chose you`,
+          parts: [
+            { name: "Chose you", value: p.chosen, color: ACCENT },
+            { name: "Shown only", value: p.shown - p.chosen, color: MUTED },
+          ],
+        })),
+        legend: [
+          { name: "The customer chose you", color: ACCENT },
+          { name: "Shown, not chosen", color: MUTED },
+        ],
+      }),
+    table: () => ({
+      columns: [{ label: "Product" }, { label: "Price", num: true }, { label: "Shown", num: true }, { label: "Chose you", num: true }],
+      rows: a.products.map((p) => [p.name, p.price == null ? "" : money(p.price), p.shown, p.chosen]),
+    }),
+    csv: "products-that-bring-customers",
+  });
+
+  const o = a.kpis.outcomes;
+  const answered = o.sorted + o.couldntHelp + o.noReply + o.notYet;
+  const waiting = Math.max(0, a.kpis.connections - answered);
+  const rating = a.kpis.rating;
+  const feedback = vizCard({
+    title: "What customers told us",
+    subtitle: "Their answers to our follow-up, the day after we sent them to you",
+    span: 5,
+    empty: answered ? null : { title: "No answers yet", text: "We ask each customer how it went the day after we send them to you. Their answers add up here." },
+    draw: () =>
+      h(
+        "div",
+        {},
+        shareBar({
+          parts: [
+            { name: "Yes, sorted", value: o.sorted, color: STATUS.good },
+            { name: "Not yet", value: o.notYet, color: STATUS.neutral },
+            { name: "You couldn't help", hint: "you didn't have it, or couldn't do the job", value: o.couldntHelp, color: STATUS.warn },
+            { name: "No reply from you", value: o.noReply, color: STATUS.bad },
+          ],
+        }),
+      ),
+    table: () => ({
+      columns: [{ label: "Answer" }, { label: "Customers", num: true }],
+      rows: [
+        ["Yes, sorted", o.sorted],
+        ["Not yet", o.notYet],
+        ["You couldn't help", o.couldntHelp],
+        ["No reply from you", o.noReply],
+        ["Haven't answered yet", waiting],
+      ],
+    }),
+    csv: "follow-up-answers",
+    foot: [
+      rating ? `Rating ${rating.average.toFixed(1)} ★ from ${num(rating.count)} customer${rating.count === 1 ? "" : "s"}, all time.` : "No ratings yet.",
+      waiting ? ` ${num(waiting)} haven't answered yet.` : "",
+      " Answers stay private: you see the totals, never who said what.",
+    ].join(""),
+  });
+
+  const where = a.distance
+    ? vizCard({
+        title: "How far away customers were",
+        subtitle: "From your shop's pin to where they asked from",
+        span: 6,
+        empty: a.distance.some((d) => d.shown) ? null : { title: "No searches with a place yet", text: "When customers who find you say where they are, you'll see how far they come from." },
+        draw: () =>
+          rankedBars({
+            rows: a.distance.map((d) => ({
+              key: d.label,
+              label: d.label,
+              value: d.shown,
+              note: `${num(d.chosen)} chose you`,
+              parts: [
+                { name: "Chose you", value: d.chosen, color: ACCENT },
+                { name: "Shown only", value: d.shown - d.chosen, color: MUTED },
+              ],
+            })),
+            legend: [
+              { name: "The customer chose you", color: ACCENT },
+              { name: "Shown, not chosen", color: MUTED },
+            ],
+          }),
+        table: () => ({ columns: [{ label: "Distance" }, { label: "Shown", num: true }, { label: "Chose you", num: true }], rows: a.distance.map((d) => [d.label, d.shown, d.chosen]) }),
+        csv: "distance-to-customers",
+        foot: a.areas.length ? `Most searches came from ${a.areas.slice(0, 3).map((x) => x.name).join(", ")}.` : null,
+      })
+    : vizCard({
+        title: "Where customers asked from",
+        subtitle: "Add your shop's pin on your profile to see distances",
+        span: 6,
+        empty: a.areas.length ? null : { title: "No searches with a place yet", text: "When customers who find you say where they are, the places show here." },
+        draw: () => rankedBars({ rows: a.areas.map((x) => ({ key: x.id, label: x.name, value: x.shown, note: `${num(x.chosen)} chose you` })) }),
+        table: () => ({ columns: [{ label: "Area" }, { label: "Shown", num: true }, { label: "Chose you", num: true }], rows: a.areas.map((x) => [x.name, x.shown, x.chosen]) }),
+        csv: "where-customers-asked-from",
+      });
 
   const c = a.catalogue;
-  nodes.push(
-    h(
-      "div",
-      { class: "grid grid-2 section-gap" },
+  const share = (n) => (c.total ? n / c.total : null);
+  const catalogue = vizCard({
+    title: "Your catalogue",
+    subtitle: "Products customers can see in our replies",
+    span: 6,
+    actions: [h("a", { class: "btn btn-secondary btn-sm", href: "#/products" }, "Open products")],
+    empty: c.total ? null : { title: "No products yet", text: "Add your products and prices, and customers who ask for them see them in our reply." },
+    draw: () =>
       h(
         "div",
-        { class: "card panel" },
-        h("div", { class: "panel-head" }, h("div", {}, h("h2", { text: "What customers asked for" }), h("p", { text: "When your business came up in their search" }))),
-        a.topAsks.length ? barList(a.topAsks) : emptyState("search", "No searches yet", "When customers ask for what you sell, you'll see what they asked for here."),
+        { class: "viz-meter-grid two" },
+        meter({ label: "With a price", value: share(c.total - c.noPrice), target: 1, targetLabel: "Aim for all of them", foot: `${num(c.total - c.noPrice)} of ${num(c.total)}` }),
+        meter({ label: `Price confirmed in the last ${S.me.stalePriceDays} days`, value: share(c.total - c.noPrice - c.stale), target: 0.8, foot: `${num(c.total - c.noPrice - c.stale)} of ${num(c.total)}` }),
+        meter({ label: "With a photo", value: share(c.total - c.noPhoto), target: 0.6, foot: `${num(c.total - c.noPhoto)} of ${num(c.total)}` }),
+        meter({ label: "In stock", value: share(c.total - c.outOfStock), foot: `${num(c.total - c.outOfStock)} of ${num(c.total)}` }),
       ),
-      h(
-        "div",
-        { class: "card panel" },
-        h("div", { class: "panel-head" }, h("div", {}, h("h2", { text: "Your catalogue" }), h("p", { text: "Products customers can see in our replies" })), h("a", { class: "btn btn-secondary btn-sm", href: "#/products" }, "Open")),
-        h(
-          "ul",
-          { class: "rows" },
-          h("li", {}, h("a", { href: "#/products" }, h("span", { text: "Products listed" }), h("strong", { text: num(c.total) }))),
-          h("li", {}, h("a", { href: "#/products?needs=price" }, h("span", { text: "Without a price, or one to confirm" }), h("strong", { text: num(c.noPrice + c.stale) }))),
-          h("li", {}, h("a", { href: "#/products?stock=out" }, h("span", { text: "Out of stock" }), h("strong", { text: num(c.outOfStock) }))),
-          h("li", {}, h("a", { href: "#/products?needs=photo" }, h("span", { text: "Without a photo" }), h("strong", { text: num(c.noPhoto) }))),
-        ),
-      ),
-    ),
-  );
+    table: () => ({
+      columns: [{ label: "Products" }, { label: "Count", num: true }],
+      rows: [
+        ["Listed", c.total],
+        ["Without a price", c.noPrice],
+        ["Price to confirm", c.stale],
+        ["Without a photo", c.noPhoto],
+        ["Out of stock", c.outOfStock],
+      ],
+    }),
+    csv: "catalogue",
+  });
+
+  nodes.push(h("div", { class: "dash" }, cards(trend, funnelCard, products, feedback, where, catalogue)));
   view.replaceChildren(...nodes);
-  drawChart();
 }
 
 // ---------- Products ----------
@@ -996,14 +1123,15 @@ function historyLabel(c) {
 const UNITS = ["each", "per kg", "per litre", "per pack", "per box", "per bag", "per pair", "per dozen", "per metre", "per hour", "per day", "per visit", "per job"];
 
 /** Add a product, or edit one: name, price, unit, category, code, description, stock and a photo. */
-async function openProduct(existing) {
+/** Edit a product, or add one (`preset` fills in a new one's name). */
+async function openProduct(existing, preset = {}) {
   let editing = Boolean(existing);
   let photo = editing && existing.photoId ? { url: photoUrl(existing.photoId), saved: true } : null;
   let pendingPhoto = null;
   let removePhoto = false;
   const categories = (P.health?.categories ?? []).map((c) => c.category);
 
-  const name = h("input", { class: "input", id: "p-name", maxlength: 120, value: existing?.name ?? "", placeholder: "e.g. Samsung 55-inch smart TV" });
+  const name = h("input", { class: "input", id: "p-name", maxlength: 120, value: existing?.name ?? preset.name ?? "", placeholder: "e.g. Samsung 55-inch smart TV" });
   const price = h("input", { class: "input", id: "p-price", inputmode: "decimal", value: existing?.price != null ? existing.price.toFixed(2) : "", placeholder: "0.00" });
   const unit = h("input", { class: "input", id: "p-unit", list: "units", maxlength: 30, value: existing?.unit ?? "", placeholder: "each" });
   const category = h("input", { class: "input", id: "p-cat", list: "cats", maxlength: 60, value: existing?.category ?? "", placeholder: "e.g. TVs" });
@@ -1817,43 +1945,77 @@ function openAdjust(ids) {
 // ---------- Customers ----------
 
 async function renderCustomers(view, params, ticket) {
+  stopCharts();
   const redo = () => renderCustomers(view, params, ++S.ticket);
-  view.replaceChildren(pageHead("Customers", "Everyone we sent to you, with their reference code", periodControl(redo)), h("div", { class: "skeleton", style: "height:260px" }));
+  const head = pageHead("Customers", "Everyone we sent to you, with their reference code");
+  const holding = Boolean(view.querySelector(".dash"));
+  if (holding) view.classList.add("is-loading");
+  else view.replaceChildren(head, h("div", { class: "skeleton", style: "height:260px" }));
   let rows;
+  let a;
   try {
-    rows = await api("GET", `/businesses/${bid()}/customers?days=${S.period}`);
+    [rows, a] = await Promise.all([api("GET", `/businesses/${bid()}/customers?days=${S.period}`), api("GET", `/businesses/${bid()}/analytics?days=${S.period}`)]);
   } catch (err) {
     if (!stale(ticket)) view.append(h("p", { class: "notice bad", text: err.message }));
     return;
+  } finally {
+    if (!stale(ticket)) view.classList.remove("is-loading");
   }
   if (stale(ticket)) return;
-  const head = pageHead("Customers", "Everyone we sent to you, with their reference code", periodControl(redo));
+  stopCharts();
+  const each = a.grain === "week" ? "week" : "day";
+  const buckets = bucketLabels(a.buckets, a.grain);
+  const download = h(
+    "button",
+    {
+      class: "btn btn-secondary btn-sm no-print",
+      type: "button",
+      disabled: !rows.length,
+      onclick: () => downloadCsv(`customers-${S.period}-days`, { columns: [{ label: "When" }, { label: "Reference" }, { label: "What they asked" }], rows: rows.map((r) => [r.at, r.ref, r.what ?? ""]) }),
+    },
+    icon("download"),
+    "Download CSV",
+  );
+  const pageTop = [pageHead("Customers", "Everyone we sent to you, with their reference code", download), periodBar(redo, a, { compared: false })];
   if (!rows.length) {
     return view.replaceChildren(
-      head,
-      h("div", { class: "card" }, emptyState("customers", "No customers in this period", "When we send you a customer, they appear here with the reference code in their first message and what they asked for.")),
+      ...pageTop,
+      h("div", { class: "dash" }, h("div", { class: "card" }, emptyState("customers", "No customers in this period", "When we send you a customer, they appear here with the reference code in their first message and what they asked for."))),
     );
   }
+  const chart = vizCard({
+    title: `Customers sent to you, each ${each}`,
+    subtitle: `${num(rows.length)} in the last ${periodName(a.days)}`,
+    span: 12,
+    draw: (box) => columnChart(box, { buckets, title: `Customers sent to you, each ${each}`, series: [{ name: "Customers", values: a.daily.map((d) => d.connections) }], height: 200 }),
+    table: () => ({ columns: [{ label: a.grain === "week" ? "Week of" : "Day" }, { label: "Customers", num: true }], rows: a.daily.map((d, i) => [buckets[i].long, d.connections]) }),
+    csv: `customers-by-${each}`,
+  });
   view.replaceChildren(
-    head,
+    ...pageTop,
     h(
       "div",
-      { class: "card table-card" },
+      { class: "dash" },
+      cards(chart),
       h(
-        "table",
-        { class: "table stack" },
-        h("thead", {}, h("tr", {}, h("th", { text: "When" }), h("th", { text: "Reference" }), h("th", { text: "What they asked" }))),
+        "div",
+        { class: "card table-card" },
         h(
-          "tbody",
-          {},
-          // How each customer answered our follow-up stays private; the Overview shows the totals.
-          rows.map((r) =>
-            h(
-              "tr",
-              {},
-              h("td", { class: "when", "data-label": "When", text: `${shortDate(r.at)} · ${ago(r.at)}` }),
-              h("td", { "data-label": "Reference" }, h("span", { class: "mono", text: r.ref })),
-              h("td", { "data-label": "Asked", text: r.what ?? "–" }),
+          "table",
+          { class: "table stack" },
+          h("thead", {}, h("tr", {}, h("th", { text: "When" }), h("th", { text: "Reference" }), h("th", { text: "What they asked" }))),
+          h(
+            "tbody",
+            {},
+            // How each customer answered our follow-up stays private; the Overview shows the totals.
+            rows.map((r) =>
+              h(
+                "tr",
+                {},
+                h("td", { class: "when", "data-label": "When", text: `${shortDate(r.at)} · ${ago(r.at)}` }),
+                h("td", { "data-label": "Reference" }, h("span", { class: "mono", text: r.ref })),
+                h("td", { "data-label": "Asked", text: r.what ?? "–" }),
+              ),
             ),
           ),
         ),
@@ -1864,59 +2026,197 @@ async function renderCustomers(view, params, ticket) {
 
 // ---------- Insights ----------
 
+const hourName = (hr) => (hr === 0 ? "12am" : hr < 12 ? `${hr}am` : hr === 12 ? "12pm" : `${hr - 12}pm`);
+
 async function renderInsights(view, params, ticket) {
   stopCharts();
   const b = business();
   const redo = () => renderInsights(view, params, ++S.ticket);
-  const sub = `What people ask for in your line of business${b.area ? ", in your city" : ""}`;
-  view.replaceChildren(pageHead("Insights", sub, periodControl(redo)), skeletonCards(3));
-  let a;
-  try {
-    a = await api("GET", `/businesses/${bid()}/analytics?days=${S.period}`);
-  } catch (err) {
-    if (!stale(ticket)) view.append(h("p", { class: "notice bad", text: err.message }));
-    return;
-  }
-  if (stale(ticket)) return;
-  const m = a.market;
-  const share = m.requests ? a.kpis.shown / m.requests : null;
-  const hoursBox = h("div", { style: "min-height:200px" });
-  view.replaceChildren(
-    pageHead("Insights", sub, periodControl(redo)),
-    h(
-      "div",
-      { class: "grid grid-4", style: "grid-template-columns:repeat(auto-fit,minmax(200px,1fr))" },
-      kpi("Requests in your categories", num(m.requests), h("span", { text: `Last ${a.days} days` })),
-      kpi("Nobody could supply", num(m.unmet), h("span", { text: m.requests ? `${pct(m.unmet / m.requests)} of them` : "–" })),
-      kpi("You came up in", share == null ? "–" : pct(Math.min(1, share)), h("span", { text: "Of those requests" })),
-    ),
-    h(
-      "div",
-      { class: "grid grid-2 section-gap" },
-      h(
-        "div",
-        { class: "card panel" },
-        h("div", { class: "panel-head" }, h("div", {}, h("h2", { text: "What people ask for" }), h("p", { text: "Marked where nobody near them had it" }))),
-        m.demand.length
-          ? barList(m.demand, { extra: (d) => (d.unmet ? h("span", { class: "badge warn plain", text: `${num(d.unmet)} not found` }) : null) })
-          : emptyState("insights", "No requests yet", "As customers ask for things in your categories, the most wanted appear here."),
-      ),
-      h(
-        "div",
-        { class: "card panel" },
-        h("div", { class: "panel-head" }, h("div", {}, h("h2", { text: "When people search" }), h("p", { text: "Requests by hour of the day, Harare time" }))),
-        hoursBox,
-      ),
-    ),
-    h(
-      "div",
-      { class: "card panel section-gap" },
-      h("div", { class: "panel-head" }, h("div", {}, h("h2", { text: "What customers asked when they found you" }))),
-      a.topAsks.length ? barList(a.topAsks) : emptyState("search", "Nothing yet", "When you come up in searches, what customers asked for appears here."),
-    ),
+  const head = pageHead("Insights", `What people ask for in your line of business${b.area ? ", in your city" : ""}`, pdfButton());
+  const a = await loadPage(view, ticket, head, `/businesses/${bid()}/analytics?days=${S.period}`);
+  if (!a || stale(ticket)) return;
+  stopCharts();
+  const mk = a.market;
+  const buckets = bucketLabels(a.buckets, a.grain);
+  const before = bucketLabels(a.prevBuckets, a.grain, { current: false });
+  const each = a.grain === "week" ? "week" : "day";
+
+  const tiles = h(
+    "div",
+    { class: "viz-tiles" },
+    statTile({
+      label: "Requests in your categories",
+      measure: { value: mk.requests, prev: mk.requestsPrev, series: mk.series, prevSeries: mk.prevSeries },
+      better: "none",
+      definition: "Everything people asked us for in your categories, in your city: the size of your market on WhatsApp.",
+    }),
+    statTile({ label: "You came up in", measure: a.measures.share, format: "share", definition: DEFINITIONS.share }),
+    statTile({
+      label: "Searches you missed",
+      measure: { value: mk.requests - mk.mine, prev: mk.requestsPrev - mk.minePrev, series: [], prevSeries: [] },
+      better: "down",
+      definition: "Requests in your categories where other businesses came up and yours didn't. Often a product you don't list yet.",
+    }),
+    statTile({
+      label: "Nobody could supply",
+      measure: { value: mk.unmet, prev: mk.unmetPrev, series: [], prevSeries: [] },
+      better: "none",
+      definition: "Requests in your categories where no business near the customer had it: room for you to grow.",
+    }),
   );
-  const label = (hr) => (hr === 0 ? "12am" : hr < 12 ? `${hr}am` : hr === 12 ? "12pm" : `${hr - 12}pm`);
-  S.cleanup.push(barChart(hoursBox, m.hours.map((n, hr) => ({ label: label(hr), long: `${label(hr)} to ${label((hr + 1) % 24)}`, value: n, tip: `${num(n)} request${n === 1 ? "" : "s"}` })), { title: "Requests by hour", labelEvery: 6, anchor: "start" }));
+
+  const market = vizCard({
+    title: "Your market over time",
+    subtitle: `Requests in your categories each ${each}, with ${beforeName(a.days)} in grey`,
+    span: 8,
+    empty: mk.requests || mk.requestsPrev ? null : { title: "No requests yet", text: "As people ask for things in your categories, you'll see the demand day by day." },
+    draw: (box) =>
+      lineChart(box, {
+        buckets,
+        title: "Requests in your categories",
+        series: [
+          { name: "The period before", values: mk.prevSeries, muted: true, labelAt: (i) => before[i]?.long ?? "" },
+          { name: "Requests", values: mk.series, area: true },
+        ],
+      }),
+    table: () => ({ columns: [{ label: a.grain === "week" ? "Week of" : "Day" }, { label: "Requests", num: true }, { label: "The period before", num: true }], rows: mk.series.map((v, i) => [buckets[i].long, v, mk.prevSeries[i]]) }),
+    csv: `market-by-${each}`,
+  });
+
+  const categories = vizCard({
+    title: "Your categories",
+    subtitle: "Requests in each, and how many you came up in",
+    span: 4,
+    empty: mk.categories.some((c) => c.requests) ? null : { title: "No requests yet", text: "Each of your categories shows here once people ask for it." },
+    draw: () =>
+      rankedBars({
+        rows: mk.categories.map((c) => ({
+          key: c.slug,
+          label: c.name,
+          value: c.requests,
+          note: `you came up in ${num(c.mine)}`,
+          parts: [
+            { name: "You came up", value: c.mine, color: ACCENT },
+            { name: "You didn't", value: c.requests - c.mine, color: MUTED },
+          ],
+        })),
+        legend: [
+          { name: "You came up", color: ACCENT },
+          { name: "You didn't", color: MUTED },
+        ],
+      }),
+    table: () => ({ columns: [{ label: "Category" }, { label: "Requests", num: true }, { label: "The period before", num: true }, { label: "You came up", num: true }], rows: mk.categories.map((c) => [c.name, c.requests, c.prev, c.mine]) }),
+    csv: "your-categories",
+  });
+
+  const demand = vizCard({
+    title: "What people ask for",
+    subtitle: "The most asked-for things in your categories",
+    span: 6,
+    empty: mk.demand.length ? null : { title: "No requests yet", text: "As customers ask for things in your categories, the most wanted appear here." },
+    draw: () =>
+      rankedBars({
+        rows: mk.demand.map((d) => ({
+          key: d.what,
+          label: d.what,
+          value: d.n,
+          note: d.unmet ? `nobody had it ${num(d.unmet)}×` : null,
+          parts: [
+            { name: "Found a business", value: d.n - d.unmet, color: ACCENT },
+            { name: "Nobody had it", value: d.unmet, color: STATUS.warn },
+          ],
+        })),
+        legend: [
+          { name: "Found a business", color: ACCENT },
+          { name: "Nobody near them had it", color: STATUS.warn },
+        ],
+      }),
+    table: () => ({ columns: [{ label: "Asked for" }, { label: "Requests", num: true }, { label: "Nobody had it", num: true }], rows: mk.demand.map((d) => [d.what, d.n, d.unmet]) }),
+    csv: "what-people-ask-for",
+  });
+
+  const missed = vizCard({
+    title: "Searches you missed",
+    subtitle: "Asked for in your categories, but your business didn't come up",
+    span: 6,
+    empty: mk.missed.length ? null : { title: "You came up every time", text: "When people ask for something in your categories and you don't come up, it shows here." },
+    draw: () =>
+      h(
+        "ul",
+        { class: "viz-facts" },
+        mk.missed.map((x) => {
+          const times = x.unmet ? `${num(x.n)} times · nobody had it ${num(x.unmet)} of them` : `${num(x.n)} times`;
+          // Only offer "Add it" when the shop doesn't list it: otherwise the search went to stores nearer the customer.
+          const why = x.listed ? "You list this: stores nearer the customer came up first." : x.general ? "A general search: the nearest stores came up first." : null;
+          return h(
+            "li",
+            {},
+            h("span", {}, x.what, h("small", { text: why ? `${times} · ${why}` : times })),
+            why ? null : h("button", { class: "btn btn-secondary btn-sm no-print", type: "button", onclick: () => openProduct(null, { name: x.what }) }, icon("plus"), "Add it"),
+          );
+        }),
+      ),
+    table: () => ({ columns: [{ label: "Asked for" }, { label: "Times", num: true }, { label: "Nobody had it", num: true }], rows: mk.missed.map((x) => [x.what, x.n, x.unmet]) }),
+    csv: "searches-you-missed",
+    foot: "If you sell something here that you haven't listed, add it with its price: we show it the next time someone asks.",
+  });
+
+  const when = vizCard({
+    title: "When people ask",
+    subtitle: "Requests in your categories by day and hour, Harare time",
+    span: 12,
+    empty: mk.requests ? null : { title: "No requests yet", text: "Once people ask, you'll see the busiest days and hours: good to know for staffing and opening hours." },
+    draw: (box) =>
+      heatmap(box, {
+        rows: a.heat.rows,
+        cols: Array.from({ length: 24 }, (_, hr) => hourName(hr)),
+        values: a.heat.values,
+        colEvery: 3,
+        title: "Requests by day of the week and hour",
+        cellName: (r, c) => `${a.heat.rows[r]}, ${hourName(c)} to ${hourName((c + 1) % 24)}`,
+        rowWidth: 44,
+      }),
+    table: () => ({
+      columns: [{ label: "Day" }, ...Array.from({ length: 24 }, (_, hr) => ({ label: hourName(hr), num: true }))],
+      rows: a.heat.rows.map((r, i) => [r, ...a.heat.values[i]]),
+    }),
+    csv: "requests-by-day-and-hour",
+  });
+
+  const areas = vizCard({
+    title: "Where people asked from",
+    subtitle: "Searches you came up in, by area",
+    span: 6,
+    empty: a.areas.length ? null : { title: "No places yet", text: "When customers say where they are, their areas show here." },
+    draw: () =>
+      rankedBars({
+        rows: a.areas.map((x) => ({
+          key: x.id,
+          label: x.name,
+          sub: x.km == null ? x.city : `${x.km < 1 ? "under 1" : x.km.toFixed(x.km < 10 ? 1 : 0)} km from you`,
+          value: x.shown,
+          note: `${num(x.chosen)} chose you`,
+          parts: [
+            { name: "Chose you", value: x.chosen, color: ACCENT },
+            { name: "Shown only", value: x.shown - x.chosen, color: MUTED },
+          ],
+        })),
+      }),
+    table: () => ({ columns: [{ label: "Area" }, { label: "Distance (km)", num: true }, { label: "Shown", num: true }, { label: "Chose you", num: true }], rows: a.areas.map((x) => [x.name, x.km ?? "", x.shown, x.chosen]) }),
+    csv: "where-people-asked-from",
+  });
+
+  const asks = vizCard({
+    title: "What customers asked when they found you",
+    subtitle: "In their own words, the most common first",
+    span: 6,
+    empty: a.topAsks.length ? null : { title: "Nothing yet", text: "When you come up in searches, what customers asked for appears here." },
+    draw: () => rankedBars({ rows: a.topAsks.map((x) => ({ key: x.what, label: x.what, value: x.n })) }),
+    table: () => ({ columns: [{ label: "Asked for" }, { label: "Searches", num: true }], rows: a.topAsks.map((x) => [x.what, x.n]) }),
+    csv: "what-customers-asked",
+  });
+
+  view.replaceChildren(head, periodBar(redo, a), tiles, h("div", { class: "dash" }, cards(market, categories, demand, missed, when, areas, asks)));
 }
 
 // ---------- Business profile ----------

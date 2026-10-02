@@ -95,7 +95,9 @@ export function dateTime(iso) {
 }
 export function ago(iso) {
   if (!iso) return "never";
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  // Calendar days, not 24-hour spans: something from 11pm yesterday is "yesterday", not "today".
+  const midnight = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((midnight(new Date()) - midnight(new Date(iso))) / 86400000);
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   if (days < 14) return `${days} days ago`;

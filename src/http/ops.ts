@@ -26,6 +26,7 @@ import { normalizeText, normalizeZimPhone } from "../text.js";
 import { registerAdminRoutes } from "./ops-admin.js";
 import { actorOf, opsAuthHook, refuseUnlessAdmin, registerAccountRoutes } from "./ops-auth.js";
 import { registerLabelRoutes } from "./ops-labels.js";
+import { registerInsightRoutes } from "./ops-insights.js";
 import { registerWebAdminRoutes } from "./ops-web.js";
 import { registerWordRoutes } from "./ops-words.js";
 import { serveFile } from "./static.js";
@@ -60,6 +61,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
   server.get("/admin", async (_req, reply) => reply.redirect("/admin/"));
   serveFile(server, "/admin/", "admin/index.html");
   serveFile(server, "/admin/admin.js", "admin/admin.js");
+  serveFile(server, "/admin/insights.js", "admin/insights.js");
   serveFile(server, "/admin/admin.css", "admin/admin.css");
   server.get("/ops", async (_req, reply) => reply.redirect("/admin/"));
   serveFile(server, "/ops/classic", "ops/index.html");
@@ -74,6 +76,7 @@ export function registerOps(server: FastifyInstance, app: App): void {
       registerWordRoutes(ops, app);
       registerLabelRoutes(ops, app);
       registerWebAdminRoutes(ops, app);
+      registerInsightRoutes(ops, app);
 
       // ----- Overview -----
 

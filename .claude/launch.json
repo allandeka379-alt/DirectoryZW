@@ -4,8 +4,24 @@
     {
       "name": "findzim",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["--env-file=.claude/preview.env", "--import", "tsx", "src/index.ts"],
+      "runtimeArgs": [
+        "--env-file=.claude/preview.env",
+        "--import",
+        "tsx",
+        "src/index.ts"
+      ],
       "port": 3000
+    },
+    {
+      "name": "findzim-demo",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--env-file=.claude/demo.env",
+        "--import",
+        "tsx",
+        "src/index.ts"
+      ],
+      "port": 3001
     }
   ]
 }
