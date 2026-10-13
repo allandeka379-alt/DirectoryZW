@@ -68,6 +68,7 @@ ${body}
           <a href="/terms">Business terms</a>
           <a href="/privacy">Privacy</a>
         </nav>
+        <p class="faint">Operated by FINDZIM WORLD (PRIVATE) LIMITED.</p>
         <p class="faint">&copy; ${v.year} ${brand}. Made in Zimbabwe.</p>
       </div>
     </footer>
